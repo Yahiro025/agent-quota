@@ -56,7 +56,7 @@ func TestReadsWhatIsOnOnceItIsFiveMinutesOld(t *testing.T) {
 func TestAPollerReadsOnGoroutinesAndSaysWhen(t *testing.T) {
 	changed := make(chan struct{}, 4)
 	used := 42.0
-	p := NewPoller(func(id string) Reading { return Reading{&used, id} }, func(id string) bool { return id == "kiro" }, func() { changed <- struct{}{} })
+	p := NewPoller(func(id string) Reading { return Reading{Used: &used, Detail: id} }, func(id string) bool { return id == "kiro" }, func() { changed <- struct{}{} })
 	p.Refresh(false)
 	select {
 	case <-changed:

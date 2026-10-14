@@ -212,11 +212,17 @@ func parseAntigravityGroups(groups []any) []antigravityBucket {
 func antigravityReading(buckets []antigravityBucket, now time.Time) Reading {
 	maxUsed := 0.0
 	bottleneck := -1
+	var reset5h time.Time
 	parts := make([]string, 0, len(buckets))
 	for i, bucket := range buckets {
 		if bucket.used > maxUsed || bottleneck < 0 {
 			maxUsed = bucket.used
 			bottleneck = i
+		}
+		// The 5h instant is the earliest future reset among the "5h" buckets, not
+		// the bottleneck's (which Detail shows and can be a weekly window).
+		if bucket.window == "5h" && bucket.reset != nil && bucket.reset.After(now) && (reset5h.IsZero() || bucket.reset.Before(reset5h)) {
+			reset5h = *bucket.reset
 		}
 		window := bucket.window
 		if window == "" {
@@ -232,7 +238,9 @@ func antigravityReading(buckets []antigravityBucket, now time.Time) Reading {
 		}
 		parts = append(parts, "resets "+shown)
 	}
-	return newReading(maxUsed, strings.Join(parts, " · "))
+	r := newReading(maxUsed, strings.Join(parts, " · "))
+	r.Reset5h = reset5h
+	return r
 }
 
 func antigravityStructuredAuth(output string) bool {

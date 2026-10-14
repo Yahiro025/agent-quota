@@ -367,5 +367,13 @@ func claudeSnapshotReading(now time.Time) (Reading, bool) {
 		shown = FormatLocal(resetAt, "HH:mm")
 	}
 	observedAt := time.Unix(0, newest.ObservedAt)
-	return newReading(top.used, strings.Join(parts, " · ")+" · as of "+FormatLocal(observedAt, "HH:mm")+" · resets "+shown), true
+	r := newReading(top.used, strings.Join(parts, " · ")+" · as of "+FormatLocal(observedAt, "HH:mm")+" · resets "+shown)
+	// Detail's reset is the top window's, which can be the week's; Reset5h always
+	// carries the five-hour instant so the pill counts down the right window.
+	if newest.FiveHour.Present {
+		if t := time.Unix(newest.FiveHour.ResetAt, 0).UTC(); t.After(now) {
+			r.Reset5h = t
+		}
+	}
+	return r, true
 }

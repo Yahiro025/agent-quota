@@ -28,17 +28,22 @@ import (
 )
 
 // Reading is one reading of how much of a plan is used. Used is nil when there is nothing
-// to show; Detail then says why ("kiro-cli not found", "Sign in to Cursor").
+// to show; Detail then says why ("kiro-cli not found", "Sign in to Cursor"). Reset5h is
+// the instant the five-hour rolling window lifts, or zero when there is no usable one
+// (none reported, or already passed): the UI formats countdowns and clock times from the
+// instant so a weekly window's reset is never mistaken for the 5h one, which the Detail
+// text can't say apart.
 type Reading struct {
-	Used   *float64
-	Detail string
+	Used    *float64
+	Detail  string
+	Reset5h time.Time
 }
 
 func (r Reading) OK() bool { return r.Used != nil }
 
 func Fail(why string) Reading { return Reading{Detail: why} }
 
-func newReading(used float64, detail string) Reading { return Reading{&used, detail} }
+func newReading(used float64, detail string) Reading { return Reading{Used: &used, Detail: detail} }
 
 // Notch items: what the resting notch can show, the AI quotas (Core/Layout.cs NotchItem).
 const (
@@ -390,6 +395,7 @@ func ParseCodexLine(line string, now time.Time) (Reading, bool) {
 	type window struct {
 		used  float64
 		label string
+		reset *time.Time
 	}
 	// Each window, or none; false when the C# would have thrown (and the line is skipped).
 	read := func(name, fallback string) (w *window, ok bool) {
@@ -435,16 +441,23 @@ func ParseCodexLine(line string, now time.Time) (Reading, bool) {
 		default:
 			label = fallback
 		}
-		return &window{min(max(used, 0), 100), label}, true
+		return &window{min(max(used, 0), 100), label, reset}, true
 	}
 
 	var windows []window
+	var reset5h time.Time
 	for _, w := range [][2]string{{"primary", "5h"}, {"secondary", "week"}} {
 		got, ok := read(w[0], w[1])
 		if !ok {
 			return Reading{}, false
 		}
 		if got != nil {
+			// Only a primary window labelled "5h" marks the five-hour rolling
+			// reset; any other label ("2h", "45.5m") is a different window, and a
+			// reset already passed counts as none.
+			if w[0] == "primary" && got.label == "5h" && got.reset != nil && got.reset.After(now) {
+				reset5h = *got.reset
+			}
 			windows = append(windows, *got)
 		}
 	}
@@ -463,7 +476,9 @@ func ParseCodexLine(line string, now time.Time) (Reading, bool) {
 	if resetUnix, ok := CodexPrimaryReset(line, now); ok {
 		detail += " · resets " + FormatLocal(time.Unix(resetUnix, 0).UTC(), "HH:mm")
 	}
-	return newReading(top, detail), true
+	r := newReading(top, detail)
+	r.Reset5h = reset5h
+	return r, true
 }
 
 // CodexPrimaryReset is the primary window's reset as unix seconds, sharing
@@ -750,6 +765,7 @@ func ParseClaudeUsage(text string, plan *string, now time.Time) Reading {
 		reset *time.Time
 	}
 	var windows []window
+	var reset5h time.Time
 	for _, w := range [][2]string{{"five_hour", "5h"}, {"seven_day", "week"}} {
 		o, ok := objOf(root, w[0])
 		if !ok {
@@ -768,6 +784,11 @@ func ParseClaudeUsage(text string, plan *string, now time.Time) Reading {
 		}
 		if reset != nil && !reset.After(now) {
 			used = 0
+		}
+		// The 5h instant is kept no matter which window ends up on top: Detail
+		// shows the fuller window's reset, so the pill needs its own copy.
+		if w[0] == "five_hour" && reset != nil && reset.After(now) {
+			reset5h = *reset
 		}
 		windows = append(windows, window{min(max(used, 0), 100), w[1], reset})
 	}
@@ -797,7 +818,9 @@ func ParseClaudeUsage(text string, plan *string, now time.Time) Reading {
 	for i, w := range windows {
 		parts[i] = fmt.Sprintf("%s %s%%", w.label, Custom(w.used, 0))
 	}
-	return newReading(top.used, planText+strings.Join(parts, " · ")+resetText)
+	r := newReading(top.used, planText+strings.Join(parts, " · ")+resetText)
+	r.Reset5h = reset5h
+	return r
 }
 
 // ClaudeFiveHourReset is the five_hour window's resets_at as unix seconds, for
