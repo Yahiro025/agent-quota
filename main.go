@@ -9,7 +9,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -79,128 +78,32 @@ func checkedAgo(t time.Time) string {
 	}
 }
 
-// formatCountdown renders a reset countdown. Hours are omitted when zero so
-// short waits read "12m left". Day-plus waits collapse to days and remainder
-// hours with minutes dropped so week windows read "5d 20h left". A
-// non-positive duration means the reset already passed, so "" asks the caller
-// to fall back to the wall-clock string instead of inventing a "resetting…"
-// state. Floored to whole minutes so the panel never flickers on seconds.
-func formatCountdown(d time.Duration) string {
-	if d <= 0 {
-		return ""
+// resetLabels formats one 5h reset instant into the panel detail line and the
+// pill's second line, so both surfaces count down the same instant and can
+// never disagree the way a parsed Detail tail could. clock picks the
+// wall-clock form; otherwise both countdown, floored to whole minutes so the
+// 30 s repaint never flickers on seconds. A zero or already passed reset —
+// the reading can age past it between poll and draw — yields empty strings so
+// the row simply drops its reset line.
+func resetLabels(r time.Time, now time.Time, clock bool) (panel, pill string) {
+	if r.IsZero() || !r.After(now) {
+		return "", ""
 	}
-	mins := int(d.Minutes())
-	h := mins / 60
-	m := mins % 60
-	if h >= 24 {
-		return fmt.Sprintf("%dd %dh left", h/24, h%24)
-	}
-	if h > 0 {
-		return fmt.Sprintf("%dh %dm left", h, m)
-	}
-	return fmt.Sprintf("%dm left", m)
-}
-
-// resetMonth is FormatLocal's English MMM table, repeated here so the panel can
-// read back the "d MMM HH:mm" tail it already printed without touching quota/.
-var resetMonth = map[string]time.Month{
-	"Jan": time.January, "Feb": time.February, "Mar": time.March,
-	"Apr": time.April, "May": time.May, "Jun": time.June,
-	"Jul": time.July, "Aug": time.August, "Sep": time.September,
-	"Oct": time.October, "Nov": time.November, "Dec": time.December,
-}
-
-func parseHM(s string) (int, int, bool) {
-	parts := strings.Split(s, ":")
-	if len(parts) != 2 {
-		return 0, 0, false
-	}
-	if len(parts[0]) == 0 || len(parts[0]) > 2 || len(parts[1]) != 2 {
-		return 0, 0, false
-	}
-	for _, p := range parts {
-		for i := 0; i < len(p); i++ {
-			if p[i] < '0' || p[i] > '9' {
-				return 0, 0, false
-			}
+	if !clock {
+		mins := int(r.Sub(now).Minutes())
+		if h, m := mins/60, mins%60; h > 0 {
+			return fmt.Sprintf("5h resets in %dh %dm", h, m), fmt.Sprintf("%dh%dm", h, m)
 		}
+		return fmt.Sprintf("5h resets in %dm", mins), fmt.Sprintf("%dm", mins)
 	}
-	h, err1 := strconv.Atoi(parts[0])
-	m, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
-		return 0, 0, false
+	pill = quota.FormatLocal(r, "HH:mm")
+	// The panel has room to disambiguate a reset that lands on another day;
+	// the pill doesn't, so it always stays plain HH:mm.
+	rl, nl := r.In(time.Local), now.In(time.Local)
+	if rl.Year() != nl.Year() || rl.YearDay() != nl.YearDay() {
+		return "5h resets " + quota.FormatLocal(r, "d MMM HH:mm"), pill
 	}
-	return h, m, true
-}
-
-// parseResetClock reads back the wall-clock tail ("HH:mm" or "d MMM HH:mm") in
-// local time. HH:mm is always the reading's own day, so a time at or before
-// now means the reset just passed rather than tomorrow: rolling forward would
-// hide that and show a ~24h countdown. A "d MMM" date tries this year first
-// and only rolls to next year when that lands within a week, so a stale
-// December reading never becomes an 11-month countdown.
-func parseResetClock(rest string, now time.Time) (time.Time, bool) {
-	rest = strings.TrimSpace(rest)
-	if h, m, ok := parseHM(rest); ok {
-		return time.Date(now.Year(), now.Month(), now.Day(), h, m, 0, 0, time.Local), true
-	}
-	fields := strings.Fields(rest)
-	if len(fields) != 3 {
-		return time.Time{}, false
-	}
-	day, err := strconv.Atoi(fields[0])
-	if err != nil || day < 1 || day > 31 {
-		return time.Time{}, false
-	}
-	mon, ok := resetMonth[fields[1]]
-	if !ok {
-		return time.Time{}, false
-	}
-	h, m, ok := parseHM(fields[2])
-	if !ok {
-		return time.Time{}, false
-	}
-	base := time.Date(now.Year(), mon, day, h, m, 0, 0, time.Local)
-	if base.Month() != mon || base.Day() != day {
-		return time.Time{}, false
-	}
-	if base.After(now) {
-		return base, true
-	}
-	next := time.Date(now.Year()+1, mon, day, h, m, 0, 0, time.Local)
-	if next.Month() == mon && next.Day() == day && next.After(now) && next.Sub(now) <= 8*24*time.Hour {
-		return next, true
-	}
-	return base, true
-}
-
-// resetStrings splits a codex/claude Detail tail into its countdown and clock
-// forms. The clock reuses the trailing "resets ..." token byte-for-byte so it
-// can never disagree with Detail; the countdown parses that same token back to
-// an instant (the Reading carries no unix, and re-reading disk/network on the
-// UI thread would jank the drag). No trailing token means no usable reset, so
-// both stay empty and the row keeps its pin behaviour.
-func resetStrings(detail string, now time.Time) (countdown, clock string) {
-	idx := strings.LastIndex(detail, "resets ")
-	if idx < 0 {
-		return "", ""
-	}
-	clock = strings.TrimSpace(detail[idx:])
-	if strings.Contains(clock[len("resets "):], "·") {
-		return "", ""
-	}
-	rest := strings.TrimSpace(clock[len("resets "):])
-	t, ok := parseResetClock(rest, now)
-	if !ok {
-		return "", clock
-	}
-	if !t.After(now) {
-		return "", clock
-	}
-	if cd := formatCountdown(t.Sub(now)); cd != "" {
-		return cd, clock
-	}
-	return "", clock
+	return "5h resets " + pill, pill
 }
 
 func printOnce() int {
@@ -351,9 +254,10 @@ type app struct {
 	scale          float32
 	refreshHovered bool
 	view           widget.View
-	// resetClock flips a codex/claude panel row between countdown and wall
-	// clock. In-memory only (never in settings.json): a fresh launch shows
-	// countdowns again. UI thread only, like open/pinned, so no mutex.
+	// resetClock flips a reset row between countdown and wall clock for that
+	// agent's panel and pill strings. In-memory only (never in settings.json):
+	// a fresh launch shows countdowns again. UI thread only, like open/pinned,
+	// so no mutex.
 	resetClock map[string]bool
 }
 
@@ -451,18 +355,20 @@ func (a *app) buildView() widget.View {
 		default:
 			it.Detail = "Checking…"
 		}
-		// Only OK codex/claude rows carry a 5h-window reset; Stale keeps its
-		// error line uncluttered and Failed/Waiting have no reset to toggle.
-		// The toggled string widget appends is the single reset display, so a
-		// usable reset strips Detail's trailing " · resets ..." tail from this
-		// row copy (show.Detail upstream stays untouched). Without a usable
-		// reset Detail stays byte-identical.
-		if st == quota.OK && (id == quota.ItemCodex || id == quota.ItemClaude) {
-			if cd, clock := resetStrings(show.Detail, now); clock != "" {
-				it.ResetCountdown = cd
-				it.ResetClock = clock
-				it.ShowClock = a.resetClock[id]
-				if j := strings.LastIndex(it.Detail, " · resets "); j >= 0 {
+		// Only OK rows carry a 5h-window reset: Stale keeps its error line
+		// uncluttered and Failed/Waiting have none to toggle. Reading.Reset5h
+		// is the instant; resetLabels formats both already-toggled strings
+		// from it. Detail's trailing " · resets X" tail repeats that same
+		// instant, so it is stripped from this row's copy when X is Reset5h
+		// formatted either way the readers write it — a tail naming a
+		// different instant (the week window's reset) stays visible so it is
+		// not lost. show.Detail upstream is never mutated, and without a
+		// usable Reset5h Detail stays byte-identical.
+		if st == quota.OK && !show.Reset5h.IsZero() {
+			it.Reset, it.PillReset = resetLabels(show.Reset5h, now, a.resetClock[id])
+			if j := strings.LastIndex(it.Detail, " · resets "); j >= 0 {
+				tail := strings.TrimSpace(it.Detail[j+len(" · resets "):])
+				if tail == quota.FormatLocal(show.Reset5h, "HH:mm") || tail == quota.FormatLocal(show.Reset5h, "d MMM HH:mm") {
 					it.Detail = it.Detail[:j]
 				}
 			}
@@ -545,9 +451,6 @@ func (a *app) OnPointerClick(x, y int) {
 	// panel; ResetRowBounds is empty when closed, absent, or reset-less, so
 	// those clicks still fall through to OnClick below.
 	for _, id := range visibleAgents(a.settings) {
-		if id != quota.ItemCodex && id != quota.ItemClaude {
-			continue
-		}
 		if image.Pt(x, y).In(widget.ResetRowBounds(a.view, id)) {
 			if a.resetClock == nil {
 				a.resetClock = map[string]bool{}
@@ -613,6 +516,9 @@ func (a *app) OnMenu(id int) {
 		return
 	case 101: // 30 s poll timer
 		a.poller.Refresh(false)
+		// Countdown strings and "Checked N min ago" age between readings, so
+		// the tick repaints even when no new reading lands.
+		a.redraw()
 		return
 	case menuRefresh:
 		a.poller.Refresh(true)

@@ -159,28 +159,38 @@ func TestPlacementRecoversTaskbarPositionAndPreservesValidDrag(t *testing.T) {
 	}
 }
 
-func TestFormatCountdown(t *testing.T) {
-	// Zero-hour waits omit hours so short resets read plainly.
-	if got := formatCountdown(12 * time.Minute); got != "12m left" {
-		t.Fatalf("12m countdown = %q, want %q", got, "12m left")
-	}
-	// Hour-plus waits keep both parts floored to the minute.
-	if got := formatCountdown(3*time.Hour + 12*time.Minute + 50*time.Second); got != "3h 12m left" {
-		t.Fatalf("3h12m countdown = %q, want %q", got, "3h 12m left")
-	}
-	// Day-plus waits collapse to days and remainder hours, minutes dropped.
-	if got := formatCountdown(140*time.Hour + 5*time.Minute); got != "5d 20h left" {
-		t.Fatalf("140h5m countdown = %q, want %q", got, "5d 20h left")
-	}
-	// Just under a day stays in hour form.
-	if got := formatCountdown(23*time.Hour + 59*time.Minute); got != "23h 59m left" {
-		t.Fatalf("23h59m countdown = %q, want %q", got, "23h 59m left")
-	}
-	// Passed or zero resets have no countdown; the caller falls back to clock.
-	for _, d := range []time.Duration{0, -time.Minute, -time.Hour} {
-		if got := formatCountdown(d); got != "" {
-			t.Fatalf("passed countdown %v = %q, want empty", d, got)
-		}
+// resetLabels formats the panel and pill strings from one instant, so both
+// surfaces must agree and the 30 s redraw must be the only clock needed.
+func TestResetLabels(t *testing.T) {
+	// Fixed local clock so the same-day/next-day branches are deterministic.
+	now := time.Date(2026, time.October, 14, 15, 0, 0, 0, time.Local)
+	for _, tc := range []struct {
+		name      string
+		now       time.Time
+		r         time.Time
+		clock     bool
+		wantPanel string
+		wantPill  string
+	}{
+		{"countdown hours and minutes", now, now.Add(2*time.Hour + 14*time.Minute + 30*time.Second), false, "5h resets in 2h 14m", "2h14m"},
+		{"countdown minutes only", now, now.Add(12*time.Minute + 30*time.Second), false, "5h resets in 12m", "12m"},
+		{"countdown under a minute", now, now.Add(30 * time.Second), false, "5h resets in 0m", "0m"},
+		{"clock same day", now, time.Date(2026, time.October, 14, 18, 42, 0, 0, time.Local), true, "5h resets 18:42", "18:42"},
+		{"clock next day", now, time.Date(2026, time.October, 15, 2, 0, 0, 0, time.Local), true, "5h resets 15 Oct 02:00", "02:00"},
+		{"expired countdown", now, now.Add(-time.Minute), false, "", ""},
+		{"expired clock", now, now.Add(-time.Minute), true, "", ""},
+		{"zero reset", now, time.Time{}, false, "", ""},
+		// The old Detail-tail parse read "02:00" as same-day and dropped it as
+		// already passed; from the instant it is simply 4h ahead.
+		{"post-midnight countdown", time.Date(2026, time.October, 14, 22, 0, 0, 0, time.Local), time.Date(2026, time.October, 15, 2, 0, 0, 0, time.Local), false, "5h resets in 4h 0m", "4h0m"},
+		{"post-midnight clock", time.Date(2026, time.October, 14, 22, 0, 0, 0, time.Local), time.Date(2026, time.October, 15, 2, 0, 0, 0, time.Local), true, "5h resets 15 Oct 02:00", "02:00"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			panel, pill := resetLabels(tc.r, tc.now, tc.clock)
+			if panel != tc.wantPanel || pill != tc.wantPill {
+				t.Fatalf("resetLabels(%v, %v, clock=%v) = (%q, %q), want (%q, %q)", tc.r, tc.now, tc.clock, panel, pill, tc.wantPanel, tc.wantPill)
+			}
+		})
 	}
 }
 
@@ -190,12 +200,73 @@ func TestBuildViewStripsResetTail(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(tmp, "sessions"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Date-form tail stays in the future across midnight and year roll.
-	future := time.Now().Add(3 * time.Hour)
-	tail := "resets " + future.Format("2 Jan 15:04")
-	detail := "5h 42% · week 31% · " + tail
+	// The tail is the same instant as Reset5h, formatted the way readers write
+	// it; only then is it the 5h tail the toggle replaces.
+	reset := time.Now().Add(3 * time.Hour)
+	detail := "5h 42% · week 31% · resets " + quota.FormatLocal(reset, "HH:mm")
 	used := 42.0
-	newCodexApp := func() *app {
+	a := &app{settings: settings{Visible: map[string]bool{quota.ItemCodex: true}}, resetClock: map[string]bool{}}
+	a.poller = quota.NewPoller(func(string) quota.Reading {
+		return quota.Reading{Used: &used, Detail: detail, Reset5h: reset}
+	}, func(id string) bool { return id == quota.ItemCodex }, func() {})
+	a.poller.Refresh(true)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, ok := a.poller.Reading(quota.ItemCodex); ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("codex read did not finish")
+		}
+		runtime.Gosched()
+	}
+	// Countdown mode: stripped Detail plus the countdown strings is the only reset text.
+	it := a.buildView().Items[0]
+	if strings.Contains(it.Detail, "resets") {
+		t.Fatalf("countdown Detail still carries reset tail: %q", it.Detail)
+	}
+	if it.Detail != "5h 42% · week 31%" {
+		t.Fatalf("countdown Detail = %q, want %q", it.Detail, "5h 42% · week 31%")
+	}
+	if !strings.HasPrefix(it.Reset, "5h resets in ") {
+		t.Fatalf("Reset = %q, want countdown form", it.Reset)
+	}
+	if it.PillReset == "" || strings.Contains(it.PillReset, " ") {
+		t.Fatalf("PillReset = %q, want a compact countdown", it.PillReset)
+	}
+	if _, show, _, ok := a.poller.Display(quota.ItemCodex); !ok || show.Detail != detail {
+		t.Fatalf("upstream Detail mutated: got %q, want %q", show.Detail, detail)
+	}
+	// Clock mode: same stripped Detail, the wall clock on both surfaces. The
+	// pill keeps the plain HH:mm even when the panel adds the date.
+	a.resetClock[quota.ItemCodex] = true
+	flipped := a.buildView().Items[0]
+	if strings.Contains(flipped.Detail, "resets") {
+		t.Fatalf("clock Detail still carries reset tail: %q", flipped.Detail)
+	}
+	if flipped.Detail != "5h 42% · week 31%" {
+		t.Fatalf("clock Detail = %q, want %q", flipped.Detail, "5h 42% · week 31%")
+	}
+	want := "5h resets " + quota.FormatLocal(reset, "HH:mm")
+	if rl, nl := reset.In(time.Local), time.Now().In(time.Local); rl.Year() != nl.Year() || rl.YearDay() != nl.YearDay() {
+		want = "5h resets " + quota.FormatLocal(reset, "d MMM HH:mm")
+	}
+	if flipped.Reset != want {
+		t.Fatalf("clock Reset = %q, want %q", flipped.Reset, want)
+	}
+	if flipped.PillReset != quota.FormatLocal(reset, "HH:mm") {
+		t.Fatalf("clock PillReset = %q, want %q", flipped.PillReset, quota.FormatLocal(reset, "HH:mm"))
+	}
+}
+
+func TestBuildViewKeepsDetailWithoutReset(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CODEX_HOME", tmp)
+	if err := os.MkdirAll(filepath.Join(tmp, "sessions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	used := 42.0
+	newApp := func(detail string) *app {
 		a := &app{settings: settings{Visible: map[string]bool{quota.ItemCodex: true}}, resetClock: map[string]bool{}}
 		a.poller = quota.NewPoller(func(string) quota.Reading {
 			return quota.Reading{Used: &used, Detail: detail}
@@ -213,52 +284,42 @@ func TestBuildViewStripsResetTail(t *testing.T) {
 		}
 		return a
 	}
-	// Countdown mode: stripped Detail plus the toggled countdown is the only reset text.
-	a := newCodexApp()
-	it := a.buildView().Items[0]
-	if strings.Contains(it.Detail, "resets") {
-		t.Fatalf("countdown Detail still carries reset tail: %q", it.Detail)
+	// No reset tail and no Reset5h: Detail is byte-identical.
+	it := newApp("5h 42%").buildView().Items[0]
+	if it.Detail != "5h 42%" {
+		t.Fatalf("reset-less Detail = %q, want byte-identical %q", it.Detail, "5h 42%")
 	}
-	if it.Detail != "5h 42% · week 31%" {
-		t.Fatalf("countdown Detail = %q, want %q", it.Detail, "5h 42% · week 31%")
+	if it.Reset != "" || it.PillReset != "" {
+		t.Fatalf("reset-less row carries reset strings: %q %q", it.Reset, it.PillReset)
 	}
-	if it.ResetClock != tail {
-		t.Fatalf("ResetClock = %q, want %q", it.ResetClock, tail)
+	// A "2h"-labelled Codex primary still prints a resets tail but carries no
+	// Reset5h; the tail is not the 5h window's and must survive untouched.
+	withTail := "2h 42% · resets " + quota.FormatLocal(time.Now().Add(2*time.Hour), "HH:mm")
+	it = newApp(withTail).buildView().Items[0]
+	if it.Detail != withTail {
+		t.Fatalf("non-5h tail Detail = %q, want byte-identical %q", it.Detail, withTail)
 	}
-	if it.ResetCountdown == "" {
-		t.Fatal("ResetCountdown is empty for a usable reset")
-	}
-	if _, show, _, ok := a.poller.Display(quota.ItemCodex); !ok || show.Detail != detail {
-		t.Fatalf("upstream Detail mutated: got %q, want %q", show.Detail, detail)
-	}
-	// Clock mode: same stripped Detail, only the wall clock is appended.
-	a.resetClock[quota.ItemCodex] = true
-	flipped := a.buildView().Items[0]
-	if !flipped.ShowClock {
-		t.Fatal("ShowClock not carried to the row")
-	}
-	if strings.Contains(flipped.Detail, "resets") {
-		t.Fatalf("clock Detail still carries reset tail: %q", flipped.Detail)
-	}
-	if flipped.Detail != "5h 42% · week 31%" {
-		t.Fatalf("clock Detail = %q, want %q", flipped.Detail, "5h 42% · week 31%")
-	}
-	if flipped.ResetClock != tail {
-		t.Fatalf("clock ResetClock = %q, want %q", flipped.ResetClock, tail)
+	if it.Reset != "" || it.PillReset != "" {
+		t.Fatalf("non-5h tail row carries reset strings: %q %q", it.Reset, it.PillReset)
 	}
 }
 
-func TestBuildViewKeepsDetailWithoutReset(t *testing.T) {
+// A Detail tail that names a different instant than Reset5h — Claude shows the
+// week window's reset while Reset5h tracks the five-hour one — stays visible;
+// the 5h strings land beside it rather than eating it.
+func TestBuildViewKeepsOtherWindowResetTail(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("CODEX_HOME", tmp)
 	if err := os.MkdirAll(filepath.Join(tmp, "sessions"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	plain := "5h 42%"
-	used := 42.0
+	reset5h := time.Now().Add(90 * time.Minute)
+	week := time.Now().Add(6 * 24 * time.Hour)
+	detail := "5h 10% · week 95% · resets " + quota.FormatLocal(week, "d MMM HH:mm")
+	used := 95.0
 	a := &app{settings: settings{Visible: map[string]bool{quota.ItemCodex: true}}, resetClock: map[string]bool{}}
 	a.poller = quota.NewPoller(func(string) quota.Reading {
-		return quota.Reading{Used: &used, Detail: plain}
+		return quota.Reading{Used: &used, Detail: detail, Reset5h: reset5h}
 	}, func(id string) bool { return id == quota.ItemCodex }, func() {})
 	a.poller.Refresh(true)
 	deadline := time.Now().Add(2 * time.Second)
@@ -272,10 +333,13 @@ func TestBuildViewKeepsDetailWithoutReset(t *testing.T) {
 		runtime.Gosched()
 	}
 	it := a.buildView().Items[0]
-	if it.Detail != plain {
-		t.Fatalf("reset-less Detail = %q, want byte-identical %q", it.Detail, plain)
+	if it.Detail != detail {
+		t.Fatalf("week-tail Detail = %q, want untouched %q", it.Detail, detail)
 	}
-	if it.ResetCountdown != "" || it.ResetClock != "" {
-		t.Fatalf("reset-less row carries reset strings: %q %q", it.ResetCountdown, it.ResetClock)
+	if !strings.HasPrefix(it.Reset, "5h resets in ") {
+		t.Fatalf("Reset = %q, want countdown form", it.Reset)
+	}
+	if it.PillReset == "" {
+		t.Fatal("PillReset is empty")
 	}
 }

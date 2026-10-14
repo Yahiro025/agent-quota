@@ -20,12 +20,14 @@ type Item struct {
 	Detail string
 	Err    string
 	Stale  string
-	// ResetCountdown ("3h 12m left") and ResetClock ("resets 18:42") are
-	// preformatted upstream so Render stays deterministic and never calls
+	// Reset (the panel detail line, e.g. "5h resets in 2h 14m") and PillReset
+	// (the pill's second line, "2h14m") are preformatted upstream — already
+	// toggled countdown/clock — so Render stays deterministic and never calls
 	// time.Now; empty strings mean this row has no 5h-window reset to show.
-	ResetCountdown string
-	ResetClock     string
-	ShowClock      bool
+	Reset string
+	// PillReset is not drawn yet: Render consumes it when the pill grows its
+	// second line, so it is carried here already toggled for that change.
+	PillReset string
 }
 
 // View contains only display state; rendering and hit geometry use no window.
@@ -134,31 +136,15 @@ func ResetRowBounds(v View, id string) image.Rectangle {
 		if it.ID != id {
 			continue
 		}
-		// Empty preformatted strings mean no reset for this row
-		// (Waiting/Failed, or agents without a 5h window).
-		if resetText(it) == "" {
+		// An empty Reset means no reset for this row (Waiting/Failed, or
+		// agents without a 5h window).
+		if it.Reset == "" {
 			return image.Rectangle{}
 		}
 		y := g.panelY + headerH + i*rowH
 		return image.Rect(g.px(0), g.px(y), g.px(g.w), g.px(y+rowH))
 	}
 	return image.Rectangle{}
-}
-
-// resetText picks the preformatted reset string for the detail area.
-// Countdown wins unless ShowClock asks for the wall-clock form; each side
-// falls back to the other so a row carrying only one string still shows it.
-func resetText(it Item) string {
-	if it.ShowClock {
-		if it.ResetClock != "" {
-			return it.ResetClock
-		}
-		return it.ResetCountdown
-	}
-	if it.ResetCountdown != "" {
-		return it.ResetCountdown
-	}
-	return it.ResetClock
 }
 
 func usage(it Item) (string, bool) {
@@ -201,14 +187,14 @@ func detail(it Item) string {
 	default:
 		base = it.Detail
 	}
-	// The 5h-window reset (today only codex/claude carry one) rides in the
-	// same dim detail run, appended after existing Detail so wrapping and
-	// style stay shared instead of adding a second text style or clock call.
-	if r := resetText(it); r != "" {
+	// The 5h-window reset rides in the same dim detail run, appended after
+	// existing Detail so wrapping and style stay shared instead of adding a
+	// second text style or clock call.
+	if it.Reset != "" {
 		if base != "" {
-			base += " · " + r
+			base += " · " + it.Reset
 		} else {
-			base = r
+			base = it.Reset
 		}
 	}
 	return base

@@ -7,11 +7,11 @@ import (
 	"agent-quota/quota"
 )
 
-// Both preformatted strings ride on the Item so Render stays deterministic;
+// Reset and PillReset arrive preformatted so Render stays deterministic;
 // identical Views must rasterize identical pixels.
 func TestResetRendersDeterministic(t *testing.T) {
 	v := View{Open: true, Items: []Item{
-		{ID: "codex", State: quota.OK, Used: 42, Detail: "5h 42%", ResetCountdown: "3h 12m left", ResetClock: "resets 18:42"},
+		{ID: "codex", State: quota.OK, Used: 42, Detail: "5h 42%", Reset: "5h resets in 3h 12m", PillReset: "3h12m"},
 	}}
 	a := Render(v)
 	b := Render(v)
@@ -23,12 +23,14 @@ func TestResetRendersDeterministic(t *testing.T) {
 	}
 }
 
-// ShowClock flips which preformatted string the detail area shows.
-func TestShowClockFlipsResetText(t *testing.T) {
-	base := Item{ID: "codex", State: quota.OK, Used: 42, Detail: "5h 42%", ResetCountdown: "3h 12m left", ResetClock: "resets 18:42"}
+// The panel draws whichever toggled Reset string upstream handed over, so a
+// different string paints different pixels and both forms give hit bounds.
+func TestResetTextChangesPixels(t *testing.T) {
+	base := Item{ID: "codex", State: quota.OK, Used: 42, Detail: "5h 42%", Reset: "5h resets in 3h 12m", PillReset: "3h12m"}
 	countdown := View{Open: true, Items: []Item{base}}
 	flipped := base
-	flipped.ShowClock = true
+	flipped.Reset = "5h resets 18:42"
+	flipped.PillReset = "18:42"
 	clock := View{Open: true, Items: []Item{flipped}}
 	if ResetRowBounds(countdown, "codex").Empty() {
 		t.Fatal("countdown row should have reset bounds")
@@ -39,12 +41,12 @@ func TestShowClockFlipsResetText(t *testing.T) {
 	a := Render(countdown)
 	b := Render(clock)
 	if bytes.Equal(a.Pix, b.Pix) {
-		t.Fatal("ShowClock did not change rendered pixels")
+		t.Fatal("toggled reset string did not change rendered pixels")
 	}
 }
 
 func TestResetRowBoundsEmptyCases(t *testing.T) {
-	withReset := Item{ID: "codex", State: quota.OK, Used: 42, Detail: "5h 42%", ResetCountdown: "3h 12m left", ResetClock: "resets 18:42"}
+	withReset := Item{ID: "codex", State: quota.OK, Used: 42, Detail: "5h 42%", Reset: "5h resets in 3h 12m", PillReset: "3h12m"}
 	if r := ResetRowBounds(View{Items: []Item{withReset}}, "codex"); !r.Empty() {
 		t.Fatalf("closed panel should have empty reset bounds, got %v", r)
 	}
@@ -60,8 +62,8 @@ func TestResetRowBoundsEmptyCases(t *testing.T) {
 
 func TestResetRowBoundsStride(t *testing.T) {
 	v := View{Open: true, Items: []Item{
-		{ID: "codex", State: quota.OK, Used: 42, Detail: "5h 42%", ResetCountdown: "3h 12m left"},
-		{ID: "claude", State: quota.OK, Used: 10, Detail: "5h 10%", ResetCountdown: "1h 02m left"},
+		{ID: "codex", State: quota.OK, Used: 42, Detail: "5h 42%", Reset: "5h resets in 3h 12m"},
+		{ID: "claude", State: quota.OK, Used: 10, Detail: "5h 10%", Reset: "5h resets in 1h 02m"},
 	}}
 	r0 := ResetRowBounds(v, "codex")
 	r1 := ResetRowBounds(v, "claude")
