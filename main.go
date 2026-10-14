@@ -139,16 +139,9 @@ func shot(dir string) int {
 			{ID: "devin", State: quota.Stale, Used: 62, Err: "Couldn't reach Devin's server.", Stale: "3 min"},
 			{ID: quota.ItemAntigravity, State: quota.OK, Used: 10, Detail: "Gemini Models · 90% remaining", Reset: "5h resets 18:42", PillReset: "18:42"},
 		}, Checked: "Checked 2 min ago"},
-		"panel": {Open: true, Items: []widget.Item{
-			{ID: "claude", State: quota.OK, Used: 42, Detail: "Pro · 5h 42% · week 31%"},
-			{ID: "copilot", State: quota.OK, Used: 13, Detail: "Individual · premium 26/200"},
-			{ID: "devin", State: quota.Stale, Used: 62, Err: "Couldn't reach Devin's server.", Stale: "3 min"},
-			{ID: quota.ItemAntigravity, State: quota.OK, Used: 10, Detail: "Gemini Models · 90% remaining"},
-		}, Checked: "Checked 2 min ago"},
-		"empty": {Items: []widget.Item{
-			{ID: "claude", State: quota.Waiting, Detail: "Checking…"},
-		}, Open: true, Checked: "Checking…"},
 	}
+	// panel and empty are built only here: literals in the map above would be
+	// dead code the two assignments overwrite anyway.
 	panel := states["pill"]
 	panel.Open = true
 	states["panel"] = panel

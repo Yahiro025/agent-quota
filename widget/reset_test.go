@@ -91,7 +91,7 @@ func TestPillResetFitsSlot(t *testing.T) {
 }
 
 // A PillReset moves the percent up and adds a second line inside the same
-// pill, so pixels must differ below the midline while the pill never resizes.
+// pill, so pixels must differ in the reset band while the pill never resizes.
 func TestPillResetAddsSecondLine(t *testing.T) {
 	base := Item{ID: "codex", State: quota.OK, Used: 42, Detail: "5h 42%"}
 	with := base
@@ -104,8 +104,12 @@ func TestPillResetAddsSecondLine(t *testing.T) {
 	if bytes.Equal(a.Pix, b.Pix) {
 		t.Fatal("PillReset did not change rendered pixels")
 	}
+	// The scan starts at y=24 on purpose: the raised percent inks rows ~7-16
+	// and its unraised twin ~14-23, so only the reset line (drawn at py+21,
+	// glyph ink ~22-29) can differ at y >= 24. Scanning from the midline would
+	// pass on moved percent ink alone even if no second line were drawn.
 	lower := false
-	for y := pillH / 2; y < a.Bounds().Dy(); y++ {
+	for y := 24; y < a.Bounds().Dy(); y++ {
 		for x := 0; x < a.Bounds().Dx(); x++ {
 			i := a.PixOffset(x, y)
 			if !bytes.Equal(a.Pix[i:i+4], b.Pix[i:i+4]) {
@@ -114,7 +118,7 @@ func TestPillResetAddsSecondLine(t *testing.T) {
 		}
 	}
 	if !lower {
-		t.Fatal("PillReset changed no pixels below the pill midline; second line missing")
+		t.Fatal("PillReset changed no pixels in the reset band; second line missing")
 	}
 }
 
