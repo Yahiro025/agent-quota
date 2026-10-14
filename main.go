@@ -128,13 +128,16 @@ func shot(dir string) int {
 	_ = os.MkdirAll(dir, 0o755)
 	states := map[string]widget.View{
 		"pill": {Items: []widget.Item{
-			{ID: "claude", State: quota.OK, Used: 42, Detail: "Pro · 5h 42% · week 31%"},
+			// Static Reset/PillReset pairs (countdown on claude/codex, clock on
+			// antigravity) exercise both toggle forms without a clock, so the
+			// shot stays byte-stable between runs.
+			{ID: "claude", State: quota.OK, Used: 42, Detail: "Pro · 5h 42% · week 31%", Reset: "5h resets in 2h 14m", PillReset: "2h14m"},
 			{ID: "kiro", State: quota.OK, Used: 75, Detail: "KIRO PRO · 21 of 50 credits"},
-			{ID: "codex", State: quota.OK, Used: 95, Detail: "5h 95% · week 40%"},
+			{ID: "codex", State: quota.OK, Used: 95, Detail: "5h 95% · week 40%", Reset: "5h resets in 38m", PillReset: "38m"},
 			{ID: "cursor", State: quota.Failed, Err: "Sign in to Cursor first."},
 			{ID: "copilot", State: quota.OK, Used: 13, Detail: "Individual · premium 26/200"},
 			{ID: "devin", State: quota.Stale, Used: 62, Err: "Couldn't reach Devin's server.", Stale: "3 min"},
-			{ID: quota.ItemAntigravity, State: quota.OK, Used: 10, Detail: "Gemini Models · 90% remaining"},
+			{ID: quota.ItemAntigravity, State: quota.OK, Used: 10, Detail: "Gemini Models · 90% remaining", Reset: "5h resets 18:42", PillReset: "18:42"},
 		}, Checked: "Checked 2 min ago"},
 		"panel": {Open: true, Items: []widget.Item{
 			{ID: "claude", State: quota.OK, Used: 42, Detail: "Pro · 5h 42% · week 31%"},

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"agent-quota/internal/text"
 	"agent-quota/quota"
 )
 
@@ -72,5 +73,69 @@ func TestResetRowBoundsStride(t *testing.T) {
 	}
 	if dy := r1.Min.Y - r0.Min.Y; dy != rowH {
 		t.Fatalf("row 1 sits %d px below row 0, want exactly rowH=%d", dy, rowH)
+	}
+}
+
+// The pill's second line shares the percent's fixed slot, so the widest
+// strings resetLabels emits — a floored countdown and a wall clock — must fit
+// PctWidth at resetFont. If this fails the slot is too narrow; PctWidth is the
+// only allowed fix because it feeds PillSize uniformly for every agent.
+func TestPillResetFitsSlot(t *testing.T) {
+	for _, s := range []string{"4h59m", "23:59"} {
+		w := text.Measure(s, resetFont)
+		t.Logf("%q measures %.2f at resetFont (PctWidth=%d)", s, w, PctWidth)
+		if w > float32(PctWidth) {
+			t.Fatalf("%q measures %.2f at resetFont, over PctWidth=%d", s, w, PctWidth)
+		}
+	}
+}
+
+// A PillReset moves the percent up and adds a second line inside the same
+// pill, so pixels must differ below the midline while the pill never resizes.
+func TestPillResetAddsSecondLine(t *testing.T) {
+	base := Item{ID: "codex", State: quota.OK, Used: 42, Detail: "5h 42%"}
+	with := base
+	with.PillReset = "3h12m"
+	a := Render(View{Items: []Item{base}})
+	b := Render(View{Items: []Item{with}})
+	if a.Bounds() != b.Bounds() {
+		t.Fatalf("PillReset resized the pill: %v vs %v", a.Bounds(), b.Bounds())
+	}
+	if bytes.Equal(a.Pix, b.Pix) {
+		t.Fatal("PillReset did not change rendered pixels")
+	}
+	lower := false
+	for y := pillH / 2; y < a.Bounds().Dy(); y++ {
+		for x := 0; x < a.Bounds().Dx(); x++ {
+			i := a.PixOffset(x, y)
+			if !bytes.Equal(a.Pix[i:i+4], b.Pix[i:i+4]) {
+				lower = true
+			}
+		}
+	}
+	if !lower {
+		t.Fatal("PillReset changed no pixels below the pill midline; second line missing")
+	}
+}
+
+// A runaway reset string is elided inside the percent slot: the pill width is
+// fixed, so overflow would paint over the next agent's ring.
+func TestPillResetStaysInSlot(t *testing.T) {
+	items := []Item{
+		{ID: "codex", State: quota.OK, Used: 42, Detail: "5h 42%"},
+		{ID: "claude", State: quota.OK, Used: 10, Detail: "5h 10%"},
+	}
+	with := []Item{items[0], items[1]}
+	with[0].PillReset = "9999h99m far too long to show"
+	a := Render(View{Items: items})
+	b := Render(View{Items: with})
+	slotEnd := pad + cell + pctGap + PctWidth
+	for y := 0; y < a.Bounds().Dy(); y++ {
+		for x := slotEnd; x < a.Bounds().Dx(); x++ {
+			i := a.PixOffset(x, y)
+			if !bytes.Equal(a.Pix[i:i+4], b.Pix[i:i+4]) {
+				t.Fatalf("PillReset painted past its slot at (%d,%d)", x, y)
+			}
+		}
 	}
 }

@@ -25,8 +25,8 @@ type Item struct {
 	// toggled countdown/clock — so Render stays deterministic and never calls
 	// time.Now; empty strings mean this row has no 5h-window reset to show.
 	Reset string
-	// PillReset is not drawn yet: Render consumes it when the pill grows its
-	// second line, so it is carried here already toggled for that change.
+	// PillReset draws as the pill's second line under the percent; empty keeps
+	// the single centred line.
 	PillReset string
 }
 
@@ -65,6 +65,9 @@ var (
 	percentFont = text.Style{Size: 10.5, Weight: 600}
 	titleFont   = text.Style{Size: 12.5, Weight: 600}
 	detailFont  = text.Style{Size: 11.5, Weight: 400}
+	// The pill's second line reads as a footnote under the percent: smaller
+	// and medium weight so it stays legible at 9 px without competing.
+	resetFont = text.Style{Size: 9, Weight: 500}
 )
 
 func PillSize(n, pctW int) (int, int) {
@@ -234,10 +237,23 @@ func Render(v View) *image.RGBA {
 		if it.State != quota.OK {
 			col = dimInk
 		}
-		draw(x+cell+pctGap, py+12, value, numberFont, col)
+		// A PillReset grows a second line: the percent rides ~7 px higher so
+		// the pair stays centred inside the fixed 40 px pill, with the reset
+		// underneath in the footnote style. No reset keeps the single centred
+		// line byte-identical to before.
+		numY, pctY := py+12, py+13
+		if it.PillReset != "" {
+			numY, pctY = py+5, py+6
+		}
+		draw(x+cell+pctGap, numY, value, numberFont, col)
 		if hasPct {
 			vx := float32(g.px(x+cell+pctGap)) + text.Measure(value, styled(numberFont))
-			text.Draw(c.Img, vx, float32(g.px(py+13)), "%", styled(percentFont), mutedInk)
+			text.Draw(c.Img, vx, float32(g.px(pctY)), "%", styled(percentFont), mutedInk)
+		}
+		if it.PillReset != "" {
+			// Elide inside the percent slot: PillSize fixes the pill width, so
+			// a longer string would bleed over the next agent's ring.
+			draw(x+cell+pctGap, py+21, text.Elide(it.PillReset, resetFont, float32(PctWidth)), resetFont, mutedInk)
 		}
 		x += cell + pctGap + PctWidth + gap
 	}
