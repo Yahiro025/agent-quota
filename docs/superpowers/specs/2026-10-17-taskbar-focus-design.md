@@ -1,6 +1,6 @@
 # Taskbar Focus design
 
-Status: Focus selected by the user on 2026-10-17; written specification awaiting review.
+Status: Focus selected and written specification approved by the user on 2026-10-17.
 
 ## Intent and selected reference
 

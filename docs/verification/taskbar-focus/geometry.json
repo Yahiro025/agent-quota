@@ -1,0 +1,272 @@
+﻿{
+  "WorkArea": {
+    "Left": 0,
+    "Top": 0,
+    "Right": 1920,
+    "Bottom": 1150
+  },
+  "Taskbar": {
+    "Left": 0,
+    "Top": 1150,
+    "Right": 1920,
+    "Bottom": 1200
+  },
+  "Edge": 3,
+  "AutoHide": false,
+  "Tree": {
+    "Class": "Shell_TrayWnd",
+    "Rect": {
+      "Left": 0,
+      "Top": 1150,
+      "Right": 1920,
+      "Bottom": 1200
+    },
+    "Visible": true,
+    "Children": [
+      {
+        "Class": "Start",
+        "Rect": {
+          "Left": 0,
+          "Top": 1150,
+          "Right": 60,
+          "Bottom": 1200
+        },
+        "Visible": true
+      },
+      {
+        "Class": "TrayDummySearchControl",
+        "Rect": {
+          "Left": 0,
+          "Top": 1150,
+          "Right": 0,
+          "Bottom": 1150
+        },
+        "Visible": false,
+        "Children": [
+          {
+            "Class": "DynamicContent1",
+            "Rect": {
+              "Left": -100,
+              "Top": 1150,
+              "Right": 0,
+              "Bottom": 1150
+            },
+            "Visible": false
+          },
+          {
+            "Class": "Button",
+            "Rect": {
+              "Left": 0,
+              "Top": 1150,
+              "Right": 0,
+              "Bottom": 1150
+            },
+            "Visible": false
+          },
+          {
+            "Class": "Static",
+            "Rect": {
+              "Left": 50,
+              "Top": 1138,
+              "Right": 50,
+              "Bottom": 1163
+            },
+            "Visible": false
+          },
+          {
+            "Class": "ToolbarWindow32",
+            "Rect": {
+              "Left": 0,
+              "Top": 1150,
+              "Right": 0,
+              "Bottom": 1150
+            },
+            "Visible": false
+          }
+        ]
+      },
+      {
+        "Class": "TrayButton",
+        "Rect": {
+          "Left": 60,
+          "Top": 1150,
+          "Right": 120,
+          "Bottom": 1200
+        },
+        "Visible": true
+      },
+      {
+        "Class": "ReBarWindow32",
+        "Rect": {
+          "Left": 118,
+          "Top": 1150,
+          "Right": 1545,
+          "Bottom": 1200
+        },
+        "Visible": true,
+        "Children": [
+          {
+            "Class": "MSTaskSwWClass",
+            "Rect": {
+              "Left": 120,
+              "Top": 1150,
+              "Right": 1545,
+              "Bottom": 1200
+            },
+            "Visible": true,
+            "Children": [
+              {
+                "Class": "MSTaskListWClass",
+                "Rect": {
+                  "Left": 120,
+                  "Top": 1150,
+                  "Right": 1545,
+                  "Bottom": 1200
+                },
+                "Visible": true
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Class": "DynamicContent2",
+        "Rect": {
+          "Left": 1415,
+          "Top": 1150,
+          "Right": 1535,
+          "Bottom": 1200
+        },
+        "Visible": false
+      },
+      {
+        "Class": "TrayNotifyWnd",
+        "Rect": {
+          "Left": 1545,
+          "Top": 1150,
+          "Right": 1920,
+          "Bottom": 1200
+        },
+        "Visible": true,
+        "Children": [
+          {
+            "Class": "Button",
+            "Rect": {
+              "Left": 1545,
+              "Top": 1150,
+              "Right": 1575,
+              "Bottom": 1200
+            },
+            "Visible": true,
+            "Children": [
+              {
+                "Class": "Button",
+                "Rect": {
+                  "Left": 1545,
+                  "Top": 1150,
+                  "Right": 1545,
+                  "Bottom": 1150
+                },
+                "Visible": false
+              }
+            ]
+          },
+          {
+            "Class": "ToolbarWindow32",
+            "Rect": {
+              "Left": 1575,
+              "Top": 1150,
+              "Right": 1575,
+              "Bottom": 1150
+            },
+            "Visible": true
+          },
+          {
+            "Class": "SysPager",
+            "Rect": {
+              "Left": 1575,
+              "Top": 1150,
+              "Right": 1725,
+              "Bottom": 1200
+            },
+            "Visible": true,
+            "Children": [
+              {
+                "Class": "ToolbarWindow32",
+                "Rect": {
+                  "Left": 1575,
+                  "Top": 1150,
+                  "Right": 1725,
+                  "Bottom": 1200
+                },
+                "Visible": true
+              }
+            ]
+          },
+          {
+            "Class": "TrayInputIndicatorWClass",
+            "Rect": {
+              "Left": 1725,
+              "Top": 1150,
+              "Right": 1770,
+              "Bottom": 1200
+            },
+            "Visible": true,
+            "Children": [
+              {
+                "Class": "IMEModeButton",
+                "Rect": {
+                  "Left": 1725,
+                  "Top": 1150,
+                  "Right": 1725,
+                  "Bottom": 1200
+                },
+                "Visible": true
+              },
+              {
+                "Class": "InputIndicatorButton",
+                "Rect": {
+                  "Left": 1725,
+                  "Top": 1150,
+                  "Right": 1770,
+                  "Bottom": 1200
+                },
+                "Visible": true
+              }
+            ]
+          },
+          {
+            "Class": "TrayClockWClass",
+            "Rect": {
+              "Left": 1770,
+              "Top": 1150,
+              "Right": 1854,
+              "Bottom": 1200
+            },
+            "Visible": true
+          },
+          {
+            "Class": "TrayButton",
+            "Rect": {
+              "Left": 1854,
+              "Top": 1150,
+              "Right": 1914,
+              "Bottom": 1200
+            },
+            "Visible": true
+          },
+          {
+            "Class": "TrayShowDesktopButtonWClass",
+            "Rect": {
+              "Left": 1914,
+              "Top": 1150,
+              "Right": 1920,
+              "Bottom": 1200
+            },
+            "Visible": true
+          }
+        ]
+      }
+    ]
+  }
+}
