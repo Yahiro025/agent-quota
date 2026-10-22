@@ -72,27 +72,6 @@
         "skipTaskbar": true,
         "shadow": false,
         "visible": false
-      },
-      {
-        "label": "dock",
-        "title": "Bloom Dock",
-        "url": "dock.html",
-        "width": 1920,
-        "height": 600,
-        "x": 0,
-        "y": 480,
-        "decorations": false,
-        "transparent": true,
-        "resizable": false,
-        "maximizable": false,
-        "minimizable": false,
-        "closable": false,
-        "alwaysOnTop": true,
-        "visibleOnAllWorkspaces": true,
-        "focus": false,
-        "skipTaskbar": true,
-        "shadow": false,
-        "visible": false
       }
     ],
     "security": {

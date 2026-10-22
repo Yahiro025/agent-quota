@@ -20,6 +20,12 @@ pub fn notch_startup_plan() -> StartupPlan {
     }
 }
 
+/// The dock window is no longer declared in `tauri.conf.json`, so every
+/// `get_webview_window("dock")` returns `None` and the dock-only paths skip.
+pub fn dock_window_configured() -> bool {
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -31,5 +37,10 @@ mod tests {
         assert!(!plan.register_dock_appbar);
         assert!(!plan.start_watchdog);
         assert!(!plan.open_dock_window);
+    }
+
+    #[test]
+    fn dock_window_is_not_configured() {
+        assert!(!dock_window_configured());
     }
 }

@@ -294,7 +294,7 @@ fn main() {
             });
 
             if plan.open_dock_window {
-                let dock_win = app.get_webview_window("dock").unwrap();
+                if let Some(dock_win) = app.get_webview_window("dock") {
                 // Same for the dock window, which has a region too.
                 let _ = dock_win.set_ignore_cursor_events(true);
                 if let Ok(hwnd) = dock_win.hwnd() {
@@ -338,6 +338,7 @@ fn main() {
                     }
                     _ => {}
                 });
+                }
             }
 
             sync_overlays(app.handle());
