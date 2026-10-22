@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { band, parseSnapshot, urgent, type QuotaAgent } from "./protocol";
 import { alertRows, quotaView } from "./quotaView";
+import { DEFAULT_PANEL, defaultPanel, overviewRows } from "./OverviewPanel";
 
 const SNAPSHOT =
 	'{"v":1,"op":"snapshot","readings":[' +
@@ -148,6 +149,28 @@ describe("quotaView", () => {
 		expect(row.reset?.clock).toBe(clock);
 		expect(row.details[0].reset?.countdown).toBe("1h 30m");
 		expect(row.details[0].reset?.clock).toBe(clock);
+	});
+});
+
+describe("overviewRows", () => {
+	test("overview_lists_only_live_activities", () => {
+		expect(
+			overviewRows({ music: false, timer: false, shelfCount: 0, urgent: false })
+		).toEqual([]);
+		expect(
+			overviewRows({ music: true, timer: false, shelfCount: 0, urgent: false })
+		).toEqual(["Music"]);
+		expect(
+			overviewRows({ music: false, timer: true, shelfCount: 2, urgent: true })
+		).toEqual(["Timer", "Shelf", "Quota"]);
+		expect(
+			overviewRows({ music: true, timer: true, shelfCount: 1, urgent: true })
+		).toEqual(["Music", "Timer", "Shelf", "Quota"]);
+	});
+
+	test("overview_is_not_the_default_panel", () => {
+		expect(defaultPanel()).toBe(DEFAULT_PANEL);
+		expect(DEFAULT_PANEL).not.toBe("overview");
 	});
 });
 

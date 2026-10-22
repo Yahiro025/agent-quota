@@ -42,6 +42,7 @@ import { QuotaAlert } from "./quota/QuotaAlert";
 import { parseSnapshot, urgent, type QuotaAgent } from "./quota/protocol";
 import { alertRows, quotaView } from "./quota/quotaView";
 import { reduceAttention } from "./quota/attention";
+import { DEFAULT_PANEL, OverviewPanel, overviewRows } from "./quota/OverviewPanel";
 import { BluetoothPanel } from "./components/BluetoothPanel";
 import {
 	Cpu,
@@ -71,8 +72,8 @@ import {
  *   Dragging files onto the notch also opens the shelf. Wheel/swipe switches
  *   between tool panels, including when a live activity occupies the pill.
  */
-type NotchPanel = "calendar" | "command-center" | "quotas";
-const NOTCH_PANELS: readonly NotchPanel[] = ["calendar", "command-center", "quotas"];
+type NotchPanel = "calendar" | "command-center" | "quotas" | "overview";
+const NOTCH_PANELS: readonly NotchPanel[] = ["calendar", "command-center", "quotas", "overview"];
 const asNotchPanel = (value: unknown): NotchPanel | null =>
 	NOTCH_PANELS.includes(value as NotchPanel) ? (value as NotchPanel) : null;
 
@@ -443,7 +444,8 @@ type BloomMode =
 	| "shelf"
 	| "wifi"
 	| "bluetooth"
-	| "quotas";
+	| "quotas"
+	| "overview";
 
 // The shelf is a short-lived stash: one row, newest first, oldest evicted.
 const SHELF_MAX_ITEMS = 10;
@@ -943,7 +945,7 @@ function App() {
 	const rememberPanelEnabledRef = useRef(rememberPanelEnabled);
 	rememberPanelEnabledRef.current = rememberPanelEnabled;
 	const [defaultPanel, setDefaultPanel] = useState<NotchPanel>(() =>
-		asNotchPanel(localStorage.getItem("bloom-notch-default-panel")) ?? "calendar"
+		asNotchPanel(localStorage.getItem("bloom-notch-default-panel")) ?? DEFAULT_PANEL
 	);
 	// The panel the open notch was last left on. Opening the notch returns to it,
 	// across restarts too (bloom-notch-last-panel).
@@ -1008,7 +1010,7 @@ function App() {
 				setRememberPanelEnabled(
 					(getVal("bloom-notch-remember-panel") ?? getVal("bloom-notch-click-to-open", "true")) !== "false"
 				);
-				setDefaultPanel(asNotchPanel(getVal("bloom-notch-default-panel")) ?? "calendar");
+				setDefaultPanel(asNotchPanel(getVal("bloom-notch-default-panel")) ?? DEFAULT_PANEL);
 				setShelfPersist(getVal("bloom-shelf-persist", "false") === "true");
 				setSettingsMusicCompactNotch(getVal("bloom-music-compact-notch", "true") !== "false");
 				setLastPanel(asNotchPanel(getVal("bloom-notch-last-panel")));
@@ -1519,7 +1521,8 @@ function App() {
 			prev === "shelf" ||
 			prev === "wifi" ||
 			prev === "bluetooth" ||
-			prev === "quotas"
+			prev === "quotas" ||
+			prev === "overview"
 				? restingModeRef.current
 				: prev
 		);
@@ -2893,7 +2896,7 @@ function App() {
 		if (isCalendarMode) return 480;
 		if (bloomMode === "shelf") return 380;
 		if (bloomMode === "command-center" && isOpen) return 350;
-		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "quotas") return 350;
+		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "quotas" || bloomMode === "overview") return 350;
 		if (showMusicOnStatusHover) {
 			return 170 + (settingsVisualizerEnabled ? 30 : 0);
 		}
@@ -2931,7 +2934,7 @@ function App() {
 			return shelfOverflowing ? 190 : 176;
 		}
 		if (bloomMode === "command-center") return isOpen ? 230 : 36;
-		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "quotas") return 300;
+		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "quotas" || bloomMode === "overview") return 300;
 		if (bloomMode === "status") return 36;
 		if (isMusicMode && isOpen) {
 			const hasProgressBar = (mediaInfo.duration_ms ?? 0) > 0;
@@ -3707,6 +3710,39 @@ function App() {
 											transition={{ type: "spring", stiffness: 400, damping: 30 }}
 										>
 											<QuotaPanel readings={quotaReadings} />
+										</motion.div>
+									)}
+								</AnimatePresence>
+
+								{/* Overview panel: the live activities, cycled like the other notch panels */}
+								<AnimatePresence>
+									{bloomMode === "overview" && (
+										<motion.div
+											key="overview-view"
+											initial={{ opacity: 0 }}
+											animate={{ opacity: 1 }}
+											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
+											transition={{ type: "spring", stiffness: 400, damping: 30 }}
+										>
+											<OverviewPanel
+												rows={overviewRows({
+													music: settingsMusicModeEnabled && mediaInfo.has_media,
+													timer: timerActive,
+													shelfCount: shelfItems.length,
+													urgent: quotaReadings.some(urgent)
+												})}
+												onOpen={(row) =>
+													openNotch(
+														row === "Music"
+															? "music"
+															: row === "Timer"
+																? "calendar"
+																: row === "Shelf"
+																	? "shelf"
+																	: "quotas"
+													)
+												}
+											/>
 										</motion.div>
 									)}
 								</AnimatePresence>
