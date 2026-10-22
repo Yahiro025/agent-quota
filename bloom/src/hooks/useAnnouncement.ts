@@ -70,13 +70,20 @@ function fetchAnnouncement(): Promise<Announcement | null> {
  * dismissed. Dismissal is stored as the `bloom-announcement-dismissed` setting
  * so every window hides the same announcement.
  */
-export function useAnnouncement() {
+// Announcements are disabled in this build; the hook and its call sites
+// stay, so re-enabling is a one-line change here and in excluded.rs.
+export function showAnnouncements(): boolean {
+	return false;
+}
+
+export function useAnnouncement(enabled: boolean) {
 	const [announcement, setAnnouncement] = useState<Announcement | null>(() => readCached());
 	const [dismissed, setDismissed] = useState(
 		() => readCached()?.id === localStorage.getItem(DISMISSED_KEY)
 	);
 
 	useEffect(() => {
+		if (!enabled) return;
 		let disposed = false;
 
 		const refresh = () => {
@@ -102,7 +109,7 @@ export function useAnnouncement() {
 			disposed = true;
 			clearInterval(timer);
 		};
-	}, []);
+	}, [enabled]);
 
 	// Dismissal from any window (notch close button or settings banner).
 	useSettingsSync({
@@ -123,5 +130,6 @@ export function useAnnouncement() {
 		setDismissed(announcement?.id === localStorage.getItem(DISMISSED_KEY));
 	}, [announcement]);
 
+	if (!enabled) return { announcement: null, dismissed: true, dismiss: () => {} };
 	return { announcement, dismissed, dismiss };
 }

@@ -28,7 +28,7 @@ import { CompactMediaPlayer } from "./CompactMediaPlayer";
 import { useWeather } from "./hooks/useWeather";
 import { useSettingsSync } from "./hooks/useSettingsSync";
 import { useTrailingThrottle } from "./hooks/useTrailingThrottle";
-import { useAnnouncement } from "./hooks/useAnnouncement";
+import { useAnnouncement, showAnnouncements } from "./hooks/useAnnouncement";
 import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -688,7 +688,7 @@ function App() {
 		announcement,
 		dismissed: announcementDismissed,
 		dismiss: dismissAnnouncement
-	} = useAnnouncement();
+	} = useAnnouncement(showAnnouncements());
 	const announcementShownRef = useRef<string | null>(null);
 	const announcementOpen = !!announcement && !announcementDismissed;
 	const announcementOpenRef = useRef(false);

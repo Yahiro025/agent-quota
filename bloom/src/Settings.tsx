@@ -15,7 +15,7 @@ import {
 	AboutTab
 } from "./settings/index";
 import type { SettingsTab } from "./settings/index";
-import { useAnnouncement } from "./hooks/useAnnouncement";
+import { useAnnouncement, showAnnouncements } from "./hooks/useAnnouncement";
 import { initTheme } from "./theme";
 import "./Settings.css";
 
@@ -33,7 +33,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Settings }[] = [
 function SettingsApp() {
 	const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 	const settings = useSettings();
-	const { announcement, dismissed, dismiss } = useAnnouncement();
+	const { announcement, dismissed, dismiss } = useAnnouncement(showAnnouncements());
 
 	useEffect(() => {
 		return initTheme();

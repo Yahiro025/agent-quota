@@ -6,6 +6,7 @@ mod commands;
 mod diagnostics;
 mod dock_extras;
 mod dock_lifecycle;
+mod excluded;
 mod fullscreen;
 mod quota_helper;
 mod services;
@@ -239,10 +240,10 @@ fn main() {
             // dock-only setup below.
             let plan = crate::dock_lifecycle::notch_startup_plan();
 
-            // Update check on startup (non-blocking). Always runs so the UI can
-            // show an update badge; auto-install only happens when the user
-            // enabled it and the release has aged past the rollout gate.
-            {
+            // Update check on startup (non-blocking). Runs only when the
+            // excluded.rs switch is on; auto-install only happens when the
+            // user enabled it and the release has aged past the rollout gate.
+            if excluded::run_update_check_on_startup() {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     updater::run_startup_check(app_handle).await;
