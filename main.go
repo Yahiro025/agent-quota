@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -165,6 +166,7 @@ func shot(dir string) int {
 
 func main() {
 	printFlag := flag.Bool("print", false, "read each agent once and print results")
+	quotaServiceFlag := flag.Bool("quota-service", false, "serve quota snapshots as JSON lines on stdin/stdout")
 	shotDir := flag.String("shot", "", "write pill/panel PNGs to DIR")
 	statuslineFlag := flag.Bool("claude-statusline", false, "receive Claude Code statusLine input")
 	installClaudeFeedFlag := flag.Bool("install-claude-feed", false, "connect Claude Code statusLine to Agent Quota")
@@ -190,6 +192,14 @@ func main() {
 	if *shotDir != "" {
 		os.Exit(shot(*shotDir))
 	}
+	// The service speaks on stdin/stdout: no window, no detach, no
+	// Local\AgentQuotaRunning mutex, so it can run beside the native widget.
+	if *quotaServiceFlag {
+		if err := runQuotaService(os.Stdin, os.Stdout); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	// Window mode never blocks the launching terminal: re-enter detached and
 	// let this copy exit at once. --print and --shot return earlier instead.
 	if os.Getenv("AGENTQUOTA_DETACHED") == "" {
@@ -209,6 +219,53 @@ func main() {
 		return
 	}
 	runWindow()
+}
+
+// quotaServiceSelected reports whether args carries the exact --quota-service
+// token. It scans instead of calling flag.Parse so tests can check selection
+// without touching the process FlagSet.
+func quotaServiceSelected(args []string) bool {
+	for _, a := range args {
+		if a == "--quota-service" {
+			return true
+		}
+	}
+	return false
+}
+
+// runQuotaService is the headless session: every agent reads on the 30-second
+// tick, and each finished read pushes one snapshot line on w through
+// s.OnChanged. NewPoller fixes the changed callback before a Service can
+// exist, so the closure guards the nil and s is assigned before any Refresh
+// can run it. Serve returns on shutdown or when the parent's input ends; the
+// ticker stops with it.
+func runQuotaService(r io.Reader, w io.Writer) error {
+	var s *quota.Service
+	p := quota.SystemPoller(func(string) bool { return true }, func() {
+		if s != nil {
+			s.OnChanged()
+		}
+	})
+	s = quota.NewService(p)
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(quota.Tick)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				p.Refresh(false)
+			case <-done:
+				return
+			}
+		}
+	}()
+	err := quota.Serve(r, w, s)
+	close(done)
+	if err != nil {
+		core.Logf("quota service: %v", err)
+	}
+	return err
 }
 
 // detachSelf re-runs this binary without a console and exits this copy.

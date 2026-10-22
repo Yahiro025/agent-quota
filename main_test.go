@@ -343,3 +343,14 @@ func TestBuildViewKeepsOtherWindowResetTail(t *testing.T) {
 		t.Fatal("PillReset is empty")
 	}
 }
+
+// Selection is pure: it scans args for the exact token and never calls
+// runQuotaService, which would read real agents.
+func TestQuotaServiceFlagIsSelectedWithoutAWindow(t *testing.T) {
+	if !quotaServiceSelected([]string{"agentquota", "--quota-service"}) {
+		t.Fatal("flag not selected")
+	}
+	if quotaServiceSelected([]string{"agentquota", "--print"}) {
+		t.Fatal("print selected the service")
+	}
+}
