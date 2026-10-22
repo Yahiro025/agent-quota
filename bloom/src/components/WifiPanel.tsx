@@ -55,9 +55,17 @@ interface WifiPanelProps {
 	onBack: () => void;
 	/** Keeps the notch open while a password is being typed. */
 	onPinChange: (pinned: boolean) => void;
+	/** Reports a user-initiated connect attempt so alerts can wait for it. */
+	onConnectingChange: (connecting: boolean) => void;
 }
 
-export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelProps) {
+export function WifiPanel({
+	enabled,
+	onToggle,
+	onBack,
+	onPinChange,
+	onConnectingChange
+}: WifiPanelProps) {
 	const [list, setList] = useState<WifiNetworkList | null>(null);
 	const [scanning, setScanning] = useState(false);
 	const [selected, setSelected] = useState<string | null>(null);
@@ -111,8 +119,9 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 			if (scanFallback.current !== null) window.clearTimeout(scanFallback.current);
 			unlisten.then((f) => f());
 			onPinChange(false);
+			onConnectingChange(false);
 		};
-	}, [refresh, onPinChange]);
+	}, [refresh, onPinChange, onConnectingChange]);
 
 	const collapse = () => {
 		setSelected(null);
@@ -134,6 +143,7 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 	const connect = async (network: WifiNetwork, withPassword: boolean) => {
 		setBusy(network.ssid);
 		setError(null);
+		onConnectingChange(true);
 		try {
 			await invoke("wifi_connect", {
 				ssid: network.ssid,
@@ -148,6 +158,7 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 			setError({ ssid: network.ssid, text: ERROR_TEXT[code] ?? code });
 		} finally {
 			setBusy(null);
+			onConnectingChange(false);
 			void refresh();
 		}
 	};

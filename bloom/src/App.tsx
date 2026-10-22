@@ -1975,11 +1975,14 @@ function App() {
 	});
 	// Gesture bookkeeping for the controller. A Wi-Fi password field reports
 	// focus through the WifiPanel pin callback, a Bluetooth pairing session
-	// through the BluetoothPanel one; Wi-Fi auto-connect after enabling the
-	// radio is the only connection attempt visible up here.
+	// through the BluetoothPanel one; the Wi-Fi toggle's auto-connect and a
+	// manual connect in the panel report separately so neither attempt ends
+	// the other's gesture.
 	const [wifiTyping, setWifiTyping] = useState(false);
 	const [btPairing, setBtPairing] = useState(false);
 	const [wifiConnecting, setWifiConnecting] = useState(false);
+	const [wifiPanelConnecting, setWifiPanelConnecting] = useState(false);
+	const wifiConnectCapRef = useRef<number | null>(null);
 	useEffect(() => {
 		dispatchAttention({ type: "open-panel", panel: bloomMode });
 	}, [bloomMode]);
@@ -2023,7 +2026,10 @@ function App() {
 	// still connecting does not free alerts early.
 	const typingActive = isEditingTimer || wifiTyping;
 	const dragActive = isDragHovering || shelfDragOut;
-	const anyGesture = typingActive || dragActive || btPairing || wifiConnecting;
+	// Auto-connect on toggle and a manual connect in the panel are separate
+	// attempts; the gesture holds until both are done.
+	const connectingActive = wifiConnecting || wifiPanelConnecting;
+	const anyGesture = typingActive || dragActive || btPairing || connectingActive;
 	const prevGesturesRef = useRef({
 		typing: false,
 		drag: false,
@@ -2036,22 +2042,30 @@ function App() {
 		if (typingActive && !prev.typing) dispatchAttention({ type: "typing" });
 		if (dragActive && !prev.drag) dispatchAttention({ type: "dragging" });
 		if (btPairing && !prev.pairing) dispatchAttention({ type: "pairing" });
-		if (wifiConnecting && !prev.connecting) dispatchAttention({ type: "connecting" });
+		if (connectingActive && !prev.connecting) dispatchAttention({ type: "connecting" });
 		if (prev.any && !anyGesture) dispatchAttention({ type: "clear-defer" });
 		prevGesturesRef.current = {
 			typing: typingActive,
 			drag: dragActive,
 			pairing: btPairing,
-			connecting: wifiConnecting,
+			connecting: connectingActive,
 			any: anyGesture
 		};
-	}, [typingActive, dragActive, btPairing, wifiConnecting, anyGesture]);
+	}, [typingActive, dragActive, btPairing, connectingActive, anyGesture]);
 
 	// A finished connection attempt ends the gesture; the 15 s cap in
 	// toggleWifi covers attempts that never reach a connected state.
 	useEffect(() => {
 		if (wifiConnected) setWifiConnecting(false);
 	}, [wifiConnected]);
+
+	// The cap timer outlives a render, so it clears on unmount too.
+	useEffect(
+		() => () => {
+			if (wifiConnectCapRef.current !== null) window.clearTimeout(wifiConnectCapRef.current);
+		},
+		[]
+	);
 
 	const lastTrackRef = useRef<string | null>(null);
 	const lastPlayingRef = useRef<boolean>(false);
@@ -2501,10 +2515,15 @@ function App() {
 		});
 		try {
 			// Enabling the radio starts an auto-connect attempt; cap the gesture
-			// in case no network ever reaches a connected state.
+			// in case no network ever reaches a connected state. The cap lives
+			// in a ref so re-toggling replaces the older timer instead of letting
+			// it end the newer attempt early.
+			if (wifiConnectCapRef.current !== null) window.clearTimeout(wifiConnectCapRef.current);
 			setWifiConnecting(newState);
 			await invoke("set_wifi_state", { enabled: newState });
-			if (newState) setTimeout(() => setWifiConnecting(false), 15000);
+			if (newState) {
+				wifiConnectCapRef.current = window.setTimeout(() => setWifiConnecting(false), 15000);
+			}
 			// The radio and association take a moment to settle.
 			setTimeout(() => void refreshWifiStatus(), 800);
 		} catch (e) {
@@ -3616,6 +3635,7 @@ function App() {
 												onToggle={toggleWifi}
 												onBack={() => setBloomMode("command-center")}
 												onPinChange={handleWifiPinChange}
+												onConnectingChange={setWifiPanelConnecting}
 											/>
 										</motion.div>
 									)}
