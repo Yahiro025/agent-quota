@@ -7,6 +7,7 @@ mod diagnostics;
 mod dock_extras;
 mod dock_lifecycle;
 mod fullscreen;
+mod quota_helper;
 mod services;
 mod shelf;
 mod shelf_preview;
@@ -385,6 +386,10 @@ fn main() {
             diagnostics::record("services_ready", "hooks and settings watcher initialized");
             wifi::setup_wifi_notifications(app.handle().clone());
             bluetooth::setup_bluetooth_notifications(app.handle().clone());
+
+            // Quota helper supervisor: returns at once on its own thread, so
+            // setup never blocks on agentquota.exe being present.
+            quota_helper::start(app.handle());
 
             // Listen for second-instance signal to open settings
             if let Some(&h_event) = SINGLE_INSTANCE_EVENT_HANDLE.get() {
