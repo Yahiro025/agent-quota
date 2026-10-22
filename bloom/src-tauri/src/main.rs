@@ -6,6 +6,7 @@ mod commands;
 mod diagnostics;
 mod dock_extras;
 mod dock_lifecycle;
+mod fullscreen;
 mod services;
 mod shelf;
 mod shelf_preview;

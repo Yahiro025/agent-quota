@@ -1359,6 +1359,7 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
             IsZoomed, GWL_STYLE, WS_CAPTION, WS_MAXIMIZE,
         };
         let mut last_visible = true;
+        let mut last_notch_hidden = false;
         let mut last_dock_overlap: Option<bool> = None;
         let mut last_notch_overlap: Option<bool> = None;
         let mut last_dock_maximized: Option<bool> = None;
@@ -1705,6 +1706,29 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                 } else if !current_is_fs && !last_visible {
                     let _ = tx_clone.send(SystemCommand::ToggleVisibility(true));
                     last_visible = true;
+                }
+
+                // Hide the main notch itself while the foreground window owns
+                // the primary monitor (fullscreen, presentation, or a
+                // borderless app). The probe re-reads this tick's hwnd; a
+                // missing window means keep the notch. hide()/show() never
+                // move focus, and the dock is not touched.
+                let notch_hidden = if hwnd.is_invalid() {
+                    false
+                } else {
+                    crate::fullscreen::ForegroundProbe::from_hwnd(hwnd)
+                        .map(|p| crate::fullscreen::notch_hidden_for(&p))
+                        .unwrap_or(false)
+                };
+                if notch_hidden != last_notch_hidden {
+                    if let Some(main_win) = handle_visibility.get_webview_window("main") {
+                        if notch_hidden {
+                            let _ = main_win.hide();
+                        } else {
+                            let _ = main_win.show();
+                        }
+                        last_notch_hidden = notch_hidden;
+                    }
                 }
 
                 osd_sync_ticks += 1;
