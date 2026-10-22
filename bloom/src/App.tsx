@@ -2135,7 +2135,9 @@ function App() {
 	};
 
 	const rememberPanel = (panel: NotchPanel) => {
-		if (panel === lastPanel) return;
+		// Overview is an optional glance; opening the notch must keep using
+		// the last real panel, so it is never remembered.
+		if (panel === "overview" || panel === lastPanel) return;
 		setLastPanel(panel);
 		localStorage.setItem("bloom-notch-last-panel", panel);
 		invoke("save_setting", { key: "bloom-notch-last-panel", value: panel }).catch(console.error);
