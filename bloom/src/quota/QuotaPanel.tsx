@@ -96,12 +96,8 @@ export function QuotaPanel() {
 										</span>
 										{row.used !== undefined && (
 											<span
-												className="qp-row-badge"
-												style={{
-													color: BAND_COLOR[row.band ?? "green"],
-													fontSize: "13px",
-													fontWeight: 600
-												}}
+												className="qp-row-pct"
+												style={{ color: BAND_COLOR[row.band ?? "green"] }}
 											>
 												{Math.round(row.used)}%
 											</span>

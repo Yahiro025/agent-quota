@@ -212,6 +212,16 @@
 	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.45));
 }
 
+.qp-row-pct {
+	flex: none;
+	width: auto;
+	height: auto;
+	white-space: nowrap;
+	font-size: 13px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
 .qp-row-actions {
 	display: flex;
 	flex-direction: column;
