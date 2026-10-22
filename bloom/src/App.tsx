@@ -704,7 +704,6 @@ function App() {
 		if (raw === "auto-hide") return "smart";
 		return raw;
 	});
-	const [dndActive, setDndActive] = useState(false);
 	const [dockEnabled, setDockEnabled] = useState(
 		() => localStorage.getItem("bloom-dock-enabled") !== "false"
 	);
@@ -3882,12 +3881,12 @@ function App() {
 											{/* Circular Actions Row */}
 											<div className="cc-circular-actions-row">
 												<button
-													className={`cc-circular-btn ${dndActive ? "active" : ""}`}
+													className="cc-circular-btn"
 													onClick={(e) => {
 														e.stopPropagation();
-														setDndActive((prev) => !prev);
+														invoke("open_focus_assist_settings");
 													}}
-													title={`Focus / DND: ${dndActive ? "On" : "Off"}`}
+													title="Focus assist"
 												>
 													<MoonIcon />
 												</button>

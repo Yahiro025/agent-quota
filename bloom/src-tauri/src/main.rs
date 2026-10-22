@@ -190,6 +190,7 @@ fn main() {
             set_brightness,
             get_battery_saver_state,
             open_battery_saver_settings,
+            open_focus_assist_settings,
             battery::get_battery_details,
             get_system_accent_color,
             get_cpu_usage,

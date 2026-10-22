@@ -3470,6 +3470,29 @@ pub fn open_battery_saver_settings() {
     }
 }
 
+// Focus assist is a Windows setting, so Bloom only opens the quiet-hours
+// page and does not pretend to mirror its on/off state.
+pub fn focus_assist_uri() -> &'static str {
+    "ms-settings:quiethours"
+}
+
+#[tauri::command]
+pub fn open_focus_assist_settings() {
+    unsafe {
+        use windows::Win32::UI::Shell::ShellExecuteA;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let uri = std::ffi::CString::new(focus_assist_uri()).unwrap();
+        let _ = ShellExecuteA(
+            None,
+            windows::core::PCSTR(c"open".as_ptr() as *const u8),
+            windows::core::PCSTR(uri.as_ptr() as *const u8),
+            windows::core::PCSTR::null(),
+            windows::core::PCSTR::null(),
+            SW_SHOWNORMAL,
+        );
+    }
+}
+
 // --- System metrics for status widgets ---
 
 #[tauri::command]
@@ -4438,4 +4461,12 @@ pub async fn activate_tray_icon(tray_id: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || crate::tray::interact(&tray_id, false))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod focus_assist_tests {
+    #[test]
+    fn focus_assist_uri_is_quiet_hours() {
+        assert_eq!(super::focus_assist_uri(), "ms-settings:quiethours");
+    }
 }
