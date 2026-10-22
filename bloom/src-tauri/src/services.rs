@@ -3714,6 +3714,9 @@ pub fn apply_main_appbar_mode(app: &AppHandle, reserve: bool) {
 }
 
 pub fn register_dock_appbar(window: tauri::WebviewWindow) {
+    if !crate::dock_lifecycle::notch_startup_plan().open_dock_window {
+        return;
+    }
     register_dock_appbar_inner(window, 0);
 }
 

@@ -5,6 +5,7 @@ mod bluetooth;
 mod commands;
 mod diagnostics;
 mod dock_extras;
+mod dock_lifecycle;
 mod services;
 mod shelf;
 mod shelf_preview;
@@ -230,6 +231,11 @@ fn main() {
                 NATIVE_TASKBAR_HIDDEN.store(false, Ordering::Relaxed);
             }
 
+            // Notch startup never hides the taskbar, registers appbars, starts
+            // the watchdog, or opens the dock window — the plan gates the
+            // dock-only setup below.
+            let plan = crate::dock_lifecycle::notch_startup_plan();
+
             // Update check on startup (non-blocking). Always runs so the UI can
             // show an update badge; auto-install only happens when the user
             // enabled it and the release has aged past the rollout gate.
@@ -248,12 +254,6 @@ fn main() {
             // click-through bit directly. The worst a rebuild does is make the
             // window click-through until the next cursor update.
             let _ = window.set_ignore_cursor_events(true);
-            let dock_win = app.get_webview_window("dock").unwrap();
-            // Same for the dock window, which has a region too.
-            let _ = dock_win.set_ignore_cursor_events(true);
-            if let Ok(hwnd) = dock_win.hwnd() {
-                DOCK_HWND.store(hwnd.0 as isize, Ordering::Relaxed);
-            }
 
             // Sync window rects initially and on event
             let win_clone = window.clone();
@@ -265,17 +265,7 @@ fn main() {
                 }
             };
 
-            let dock_clone = dock_win.clone();
-            let update_dock_window_rect = move || {
-                if let (Ok(p), Ok(s)) = (dock_clone.outer_position(), dock_clone.outer_size()) {
-                    if let Ok(mut lock) = DOCK_WINDOW_RECT.lock() {
-                        *lock = Some((p, s));
-                    }
-                }
-            };
-
             update_main_rect();
-            update_dock_window_rect();
 
             let u_main = update_main_rect.clone();
             let handle_for_events = app.handle().clone();
@@ -303,33 +293,52 @@ fn main() {
                 _ => {}
             });
 
-            let u_dock = update_dock_window_rect.clone();
-            let dock_for_events = dock_win.clone();
-            let handle_for_dock_events = app.handle().clone();
-            dock_win.on_window_event(move |e| match e {
-                tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
-                    u_dock();
-                    sync_overlays(&handle_for_dock_events);
+            if plan.open_dock_window {
+                let dock_win = app.get_webview_window("dock").unwrap();
+                // Same for the dock window, which has a region too.
+                let _ = dock_win.set_ignore_cursor_events(true);
+                if let Ok(hwnd) = dock_win.hwnd() {
+                    DOCK_HWND.store(hwnd.0 as isize, Ordering::Relaxed);
                 }
-                tauri::WindowEvent::ScaleFactorChanged { .. } => {
-                    let h = handle_for_dock_events.clone();
-                    if DOCK_APPBAR_REGISTERED.load(Ordering::Relaxed) {
-                        let w = dock_for_events.clone();
-                        tauri::async_runtime::spawn(async move {
-                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                            register_dock_appbar(w);
-                            sync_overlays(&h);
-                        });
-                    } else {
-                        sync_overlays(&h);
+
+                let dock_clone = dock_win.clone();
+                let update_dock_window_rect = move || {
+                    if let (Ok(p), Ok(s)) = (dock_clone.outer_position(), dock_clone.outer_size()) {
+                        if let Ok(mut lock) = DOCK_WINDOW_RECT.lock() {
+                            *lock = Some((p, s));
+                        }
                     }
-                }
-                tauri::WindowEvent::CloseRequested { api, .. } => {
-                    api.prevent_close();
-                    restore_taskbar_and_exit(&handle_for_dock_events);
-                }
-                _ => {}
-            });
+                };
+                update_dock_window_rect();
+
+                let u_dock = update_dock_window_rect.clone();
+                let dock_for_events = dock_win.clone();
+                let handle_for_dock_events = app.handle().clone();
+                dock_win.on_window_event(move |e| match e {
+                    tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                        u_dock();
+                        sync_overlays(&handle_for_dock_events);
+                    }
+                    tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                        let h = handle_for_dock_events.clone();
+                        if DOCK_APPBAR_REGISTERED.load(Ordering::Relaxed) {
+                            let w = dock_for_events.clone();
+                            tauri::async_runtime::spawn(async move {
+                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                                register_dock_appbar(w);
+                                sync_overlays(&h);
+                            });
+                        } else {
+                            sync_overlays(&h);
+                        }
+                    }
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        restore_taskbar_and_exit(&handle_for_dock_events);
+                    }
+                    _ => {}
+                });
+            }
 
             sync_overlays(app.handle());
 

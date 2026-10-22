@@ -159,6 +159,9 @@ pub fn set_ignore_cursor_events(window: Window, ignore: bool) {
 
 #[tauri::command]
 pub async fn init_dock(app: AppHandle, mode: String) {
+    if !crate::dock_lifecycle::notch_startup_plan().open_dock_window {
+        return;
+    }
     // Backend guard: bail if dock is disabled in settings.
     // The frontend already checks this, but settings.json may have a stale
     // value if the write didn't complete before restart. Reading here too
