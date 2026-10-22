@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { band, parseSnapshot, urgent, type QuotaAgent } from "./protocol";
+import { quotaView } from "./quotaView";
 
 const SNAPSHOT =
 	'{"v":1,"op":"snapshot","readings":[' +
@@ -105,5 +106,47 @@ describe("urgent", () => {
 
 	test("is true at 90", () => {
 		expect(urgent(agent(90))).toBe(true);
+	});
+});
+
+describe("quotaView", () => {
+	// One fixed now keeps every countdown in these tests deterministic.
+	const NOW = new Date("2026-10-22T13:30:00Z");
+
+	test("quota_hidden_on_rest_until_urgent", () => {
+		const calm = parseSnapshot(SNAPSHOT)!;
+		expect(calm.every((r) => typeof r.used !== "number" || r.used < 90)).toBe(true);
+		expect(quotaView(calm, "status", NOW).showInRest).toBe(false);
+
+		const hot = calm.map((r) => (r.id === "claude" ? { ...r, used: 95 } : r));
+		expect(quotaView(hot, "status", NOW).showInRest).toBe(true);
+		// Already showing the quotas panel is not a rest display.
+		expect(quotaView(hot, "quotas", NOW).showInRest).toBe(false);
+	});
+
+	test("countdown_and_clock_share_one_instant", () => {
+		const readings: QuotaAgent[] = [
+			{
+				id: "claude",
+				state: "ok",
+				used: 42.5,
+				reset5h: "2026-10-22T15:00:00Z",
+				details: [
+					{ label: "5h", value: "42.5% used", resetAt: "2026-10-22T15:00:00Z" }
+				]
+			}
+		];
+		const row = quotaView(readings, "quotas", NOW).panel[0];
+		const instant = new Date("2026-10-22T15:00:00Z");
+		const clock = instant.toLocaleTimeString([], {
+			hour: "numeric",
+			minute: "2-digit"
+		});
+		// 15:00Z is 90 minutes past NOW; the row's countdown and clock are
+		// both that one reset5h instant, and the detail's both its resetAt.
+		expect(row.reset?.countdown).toBe("1h 30m");
+		expect(row.reset?.clock).toBe(clock);
+		expect(row.details[0].reset?.countdown).toBe("1h 30m");
+		expect(row.details[0].reset?.clock).toBe(clock);
 	});
 });

@@ -37,6 +37,7 @@ import type { WidgetConfig } from "./components/StatusWidgetConfig";
 import { EdgeSurface } from "./components/EdgeSurface";
 import { ShelfTypeIcon } from "./components/ShelfTypeIcon";
 import { WifiPanel } from "./components/WifiPanel";
+import { QuotaPanel } from "./quota/QuotaPanel";
 import { BluetoothPanel } from "./components/BluetoothPanel";
 import {
 	Cpu,
@@ -66,8 +67,8 @@ import {
  *   Dragging files onto the notch also opens the shelf. Wheel/swipe switches
  *   between tool panels, including when a live activity occupies the pill.
  */
-type NotchPanel = "calendar" | "command-center";
-const NOTCH_PANELS: readonly NotchPanel[] = ["calendar", "command-center"];
+type NotchPanel = "calendar" | "command-center" | "quotas";
+const NOTCH_PANELS: readonly NotchPanel[] = ["calendar", "command-center", "quotas"];
 const asNotchPanel = (value: unknown): NotchPanel | null =>
 	NOTCH_PANELS.includes(value as NotchPanel) ? (value as NotchPanel) : null;
 
@@ -437,7 +438,8 @@ type BloomMode =
 	| "status"
 	| "shelf"
 	| "wifi"
-	| "bluetooth";
+	| "bluetooth"
+	| "quotas";
 
 // The shelf is a short-lived stash: one row, newest first, oldest evicted.
 const SHELF_MAX_ITEMS = 10;
@@ -1501,7 +1503,8 @@ function App() {
 			prev === "status" ||
 			prev === "shelf" ||
 			prev === "wifi" ||
-			prev === "bluetooth"
+			prev === "bluetooth" ||
+			prev === "quotas"
 				? restingModeRef.current
 				: prev
 		);
@@ -3500,6 +3503,21 @@ function App() {
 												onBack={() => setBloomMode("command-center")}
 												onPinChange={setNotchPinned}
 											/>
+										</motion.div>
+									)}
+								</AnimatePresence>
+
+								{/* Agent Quotas panel, cycled like the other notch panels */}
+								<AnimatePresence>
+									{bloomMode === "quotas" && (
+										<motion.div
+											key="quotas-view"
+											initial={{ opacity: 0 }}
+											animate={{ opacity: 1 }}
+											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
+											transition={{ type: "spring", stiffness: 400, damping: 30 }}
+										>
+											<QuotaPanel />
 										</motion.div>
 									)}
 								</AnimatePresence>
