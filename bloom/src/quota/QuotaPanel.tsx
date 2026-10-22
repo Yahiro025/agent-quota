@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
-import { parseSnapshot, type QuotaAgent } from "./protocol";
+import type { QuotaAgent } from "./protocol";
 import { quotaView, type QuotaRow } from "./quotaView";
 import "../components/QuickPanel.css";
 
@@ -33,25 +32,13 @@ const detailText = (d: QuotaRow["details"][number], clock: boolean): string => {
 	return parts.join(" · ");
 };
 
-export function QuotaPanel() {
-	const [readings, setReadings] = useState<QuotaAgent[]>([]);
+// Readings arrive as a prop: App subscribes to quota-snapshot once so the
+// controller sees urgent agents while this panel is closed and rows do not
+// reset on each mount.
+export function QuotaPanel({ readings }: { readings: QuotaAgent[] }) {
 	const [now, setNow] = useState(() => new Date());
 	// Per-row countdown/clock toggle, in memory only; countdown is default.
 	const [clockRows, setClockRows] = useState<ReadonlySet<string>>(new Set());
-
-	useEffect(() => {
-		// The Rust event carries the readings array, not a protocol line; wrap
-		// it so parseSnapshot stays the single decoder. A payload that does
-		// not parse leaves the previous readings in place.
-		const unlisten = listen<QuotaAgent[]>("quota-snapshot", (event) => {
-			const line = JSON.stringify({ v: 1, op: "snapshot", readings: event.payload });
-			const next = parseSnapshot(line);
-			if (next !== null) setReadings(next);
-		});
-		return () => {
-			unlisten.then((f) => f());
-		};
-	}, []);
 
 	useEffect(() => {
 		const timer = window.setInterval(() => setNow(new Date()), 1000);

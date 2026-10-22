@@ -1,5 +1,5 @@
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
-import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, memo } from "react";
+import { useEffect, useLayoutEffect, useReducer, useState, useCallback, useMemo, useRef, memo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -38,6 +38,8 @@ import { EdgeSurface } from "./components/EdgeSurface";
 import { ShelfTypeIcon } from "./components/ShelfTypeIcon";
 import { WifiPanel } from "./components/WifiPanel";
 import { QuotaPanel } from "./quota/QuotaPanel";
+import { parseSnapshot, urgent, type QuotaAgent } from "./quota/protocol";
+import { reduceAttention } from "./quota/attention";
 import { BluetoothPanel } from "./components/BluetoothPanel";
 import {
 	Cpu,
@@ -1933,14 +1935,69 @@ function App() {
 		};
 	}, [isTimerRunning, timerSeconds === 0]);
 
-	// Completion moment: chime once and reveal the notch in peek mode.
+	// Completion moment: chime once. The alert itself is dispatched through
+	// the attention controller below, which owns the peek.
 	useEffect(() => {
 		if (isTimerFinished && !prevTimerFinishedRef.current) {
 			if (settingsTimerSoundEnabled) playTimerChime();
-			if (notchMode === "peek") triggerEventPeek(6000);
 		}
 		prevTimerFinishedRef.current = isTimerFinished;
-	}, [isTimerFinished, settingsTimerSoundEnabled, notchMode, triggerEventPeek]);
+	}, [isTimerFinished, settingsTimerSoundEnabled]);
+
+	// Quota readings live at App level so the controller sees urgent agents
+	// while the panel is closed and the rows survive panel remounts. The
+	// event carries the readings array, not a protocol line; wrap it so
+	// parseSnapshot stays the single decoder.
+	const [quotaReadings, setQuotaReadings] = useState<QuotaAgent[]>([]);
+	useEffect(() => {
+		const unlisten = listen<QuotaAgent[]>("quota-snapshot", (event) => {
+			const line = JSON.stringify({ v: 1, op: "snapshot", readings: event.payload });
+			const next = parseSnapshot(line);
+			if (next !== null) setQuotaReadings(next);
+		});
+		return () => {
+			unlisten.then((f) => f());
+		};
+	}, []);
+
+	// One visibility controller: the open panel is only ever moved by the
+	// user, alerts record themselves beside it, and a deferred gesture
+	// swallows an alert whole.
+	const [attention, dispatchAttention] = useReducer(reduceAttention, {
+		panel: "status",
+		alert: null,
+		deferred: false
+	});
+	useEffect(() => {
+		dispatchAttention({ type: "open-panel", panel: bloomMode });
+	}, [bloomMode]);
+
+	// Timer completion and an urgent quota reading are both alerts. The
+	// wanted id is computed, not edged per source, so when the newer one
+	// ends an older live condition comes back on its own.
+	const attentionAlertId = isTimerFinished
+		? "timer"
+		: quotaReadings.some(urgent)
+			? "quota"
+			: null;
+	const prevAttentionAlertRef = useRef<string | null>(null);
+	useEffect(() => {
+		if (attentionAlertId === prevAttentionAlertRef.current) return;
+		if (prevAttentionAlertRef.current !== null) {
+			dispatchAttention({ type: "alert-finished" });
+		}
+		if (attentionAlertId !== null) {
+			dispatchAttention({ type: "alert", id: attentionAlertId });
+		}
+		prevAttentionAlertRef.current = attentionAlertId;
+	}, [attentionAlertId]);
+
+	// A recorded alert peeks the notch in peek mode. attention.alert never
+	// feeds setBloomMode, so an alert cannot move the open panel.
+	const attentionAlert = attention.alert;
+	useEffect(() => {
+		if (attentionAlert !== null && notchMode === "peek") triggerEventPeek(6000);
+	}, [attentionAlert, notchMode, triggerEventPeek]);
 
 	const lastTrackRef = useRef<string | null>(null);
 	const lastPlayingRef = useRef<boolean>(false);
@@ -3517,7 +3574,7 @@ function App() {
 											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
 											transition={{ type: "spring", stiffness: 400, damping: 30 }}
 										>
-											<QuotaPanel />
+											<QuotaPanel readings={quotaReadings} />
 										</motion.div>
 									)}
 								</AnimatePresence>
