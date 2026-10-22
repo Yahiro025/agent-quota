@@ -145,9 +145,11 @@ func (s *Service) writeLocked(e ServiceEvent) error {
 }
 
 // Serve owns the session loop: it installs w as the pipe, then per line runs
-// Handle and writes that line's events under the same lock, so a changed
-// snapshot can land before or after a reply but never inside it. It returns
-// after shutdown or when the parent's input ends.
+// Handle and writes that line's events. Handle stays outside the lock because
+// a refresh can run the changed callback — s.OnChanged, which takes s.mu — on
+// this same goroutine, so holding s.mu across it would self-deadlock. Locking
+// just the writes keeps a changed snapshot before or after a reply pair, never
+// inside it. Serve returns after shutdown or when the parent's input ends.
 func Serve(r io.Reader, w io.Writer, s *Service) error {
 	s.mu.Lock()
 	s.w = w
@@ -160,8 +162,8 @@ func Serve(r io.Reader, w io.Writer, s *Service) error {
 
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
-		s.mu.Lock()
 		events, done := s.Handle(sc.Text())
+		s.mu.Lock()
 		var werr error
 		for _, e := range events {
 			if werr = s.writeLocked(e); werr != nil {

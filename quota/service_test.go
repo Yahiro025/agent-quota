@@ -223,3 +223,65 @@ bye:
 	}
 	outW.Close()
 }
+
+func TestServeRefreshOfDisabledAgentDoesNotDeadlock(t *testing.T) {
+	var s *Service
+	var onMu sync.Mutex
+	on := true
+	p := NewPoller(
+		func(id string) Reading { return newReading(12, "ok") },
+		func(id string) bool {
+			onMu.Lock()
+			defer onMu.Unlock()
+			return on
+		},
+		func() { s.OnChanged() },
+	)
+	s = NewService(p)
+
+	reqR, reqW := io.Pipe()
+	outR, outW := io.Pipe()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- Serve(reqR, outW, s) }()
+
+	lines := make(chan string, 32)
+	go func() {
+		sc := bufio.NewScanner(outR)
+		for sc.Scan() {
+			lines <- sc.Text()
+		}
+	}()
+
+	if _, err := io.WriteString(reqW, "{\"v\":1,\"op\":\"refresh\",\"id\":\"claude\"}\n"); err != nil {
+		t.Fatal(err)
+	}
+	// The changed snapshot only leaves after the read is stored, so claude
+	// has a real reading by the time the agent is switched off.
+	select {
+	case <-lines:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no snapshot carried claude's reading")
+	}
+	if st, _, _, ok := p.Display("claude"); !ok || st != OK {
+		t.Fatal("claude's reading was not stored")
+	}
+
+	onMu.Lock()
+	on = false
+	onMu.Unlock()
+
+	// Both lines go in one write: while Serve is deadlocked its scanner
+	// never reads again, so a later write would block this goroutine too.
+	if _, err := io.WriteString(reqW, "{\"v\":1,\"op\":\"refresh\",\"id\":\"claude\"}\n{\"v\":1,\"op\":\"shutdown\"}\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-serveErr:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Serve deadlocked refreshing an agent that is off")
+	}
+	outW.Close()
+}
