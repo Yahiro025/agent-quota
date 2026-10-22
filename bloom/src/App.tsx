@@ -1362,6 +1362,9 @@ function App() {
 	// True while our own drag-out is running, so the drag-enter we receive when
 	// it starts over the notch does not flash the hover outline or re-open it.
 	const shelfSelfDragRef = useRef(false);
+	// State mirror of shelfSelfDragRef for the attention controller's drag
+	// gesture; the ref above serves drag listeners, this drives effects.
+	const [shelfDragOut, setShelfDragOut] = useState(false);
 	const handleShelfPointerDown = (e: React.PointerEvent<HTMLDivElement>, item: ShelfItem) => {
 		if (e.button !== 0) return;
 		// Text items have no native drag-out; a click copies them.
@@ -1386,11 +1389,13 @@ function App() {
 		// auto-close fire mid-drag.
 		clearShelfCollapse();
 		shelfSelfDragRef.current = true;
+		setShelfDragOut(true);
 		const dragStartedAt = Date.now();
 		startDrag({ item: [path], icon })
 			.catch((err) => console.error("[shelf] drag out failed:", path, err))
 			.finally(() => {
 				shelfSelfDragRef.current = false;
+				setShelfDragOut(false);
 				// A drop recorded during this drag means it landed back on the
 				// notch, so the pointer is still over it. Otherwise the native
 				// drag owned the pointer and the webview never saw it leave —
@@ -1968,6 +1973,13 @@ function App() {
 		alert: null,
 		deferred: false
 	});
+	// Gesture bookkeeping for the controller. A Wi-Fi password field reports
+	// focus through the WifiPanel pin callback, a Bluetooth pairing session
+	// through the BluetoothPanel one; Wi-Fi auto-connect after enabling the
+	// radio is the only connection attempt visible up here.
+	const [wifiTyping, setWifiTyping] = useState(false);
+	const [btPairing, setBtPairing] = useState(false);
+	const [wifiConnecting, setWifiConnecting] = useState(false);
 	useEffect(() => {
 		dispatchAttention({ type: "open-panel", panel: bloomMode });
 	}, [bloomMode]);
@@ -1980,24 +1992,66 @@ function App() {
 		: quotaReadings.some(urgent)
 			? "quota"
 			: null;
-	const prevAttentionAlertRef = useRef<string | null>(null);
+	// The wanted id is compared against what the controller recorded, not a
+	// separate ref: an alert dropped while a gesture deferred it re-dispatches
+	// itself once the last gesture ends.
+	const attentionAlert = attention.alert;
+	const attentionDeferred = attention.deferred;
 	useEffect(() => {
-		if (attentionAlertId === prevAttentionAlertRef.current) return;
-		if (prevAttentionAlertRef.current !== null) {
+		if (attentionDeferred) return;
+		if (attentionAlertId === attentionAlert) return;
+		if (attentionAlert !== null) {
 			dispatchAttention({ type: "alert-finished" });
 		}
 		if (attentionAlertId !== null) {
 			dispatchAttention({ type: "alert", id: attentionAlertId });
 		}
-		prevAttentionAlertRef.current = attentionAlertId;
-	}, [attentionAlertId]);
+	}, [attentionAlertId, attentionAlert, attentionDeferred]);
 
-	// A recorded alert peeks the notch in peek mode. attention.alert never
+	// A recorded alert peeks the notch in peek mode on its own edge only, so a
+	// notch-mode switch does not re-peek a stale alert. attention.alert never
 	// feeds setBloomMode, so an alert cannot move the open panel.
-	const attentionAlert = attention.alert;
+	const prevPeekAlertRef = useRef<string | null>(null);
 	useEffect(() => {
-		if (attentionAlert !== null && notchMode === "peek") triggerEventPeek(6000);
+		const edge = attentionAlert !== null && attentionAlert !== prevPeekAlertRef.current;
+		prevPeekAlertRef.current = attentionAlert;
+		if (edge && notchMode === "peek") triggerEventPeek(6000);
 	}, [attentionAlert, notchMode, triggerEventPeek]);
+
+	// Busy gestures defer alerts. Each source owns only its rising edge; one
+	// derived flag owns the falling edge, so a drag ending while Wi-Fi is
+	// still connecting does not free alerts early.
+	const typingActive = isEditingTimer || wifiTyping;
+	const dragActive = isDragHovering || shelfDragOut;
+	const anyGesture = typingActive || dragActive || btPairing || wifiConnecting;
+	const prevGesturesRef = useRef({
+		typing: false,
+		drag: false,
+		pairing: false,
+		connecting: false,
+		any: false
+	});
+	useEffect(() => {
+		const prev = prevGesturesRef.current;
+		if (typingActive && !prev.typing) dispatchAttention({ type: "typing" });
+		if (dragActive && !prev.drag) dispatchAttention({ type: "dragging" });
+		if (btPairing && !prev.pairing) dispatchAttention({ type: "pairing" });
+		if (wifiConnecting && !prev.connecting) dispatchAttention({ type: "connecting" });
+		if (prev.any && !anyGesture) dispatchAttention({ type: "clear-defer" });
+		prevGesturesRef.current = {
+			typing: typingActive,
+			drag: dragActive,
+			pairing: btPairing,
+			connecting: wifiConnecting,
+			any: anyGesture
+		};
+	}, [typingActive, dragActive, btPairing, wifiConnecting, anyGesture]);
+
+	// A finished connection attempt ends the gesture; the 15 s cap in
+	// toggleWifi covers attempts that never reach a connected state.
+	useEffect(() => {
+		if (wifiConnected) setWifiConnecting(false);
+	}, [wifiConnected]);
 
 	const lastTrackRef = useRef<string | null>(null);
 	const lastPlayingRef = useRef<boolean>(false);
@@ -2062,6 +2116,24 @@ function App() {
 		// releaseNotchHover only touches refs and state setters.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
+
+	// The same pin signal doubles as a gesture for the attention controller:
+	// a focused Wi-Fi password field is typing, an open Bluetooth pairing
+	// request is a pairing gesture.
+	const handleWifiPinChange = useCallback(
+		(pinned: boolean) => {
+			setNotchPinned(pinned);
+			setWifiTyping(pinned);
+		},
+		[setNotchPinned]
+	);
+	const handleBluetoothPinChange = useCallback(
+		(pinned: boolean) => {
+			setNotchPinned(pinned);
+			setBtPairing(pinned);
+		},
+		[setNotchPinned]
+	);
 
 	// In peek mode, briefly show the notch when a new track starts or playback
 	// resumes. The notch itself never switches views for media; the collapsed
@@ -2428,11 +2500,16 @@ function App() {
 			ssid: newState ? (previous?.ssid ?? null) : null
 		});
 		try {
+			// Enabling the radio starts an auto-connect attempt; cap the gesture
+			// in case no network ever reaches a connected state.
+			setWifiConnecting(newState);
 			await invoke("set_wifi_state", { enabled: newState });
+			if (newState) setTimeout(() => setWifiConnecting(false), 15000);
 			// The radio and association take a moment to settle.
 			setTimeout(() => void refreshWifiStatus(), 800);
 		} catch (e) {
 			setWifiStatus(previous);
+			setWifiConnecting(false);
 			console.error("Failed to toggle WiFi:", e);
 		}
 	}, [wifiStatus, refreshWifiStatus]);
@@ -3538,7 +3615,7 @@ function App() {
 												enabled={wifiEnabled}
 												onToggle={toggleWifi}
 												onBack={() => setBloomMode("command-center")}
-												onPinChange={setNotchPinned}
+												onPinChange={handleWifiPinChange}
 											/>
 										</motion.div>
 									)}
@@ -3558,7 +3635,7 @@ function App() {
 												enabled={bluetoothEnabled}
 												onToggle={toggleBluetooth}
 												onBack={() => setBloomMode("command-center")}
-												onPinChange={setNotchPinned}
+												onPinChange={handleBluetoothPinChange}
 											/>
 										</motion.div>
 									)}

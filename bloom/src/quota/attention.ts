@@ -19,17 +19,17 @@ export type AttentionEvent =
 export function reduceAttention(prev: Attention, event: AttentionEvent): Attention {
 	switch (event.type) {
 		case "open-panel":
-			return { ...prev, panel: event.panel };
+			return event.panel === prev.panel ? prev : { ...prev, panel: event.panel };
 		case "alert":
-			return prev.deferred ? prev : { ...prev, alert: event.id };
+			return prev.deferred || event.id === prev.alert ? prev : { ...prev, alert: event.id };
 		case "alert-finished":
-			return { ...prev, alert: null };
+			return prev.alert === null ? prev : { ...prev, alert: null };
 		case "typing":
 		case "dragging":
 		case "pairing":
 		case "connecting":
-			return { ...prev, deferred: true };
+			return prev.deferred ? prev : { ...prev, deferred: true };
 		case "clear-defer":
-			return { ...prev, deferred: false };
+			return prev.deferred ? { ...prev, deferred: false } : prev;
 	}
 }

@@ -56,4 +56,34 @@ describe("reduceAttention", () => {
 			expect(reduceAttention(idle(), { type }).deferred).toBe(true);
 		}
 	});
+
+	test("two alerts during typing are dropped, then a third lands after clear-defer", () => {
+		let state = reduceAttention(idle({ panel: "calendar" }), { type: "typing" });
+		state = reduceAttention(state, { type: "alert", id: "quota" });
+		state = reduceAttention(state, { type: "alert", id: "timer" });
+		expect(state.alert).toBeNull();
+		expect(state.panel).toBe("calendar");
+		state = reduceAttention(state, { type: "clear-defer" });
+		state = reduceAttention(state, { type: "alert", id: "quota" });
+		expect(state.alert).toBe("quota");
+	});
+
+	test("no-op events return the same object", () => {
+		const openSame = idle({ panel: "status" });
+		expect(reduceAttention(openSame, { type: "open-panel", panel: "status" })).toBe(openSame);
+
+		const noAlert = idle();
+		expect(reduceAttention(noAlert, { type: "alert-finished" })).toBe(noAlert);
+
+		const deferred = idle({ deferred: true });
+		for (const type of ["typing", "dragging", "pairing", "connecting"] as const) {
+			expect(reduceAttention(deferred, { type })).toBe(deferred);
+		}
+
+		const notDeferred = idle();
+		expect(reduceAttention(notDeferred, { type: "clear-defer" })).toBe(notDeferred);
+
+		const withAlert = idle({ alert: "quota" });
+		expect(reduceAttention(withAlert, { type: "alert", id: "quota" })).toBe(withAlert);
+	});
 });
