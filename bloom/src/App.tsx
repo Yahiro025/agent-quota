@@ -38,7 +38,9 @@ import { EdgeSurface } from "./components/EdgeSurface";
 import { ShelfTypeIcon } from "./components/ShelfTypeIcon";
 import { WifiPanel } from "./components/WifiPanel";
 import { QuotaPanel } from "./quota/QuotaPanel";
+import { QuotaAlert } from "./quota/QuotaAlert";
 import { parseSnapshot, urgent, type QuotaAgent } from "./quota/protocol";
+import { alertRows, quotaView } from "./quota/quotaView";
 import { reduceAttention } from "./quota/attention";
 import { BluetoothPanel } from "./components/BluetoothPanel";
 import {
@@ -542,6 +544,9 @@ function App() {
 
 	const [eventPeek, setEventPeek] = useState(false);
 	const eventPeekTimeoutRef = useRef<any>(null);
+	// Holds a peek-mode notch open while an urgent quota alert lives; the
+	// attention controller (declared below) feeds it.
+	const [quotaAlertHold, setQuotaAlertHold] = useState(false);
 	const updatePulseTimerRef = useRef<any>(null);
 	const triggerEventPeek = useCallback((duration = 3000) => {
 		setEventPeek(true);
@@ -755,7 +760,10 @@ function App() {
 	const isHidden =
 		!startupAnimating &&
 		((notchMode === "smart" && isOverlapped && interactionState === "none") ||
-			(notchMode === "peek" && interactionState === "none" && !eventPeek));
+			(notchMode === "peek" &&
+				interactionState === "none" &&
+				!eventPeek &&
+				!quotaAlertHold));
 
 	useEffect(() => {
 		if (isAnyInteraction) {
@@ -2021,6 +2029,18 @@ function App() {
 		if (edge && notchMode === "peek") triggerEventPeek(6000);
 	}, [attentionAlert, notchMode, triggerEventPeek]);
 
+	// An urgent quota alert expands the island itself rather than moving the
+	// open panel: the strip layers over whatever the island shows, and in
+	// peek mode it holds the notch open until the reading drops below 90.
+	const quotaAlertActive =
+		attentionAlert === "quota" && quotaView(quotaReadings, bloomMode).showInRest;
+	useEffect(() => {
+		setQuotaAlertHold(quotaAlertActive);
+	}, [quotaAlertActive]);
+	// A finished timer keeps its compact-timer display and additionally
+	// widens the pill in fixed/smart modes, like the battery pulses.
+	const alertExpanded = quotaAlertActive || attentionAlert === "timer";
+
 	// Busy gestures defer alerts. Each source owns only its rising edge; one
 	// derived flag owns the falling edge, so a drag ending while Wi-Fi is
 	// still connecting does not free alerts early.
@@ -2868,7 +2888,7 @@ function App() {
 	const clock24hTrim = timeFormat24h ? 16 : 0;
 
 	// Calculate width dynamically based on enabled features
-	const getDynamicWidth = () => {
+	const getRestingWidth = () => {
 		if (bloomMode === "announcement" && announcement && !announcementDismissed) return 380;
 		if (isCalendarMode) return 480;
 		if (bloomMode === "shelf") return 380;
@@ -2893,7 +2913,7 @@ function App() {
 		return w;
 	};
 
-	const getDynamicHeight = () => {
+	const getRestingHeight = () => {
 		if (!isExpanded || !isVisible || isHidden) {
 			return isImpacted ? 28.9 : 44.2;
 		}
@@ -2922,6 +2942,21 @@ function App() {
 			return h;
 		}
 		return 36;
+	};
+
+	// Alerts grow the island around the same resting size: an urgent quota
+	// strip needs room for its rows; a finished timer pulses wider like the
+	// battery events. Never narrower than the panel underneath wanted.
+	const getDynamicWidth = () => {
+		const base = getRestingWidth();
+		if (alertExpanded) return Math.max(base, quotaAlertActive ? 300 : 200);
+		return base;
+	};
+
+	const getDynamicHeight = () => {
+		const base = getRestingHeight();
+		if (quotaAlertActive) return Math.max(base, 44 + alertRows(quotaReadings).length * 20);
+		return base;
 	};
 
 	const isCalendarMode = bloomMode === "calendar";
@@ -4199,6 +4234,31 @@ function App() {
 													</AnimatePresence>
 												</div>
 											)}
+										</motion.div>
+									)}
+								</AnimatePresence>
+
+								{/* Urgent quota strip over whatever the island shows;
+									bloomMode is untouched, so the content underneath is
+									exactly what returns when the alert clears. */}
+								<AnimatePresence>
+									{quotaAlertActive && (
+										<motion.div
+											key="quota-alert"
+											style={{ position: "absolute", inset: 0, zIndex: 4 }}
+											initial={{ opacity: 0 }}
+											animate={{ opacity: 1 }}
+											exit={{
+												opacity: 0,
+												filter: "blur(4px)",
+												transition: { duration: 0.1 }
+											}}
+											transition={{ type: "spring", stiffness: 400, damping: 30 }}
+										>
+											<QuotaAlert
+												readings={quotaReadings}
+												onOpen={() => openNotch("quotas")}
+											/>
 										</motion.div>
 									)}
 								</AnimatePresence>

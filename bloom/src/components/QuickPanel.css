@@ -360,3 +360,61 @@
 	font-variant-numeric: tabular-nums;
 	letter-spacing: 0.08em;
 }
+
+/* Urgent quota alert: a compact strip layered over the island's whole
+   surface, whatever panel or resting content is beneath it. Uses the quick
+   panels' row language; the island grows around it in App.tsx. */
+.quota-alert {
+	position: absolute;
+	inset: 0;
+	z-index: 4;
+	display: flex;
+	align-items: center;
+	padding: 4px 14px;
+	box-sizing: border-box;
+	border-radius: inherit;
+	background: var(--notch-bg, rgba(0, 0, 0, 0.8));
+	color: var(--bloom-text, white);
+	font-size: 11px;
+	cursor: pointer;
+	overflow: hidden;
+}
+
+.quota-alert-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	overflow: hidden;
+}
+
+.quota-alert-row {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	line-height: 20px;
+	white-space: nowrap;
+}
+
+.quota-alert-name {
+	font-weight: 600;
+}
+
+.quota-alert-reset {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	font-size: 9.5px;
+	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.5));
+}
+
+.quota-alert-pct {
+	margin-left: auto;
+	font-size: 13px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}

@@ -50,6 +50,12 @@ export function quotaView(
 	};
 }
 
+// The urgent subset of readings, as the same rows the panel would draw, so
+// the alert strip's name, percent and reset never disagree with the panel.
+export function alertRows(readings: QuotaAgent[], now: Date = new Date()): QuotaRow[] {
+	return readings.filter(urgent).map((reading) => toRow(reading, now));
+}
+
 const toRow = (reading: QuotaAgent, now: Date): QuotaRow => ({
 	id: reading.id,
 	state: reading.state,

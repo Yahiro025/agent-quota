@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { band, parseSnapshot, urgent, type QuotaAgent } from "./protocol";
-import { quotaView } from "./quotaView";
+import { alertRows, quotaView } from "./quotaView";
 
 const SNAPSHOT =
 	'{"v":1,"op":"snapshot","readings":[' +
@@ -148,5 +148,34 @@ describe("quotaView", () => {
 		expect(row.reset?.clock).toBe(clock);
 		expect(row.details[0].reset?.countdown).toBe("1h 30m");
 		expect(row.details[0].reset?.clock).toBe(clock);
+	});
+});
+
+describe("alertRows", () => {
+	const NOW = new Date("2026-10-22T13:30:00Z");
+
+	test("keeps only readings at or above 90, in snapshot order", () => {
+		const readings = parseSnapshot(SNAPSHOT)!;
+		const hot = readings.map((r) =>
+			r.id === "claude" ? { ...r, used: 95 } : r.id === "codex" ? { ...r, used: 91 } : r
+		);
+		const rows = alertRows(hot, NOW);
+		expect(rows.map((r) => r.id)).toEqual(["claude", "codex"]);
+	});
+
+	test("is empty when nothing is urgent", () => {
+		const readings = parseSnapshot(SNAPSHOT)!;
+		const warm = readings.map((r) => (r.id === "claude" ? { ...r, used: 89.9 } : r));
+		expect(warm.some((r) => typeof r.used === "number" && r.used >= 90)).toBe(false);
+		expect(alertRows(warm, NOW)).toHaveLength(0);
+	});
+
+	test("carries the band and reset the strip draws", () => {
+		const readings: QuotaAgent[] = [
+			{ id: "claude", state: "ok", used: 95, reset5h: "2026-10-22T15:00:00Z" }
+		];
+		const row = alertRows(readings, NOW)[0];
+		expect(row.band).toBe("red");
+		expect(row.reset?.countdown).toBe("1h 30m");
 	});
 });
