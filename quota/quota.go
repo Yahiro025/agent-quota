@@ -34,9 +34,44 @@ import (
 // instant so a weekly window's reset is never mistaken for the 5h one, which the Detail
 // text can't say apart.
 type Reading struct {
-	Used    *float64
-	Detail  string
-	Reset5h time.Time
+	Used       *float64
+	Detail     string
+	Reset5h    time.Time
+	Plan       string
+	Summary    string
+	ResetLabel string
+	Windows    []Window
+	Groups     []Group
+	Details    []Detail
+	ObservedAt time.Time
+}
+
+// Detail keeps a reported quota fact and its own reset together. ResetText
+// preserves dates that the source reports without a time or time zone.
+type Detail struct {
+	Label, Value string
+	ResetAt      time.Time
+	ResetText    string
+}
+
+func percentDetail(label string, used float64, reset *time.Time) Detail {
+	d := Detail{Label: capital(label), Value: Custom(used, 0) + "% used"}
+	if reset != nil {
+		d.ResetAt = *reset
+	}
+	return d
+}
+
+// Window and Group retain the source's quota boundaries so the inspector does
+// not have to reconstruct percentages or model groups from display strings.
+type Window struct {
+	Label string
+	Used  float64
+}
+
+type Group struct {
+	Name    string
+	Windows []Window
 }
 
 func (r Reading) OK() bool { return r.Used != nil }
@@ -333,7 +368,12 @@ func ParseKiro(output string) Reading {
 	if detail == "" {
 		detail = Custom(*used, 0) + "% used"
 	}
-	return newReading(min(max(*used, 0), 100), planText+detail+resetText)
+	r := newReading(min(max(*used, 0), 100), planText+detail+resetText)
+	r.Plan = strings.TrimSuffix(planText, " · ")
+	r.Summary = detail
+	r.ResetLabel = strings.TrimPrefix(resetText, " · resets ")
+	r.Details = []Detail{{Label: "Credits", Value: detail, ResetText: r.ResetLabel}}
+	return r
 }
 
 // KiroUsage is the raw numbers of kiro-cli's report, which ParseKiro boils down to a
@@ -478,6 +518,15 @@ func ParseCodexLine(line string, now time.Time) (Reading, bool) {
 	}
 	r := newReading(top, detail)
 	r.Reset5h = reset5h
+	if ts := strOf(root, "timestamp"); ts != nil {
+		if observed, ok := ParseTime(*ts); ok {
+			r.ObservedAt = observed
+		}
+	}
+	for _, w := range windows {
+		r.Windows = append(r.Windows, Window{Label: w.label, Used: w.used})
+		r.Details = append(r.Details, percentDetail(w.label, w.used, w.reset))
+	}
 	return r, true
 }
 
@@ -709,7 +758,74 @@ func ParseCursorSummary(text string) Reading {
 			detail += " · resets " + FormatLocal(t, "d MMM")
 		}
 	}
-	return newReading(min(max(*used, 0), 100), detail)
+	r := newReading(min(max(*used, 0), 100), detail)
+	if m := strOf(root, "membershipType"); m != nil {
+		r.Plan = capital(*m)
+	}
+	r.Summary = "Plan usage"
+	var reset *time.Time
+	if e := strOf(root, "billingCycleEnd"); e != nil {
+		if t, ok := ParseTime(*e); ok {
+			r.ResetLabel = FormatLocal(t, "d MMM")
+			reset = &t
+		}
+	}
+	for _, metric := range []struct{ key, label string }{{"totalPercentUsed", "Plan total"}, {"autoPercentUsed", "Auto"}, {"apiPercentUsed", "API"}} {
+		if value := d("individualUsage", "plan", metric.key); value != nil {
+			r.Details = append(r.Details, percentDetail(metric.label, *value, reset))
+		}
+	}
+	for _, allowance := range []struct{ owner, key, label string }{{"individualUsage", "plan", "Plan"}, {"individualUsage", "overall", "Overall"}, {"teamUsage", "pooled", "Team pooled"}, {"individualUsage", "onDemand", "On-demand"}} {
+		u, limit := d(allowance.owner, allowance.key, "used"), d(allowance.owner, allowance.key, "limit")
+		var parts []string
+		if allowance.key == "onDemand" {
+			if enabled, ok := get(allowance.owner, allowance.key, "enabled"); ok {
+				if on, err := enabled.Bool(); err == nil {
+					state := "Off"
+					if on {
+						state = "On"
+					}
+					parts = append(parts, state)
+				}
+			}
+		}
+		value := ""
+		if u != nil && limit != nil {
+			value = Custom(*u, 2) + " of " + Custom(*limit, 2) + " used"
+		} else if u != nil {
+			value = Custom(*u, 2) + " used"
+		} else if limit != nil {
+			value = Custom(*limit, 2) + " limit"
+		}
+		if value != "" {
+			parts = append(parts, value)
+		}
+		if remaining := d(allowance.owner, allowance.key, "remaining"); remaining != nil {
+			parts = append(parts, Custom(*remaining, 2)+" remaining")
+		}
+		if len(parts) == 0 {
+			continue
+		}
+		row := Detail{Label: allowance.label, Value: strings.Join(parts, " · ")}
+		if reset != nil {
+			row.ResetAt = *reset
+		}
+		r.Details = append(r.Details, row)
+	}
+	var breakdown []string
+	for _, field := range []struct{ key, label string }{{"included", "Included"}, {"bonus", "Bonus"}, {"total", "Total"}} {
+		if value := d("individualUsage", "plan", "breakdown", field.key); value != nil {
+			breakdown = append(breakdown, field.label+" "+Custom(*value, 2))
+		}
+	}
+	if len(breakdown) > 0 {
+		row := Detail{Label: "Plan breakdown", Value: strings.Join(breakdown, " · ")}
+		if reset != nil {
+			row.ResetAt = *reset
+		}
+		r.Details = append(r.Details, row)
+	}
+	return r
 }
 
 // CleanToken is trimmed of white space, then of quotes; false when nothing is left.
@@ -820,6 +936,11 @@ func ParseClaudeUsage(text string, plan *string, now time.Time) Reading {
 	}
 	r := newReading(top.used, planText+strings.Join(parts, " · ")+resetText)
 	r.Reset5h = reset5h
+	r.Plan = strings.TrimSuffix(planText, " · ")
+	for _, w := range windows {
+		r.Windows = append(r.Windows, Window{Label: w.label, Used: w.used})
+		r.Details = append(r.Details, percentDetail(w.label, w.used, w.reset))
+	}
 	return r
 }
 

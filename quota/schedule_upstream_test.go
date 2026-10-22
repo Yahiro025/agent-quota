@@ -20,32 +20,32 @@ func started(t *testing.T, b *Book, on []string, force bool, at time.Time, wantD
 func TestReadsWhatIsOnOnceItIsFiveMinutesOld(t *testing.T) {
 	b := NewBook()
 	t0 := time.Now()
-	both := ids("claude", "codex")
+	both := ids("kiro", "antigravity")
 	started(t, b, both, false, t0, false, both)
 	// Under way: not started twice, even when forced.
 	started(t, b, both, true, t0, false, nil)
-	if !b.Finished("claude", Fail("x"), true, t0) || !b.Finished("codex", Fail("y"), true, t0) {
+	if !b.Finished("kiro", Fail("x"), true, t0) || !b.Finished("antigravity", Fail("y"), true, t0) {
 		t.Error("a reading was not kept")
 	}
 	started(t, b, both, false, t0.Add(299*time.Second), false, nil)
 	started(t, b, both, false, t0.Add(300*time.Second), false, both)
-	b.Finished("claude", Fail("x"), true, t0.Add(300*time.Second))
+	b.Finished("kiro", Fail("x"), true, t0.Add(300*time.Second))
 	// Switched off while its read ran: the new reading isn't kept, and the old one goes with
 	// the next refresh (ReadQuota returns early; RefreshQuotas drops it).
-	if b.Finished("codex", Fail("new"), false, t0.Add(300*time.Second)) {
+	if b.Finished("antigravity", Fail("new"), false, t0.Add(300*time.Second)) {
 		t.Error("a reading of a quota switched off was kept")
 	}
-	if b.readings["codex"].r.Detail != "y" {
-		t.Error(b.readings["codex"].r.Detail)
+	if b.readings["antigravity"].r.Detail != "y" {
+		t.Error(b.readings["antigravity"].r.Detail)
 	}
-	started(t, b, ids("claude"), false, t0.Add(300*time.Second), true, nil)
-	if _, ok := b.readings["codex"]; ok {
+	started(t, b, ids("kiro"), false, t0.Add(300*time.Second), true, nil)
+	if _, ok := b.readings["antigravity"]; ok {
 		t.Error("codex was not dropped")
 	}
 
 	// Forced: read again at once.
-	started(t, b, ids("claude"), true, t0.Add(301*time.Second), false, ids("claude"))
-	b.Finished("claude", Fail("x"), true, t0.Add(301*time.Second))
+	started(t, b, ids("kiro"), true, t0.Add(301*time.Second), false, ids("kiro"))
+	b.Finished("kiro", Fail("x"), true, t0.Add(301*time.Second))
 	// Switched off: dropped, and that is a change.
 	started(t, b, nil, false, t0.Add(302*time.Second), true, nil)
 	if len(b.readings) != 0 {

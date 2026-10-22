@@ -1,10 +1,8 @@
 package quota
 
-// schedule.rs: OwlApp's quota polling: every quota that is switched on is read once its
-// last reading is five minutes old (the app ticks every 30 s), or at once when forced
-// (switched on, or Refresh in Settings). Readings of quotas switched off are dropped, so a
-// stale number never comes back with the switch. A read runs on a goroutine of its own, and
-// one quota is never read twice at once.
+// Local and API readers poll every 30 seconds. Kiro and Antigravity retain five
+// minutes between CLI starts because their process trees are substantially heavier.
+// Manual refresh bypasses the interval but never overlaps a provider's current read.
 
 import (
 	"slices"
@@ -31,10 +29,11 @@ type Book struct {
 	readings map[string]stamped
 	good     map[string]stamped
 	busy     map[string]bool
+	next     map[string]time.Time
 }
 
 func NewBook() *Book {
-	return &Book{readings: map[string]stamped{}, good: map[string]stamped{}, busy: map[string]bool{}}
+	return &Book{readings: map[string]stamped{}, good: map[string]stamped{}, busy: map[string]bool{}, next: map[string]time.Time{}}
 }
 
 // State is what the widget shows: Waiting (no reading), OK, Stale (latest failed,
@@ -98,15 +97,15 @@ func (b *Book) Refresh(on []string, force bool, now time.Time) (bool, []string) 
 		}
 	}
 	var start []string
+	for id := range b.next {
+		if !slices.Contains(on, id) {
+			delete(b.next, id)
+		}
+	}
 	for _, id := range on {
-		if b.busy[id] {
-			continue
+		if b.RefreshOne(id, force, now) {
+			start = append(start, id)
 		}
-		if r, ok := b.readings[id]; !force && ok && now.Sub(r.at) < Every {
-			continue
-		}
-		b.busy[id] = true
-		start = append(start, id)
 	}
 	return dropped, start
 }
@@ -117,12 +116,25 @@ func (b *Book) RefreshOne(id string, force bool, now time.Time) bool {
 	if b.busy[id] {
 		return false
 	}
+	interval := Tick
+	if id == ItemKiro || id == ItemAntigravity {
+		interval = Every
+	}
 	if !force {
-		if r, ok := b.readings[id]; ok && now.Sub(r.at) < Every {
+		due, ok := b.next[id]
+		if !ok {
+			if r, exists := b.readings[id]; exists {
+				due = r.at.Add(interval)
+			}
+		}
+		if now.Before(due) {
 			return false
 		}
 	}
 	b.busy[id] = true
+	// Scheduling from completion would skip the next tick after any nonzero
+	// read duration, turning a 30-second interval into 60 seconds.
+	b.next[id] = now.Add(interval)
 	return true
 }
 
@@ -190,6 +202,12 @@ func (p *Poller) Display(id string) (State, Reading, string, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.book.StateOf(id)
+}
+
+func (p *Poller) Busy(id string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.book.Busy(id)
 }
 
 // LastGoodAt is the newest good reading and its time, for "last good N min ago".
