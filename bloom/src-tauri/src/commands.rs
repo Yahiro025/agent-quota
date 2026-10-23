@@ -463,9 +463,12 @@ pub async fn change_notch_mode(app: AppHandle, mode: String) {
         // the reservation is always released. Locked helper so a concurrent
         // display/power event cannot interleave with the AppBar call.
         crate::services::apply_main_appbar_mode(&app, false);
+        // Every notch mode needs the window shown: the frontend's startup
+        // poll waits on isVisible() before releasing isReady, and nothing
+        // else calls show() at startup — hiding this behind mode != "fixed"
+        // left the default mode parked invisible forever.
+        let _ = main_win.show();
         if mode != "fixed" {
-            let _ = main_win.show();
-
             let main_clone = main_win.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;

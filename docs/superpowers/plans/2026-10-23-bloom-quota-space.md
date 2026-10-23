@@ -167,8 +167,8 @@
 
 ### Task 7: Desktop verification and standalone removal
 
-- [ ] Run `go test ./...`, `cargo test --locked` and `bun run build`. Then build with `tauri build --debug --no-bundle`, copy the helper next to the debug exe, and relaunch Bloom.
-- [ ] Confirm on the desktop:
+- [x] Run `go test ./...`, `cargo test --locked` and `bun run build`. Then build with `tauri build --debug --no-bundle`, copy the helper next to the debug exe, and relaunch Bloom.
+- [x] Confirm on the desktop:
   - The notch grows in the quota space and shrinks back on other panels.
   - It stays at the top centre above MyDockFinder.
   - Pin holds the notch open, and close collapses it.

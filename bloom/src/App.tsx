@@ -1988,8 +1988,15 @@ function App() {
 		(el: HTMLDivElement | null) => {
 			const target = el?.firstElementChild;
 			if (!el || !target) return undefined;
+			// `.qs` sits below the status row inside `.bloom`; the island must
+			// cover its bottom edge, not merely its own height. Measuring the
+			// edge delta is invariant to the pill's enter/leave translate.
 			const ro = new ResizeObserver(() => {
-				setQuotaSpaceHeight(target.getBoundingClientRect().height / scale);
+				const pill = el.closest(".bloom");
+				const h = pill
+					? target.getBoundingClientRect().bottom - pill.getBoundingClientRect().top
+					: target.getBoundingClientRect().height;
+				setQuotaSpaceHeight(h / scale);
 			});
 			ro.observe(target);
 			return () => ro.disconnect();

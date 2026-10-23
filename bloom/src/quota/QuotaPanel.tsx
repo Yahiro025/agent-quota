@@ -109,8 +109,14 @@ export function QuotaPanel({
 		const el = rootRef.current;
 		if (!el) return;
 		const report = () => {
+			// The panel sits below the island's status row, so the window must
+			// fit `.qs`'s bottom edge inside `.bloom`, not `.qs`'s own height.
+			const pill = el.closest(".bloom");
+			const h = pill
+				? el.getBoundingClientRect().bottom - pill.getBoundingClientRect().top
+				: el.getBoundingClientRect().height;
 			invoke("set_quota_panel_height", {
-				height: Math.round(el.getBoundingClientRect().height * window.devicePixelRatio)
+				height: Math.round(h * window.devicePixelRatio)
 			}).catch(() => {});
 		};
 		report();

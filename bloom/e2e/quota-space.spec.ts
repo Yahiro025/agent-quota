@@ -132,6 +132,17 @@ test("renders the reference layout", async ({ page }) => {
 	await qs.screenshot({ path: SHOT });
 });
 
+test("the footer stays inside the island", async ({ page }) => {
+	// The island grows to hold the status row plus the measured `.qs` extent;
+	// the failed/refresh footer is the lowest element, so it proves the fit.
+	await page.waitForTimeout(1200);
+	const pill = (await page.locator("div.bloom").boundingBox())!;
+	const footer = (await page.getByTestId("quota-failed").boundingBox())!;
+	const refresh = (await page.getByTestId("quota-refresh").boundingBox())!;
+	expect(footer.y + footer.height).toBeLessThanOrEqual(pill.y + pill.height);
+	expect(refresh.y + refresh.height).toBeLessThanOrEqual(pill.y + pill.height);
+});
+
 test("selecting a ring cell swaps the detail", async ({ page }) => {
 	await page.getByTestId("quota-cell-codex").click();
 	await expect(page.getByTestId("quota-cell-codex")).toHaveClass(/selected/);
