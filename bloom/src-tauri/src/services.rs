@@ -1,7 +1,9 @@
 use std::path::Path;
 use std::sync::mpsc::{channel, sync_channel, Sender, SyncSender};
 use std::sync::{
-    atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU32, AtomicU8, Ordering},
+    atomic::{
+        AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU32, AtomicU8, AtomicUsize, Ordering,
+    },
     Mutex, OnceLock,
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -257,6 +259,7 @@ pub fn setup_taskbar_hook() {
 
 static WINDOW_CHANGE_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 static LAST_WINDOW_CHANGE_MS: AtomicI64 = AtomicI64::new(0);
+static MAIN_PIN_HWND: AtomicUsize = AtomicUsize::new(0);
 
 pub fn setup_window_change_hook(app_handle: AppHandle) {
     unsafe {
@@ -264,8 +267,8 @@ pub fn setup_window_change_hook(app_handle: AppHandle) {
 
         use windows::Win32::UI::Accessibility::SetWinEventHook;
         use windows::Win32::UI::WindowsAndMessaging::{
-            EVENT_OBJECT_CREATE, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_SHOW,
-            WINEVENT_OUTOFCONTEXT,
+            EVENT_OBJECT_CREATE, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
+            EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_SHOW, WINEVENT_OUTOFCONTEXT,
         };
 
         // Hook create and destroy events for top-level windows
@@ -306,9 +309,111 @@ pub fn setup_window_change_hook(app_handle: AppHandle) {
             0,
             WINEVENT_OUTOFCONTEXT,
         );
+        // Re-pin the notch whenever anything moves it off the monitor top:
+        // the cadence pin only runs while update_main_interaction is active,
+        // so a single unobserved move would otherwise leave it displaced.
+        let _main_loc_hook = SetWinEventHook(
+            EVENT_OBJECT_LOCATIONCHANGE,
+            EVENT_OBJECT_LOCATIONCHANGE,
+            None,
+            Some(main_window_location_proc),
+            std::process::id(),
+            0,
+            WINEVENT_OUTOFCONTEXT,
+        );
+        // The frame only becomes visible after the startup pins run, so
+        // watch SHOW too — the first show is when the pin can first land.
+        let _main_show_hook = SetWinEventHook(
+            EVENT_OBJECT_SHOW,
+            EVENT_OBJECT_SHOW,
+            None,
+            Some(main_window_location_proc),
+            std::process::id(),
+            0,
+            WINEVENT_OUTOFCONTEXT,
+        );
 
-        // Store hooks to prevent them from being dropped
+        // Store hooks to prevent them from being dropped — HWINEVENTHOOK
+        // unhooks on drop, so every hook must be leaked, not just the first.
         Box::leak(Box::new(_create_hook));
+        Box::leak(Box::new(_main_loc_hook));
+        Box::leak(Box::new(_main_show_hook));
+
+        // The visible 'bloom' frame is created/recreated well after startup
+        // (each incarnation lands on the work-area top again), so keep a slow
+        // poller pinning whatever visible frame exists rather than one shot.
+        std::thread::spawn(|| loop {
+            std::thread::sleep(Duration::from_secs(2));
+            let Some(app) = WINDOW_CHANGE_APP_HANDLE.get() else {
+                continue;
+            };
+            let Some(main_win) = app.get_webview_window("main") else {
+                continue;
+            };
+            let Some(frame) = main_frame_hwnd() else {
+                continue;
+            };
+            let mut rc = windows::Win32::Foundation::RECT::default();
+            let off_target = unsafe {
+                use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+                if GetWindowRect(frame, &mut rc).is_ok() {
+                    match main_notch_target(&main_win) {
+                        Some((tx, ty)) => rc.left != tx || rc.top != ty,
+                        None => false,
+                    }
+                } else {
+                    false
+                }
+            };
+            if off_target {
+                pin_main_to_monitor_top(&main_win, frame);
+                re_assert_topmost(frame);
+            }
+        });
+    }
+}
+
+unsafe extern "system" fn main_window_location_proc(
+    _hook: windows::Win32::UI::Accessibility::HWINEVENTHOOK,
+    _event: u32,
+    hwnd: HWND,
+    id_object: i32,
+    _id_child: i32,
+    _event_thread: u32,
+    _ms_event_time: u32,
+) {
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, OBJID_WINDOW};
+    if hwnd.0.is_null() || id_object != OBJID_WINDOW.0 {
+        return;
+    }
+    let Some(app) = WINDOW_CHANGE_APP_HANDLE.get() else {
+        return;
+    };
+    let Some(main_win) = app.get_webview_window("main") else {
+        return;
+    };
+    // Evaluate the real frame (enum), not the event hwnd — the event may be
+    // the frame's own SHOW (which is exactly when it first needs pinning),
+    // while the stored/passed hwnd can be a different child-host window.
+    let Some(frame) = main_frame_hwnd() else {
+        return;
+    };
+    let stored = MAIN_PIN_HWND.load(Ordering::Relaxed);
+    if hwnd != frame && hwnd.0 as usize != stored {
+        return;
+    }
+    let mut rc = windows::Win32::Foundation::RECT::default();
+    if GetWindowRect(frame, &mut rc).is_err() {
+        return;
+    }
+    // Only correct a real drift: the pin's own SetWindowPos fires these
+    // events too, but it lands exactly on target, so the check breaks the
+    // cycle.
+    if let Some((tx, ty)) = main_notch_target(&main_win) {
+        if rc.left != tx || rc.top != ty {
+            pin_main_to_monitor_top(&main_win, frame);
+            re_assert_topmost(frame);
+        }
     }
 }
 
@@ -2157,6 +2262,7 @@ const TOP_EDGE_DWELL_MS: i64 = 200;
 const TOP_EDGE_POLL_MS: u64 = 40;
 static MH_TOP_EDGE_ENTER_MS: AtomicI64 = AtomicI64::new(0);
 static MH_TOP_EDGE_ARMED: AtomicBool = AtomicBool::new(false);
+static MH_LAST_TOPMOST_ASSERT_MS: AtomicI64 = AtomicI64::new(0);
 
 /// Hover-intent ("pressure") gate for the bottom edge, the dock-side mirror of
 /// the top-edge gate. Contact with the bottom band only starts a dwell clock;
@@ -2599,7 +2705,7 @@ fn update_main_interaction(
     // dwell-gated, and fixed mode (always visible) skips it entirely. This is
     // about showing the notch — the hit-testing continuity below is separate
     // and must stay immediate.
-    let edge_armed = if notch_mode_reserves_work_area(
+    let edge_armed = if notch_mode_is_fixed(
         get_setting_str(app_handle, "bloom-notch-mode").as_deref(),
     ) {
         MH_TOP_EDGE_ENTER_MS.store(0, Ordering::Relaxed);
@@ -2708,6 +2814,20 @@ fn update_main_interaction(
         // or the notch stays expanded in peek/smart mode.
         if new_ignore == 1 && NOTCH_IS_HOVERED.swap(false, Ordering::Relaxed) {
             let _ = app_handle.emit("notch-pointer-left", ());
+        }
+    }
+    // Keep the notch ahead of other topmost windows: a later HWND_TOPMOST
+    // window (MyDockFinder's bar) can front it without any event reaching our
+    // hooks. Cadence-gated and skipped while a drag may be active, where a
+    // z-order change can visibly hitch the drag. Position is pinned to the
+    // monitor's physical top edge on the same cadence: other paths (mode
+    // switches, tao's own placement) can clamp it into the work area below a
+    // top appbar.
+    if !drag_held && now - MH_LAST_TOPMOST_ASSERT_MS.load(Ordering::Relaxed) >= 2000 {
+        MH_LAST_TOPMOST_ASSERT_MS.store(now, Ordering::Relaxed);
+        if let Ok(hwnd) = main_win.hwnd() {
+            pin_main_to_monitor_top(&main_win, hwnd);
+            re_assert_topmost(hwnd);
         }
     }
     // Applied on every update, not only on a change: it writes only when the
@@ -3568,119 +3688,6 @@ pub fn sync_overlays(app: &AppHandle) {
     }
 }
 
-pub fn register_appbar(window: tauri::WebviewWindow) {
-    if let Ok(Some(monitor)) = window.app_handle().primary_monitor() {
-        let m_size = monitor.size();
-        let m_pos = monitor.position();
-        let hwnd = window.hwnd().unwrap();
-        let scale = monitor.scale_factor();
-        let bloom_scale = crate::utils::get_bloom_scale(window.app_handle());
-        let ph = ((420.0 * bloom_scale) * scale) as i32;
-        let pr = ((40.0 * bloom_scale) * scale) as i32; // Scale the reserved top screen space
-
-        unsafe {
-            use windows::Win32::Foundation::RECT;
-            use windows::Win32::UI::Shell::{
-                SHAppBarMessage, ABE_TOP, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS, APPBARDATA,
-            };
-            use windows::Win32::UI::WindowsAndMessaging::{
-                GetWindowLongPtrW, GetWindowRect, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE,
-                SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, WS_EX_NOACTIVATE as WS_EX_NA,
-                WS_EX_TOOLWINDOW,
-            };
-
-            // Set styles first
-            let mut ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as usize;
-            ex_style |= (WS_EX_TOOLWINDOW.0 | WS_EX_NA.0) as usize;
-            let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style as isize);
-
-            let mut abd = APPBARDATA {
-                cbSize: std::mem::size_of::<APPBARDATA>() as u32,
-                hWnd: hwnd,
-                uCallbackMessage: 0x8041, // WM_APP + 0x41, reserved for the notch AppBar
-                ..Default::default()
-            };
-
-            if !MAIN_APPBAR_REGISTERED.load(Ordering::Relaxed) {
-                let _ = SHAppBarMessage(ABM_REMOVE, &mut abd);
-                let registered = SHAppBarMessage(ABM_NEW, &mut abd);
-                crate::diagnostics::record(
-                    "main_appbar",
-                    &format!("registration_result={registered}"),
-                );
-                if registered == 0 {
-                    eprintln!("Bloom: notch AppBar registration failed");
-                    return;
-                }
-                MAIN_APPBAR_REGISTERED.store(true, Ordering::Relaxed);
-            }
-
-            abd.uEdge = ABE_TOP;
-            abd.rc = RECT {
-                left: m_pos.x,
-                top: m_pos.y,
-                right: m_pos.x + m_size.width as i32,
-                bottom: m_pos.y + pr,
-            };
-
-            SHAppBarMessage(ABM_QUERYPOS, &mut abd);
-            SHAppBarMessage(ABM_SETPOS, &mut abd);
-
-            // Use the shell-approved rect for the final position, but keep our ph height for the window
-            let final_width = abd.rc.right - abd.rc.left;
-
-            let mut current_rect = RECT::default();
-            let mut already_positioned = false;
-            if GetWindowRect(hwnd, &mut current_rect).is_ok() {
-                let current_width = current_rect.right - current_rect.left;
-                let current_height = current_rect.bottom - current_rect.top;
-                if current_rect.left == abd.rc.left
-                    && current_rect.top == abd.rc.top
-                    && current_width == final_width
-                    && current_height == ph
-                {
-                    already_positioned = true;
-                }
-            }
-
-            if !already_positioned {
-                let _ = SetWindowPos(
-                    hwnd,
-                    None,
-                    abd.rc.left,
-                    abd.rc.top,
-                    final_width,
-                    ph,
-                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                );
-            }
-
-            // Re-assert topmost after repositioning — use re_assert_topmost instead of
-            // set_always_on_top(true) to include SWP_NOACTIVATE and re-stamp WS_EX_NOACTIVATE.
-            // This prevents WM_ACTIVATE from reaching WebView2, which caused bloom windows
-            // to blank/hide when other windows were minimized or closed.
-            re_assert_topmost(hwnd);
-
-            if !window.is_visible().unwrap_or(false) {
-                let _ = window.show();
-            }
-        }
-    } else {
-        let w = window.clone();
-        tauri::async_runtime::spawn(async move {
-            for _ in 0..10 {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                if let Ok(Some(_monitor)) = w.app_handle().primary_monitor() {
-                    // Reconcile rather than register directly: the notch mode
-                    // may have changed while waiting for the monitor.
-                    reconcile_main_appbar(w.app_handle());
-                    break;
-                }
-            }
-        });
-    }
-}
-
 /// Serializes main AppBar register/unregister decisions. Mode switches and
 /// display/power events can otherwise interleave between reading the notch mode
 /// and applying it, leaving the reservation in the wrong state until the next
@@ -3693,23 +3700,170 @@ fn lock_main_appbar() -> std::sync::MutexGuard<'static, ()> {
 
 /// Apply a reservation decision to the main window. Callers must hold
 /// `MAIN_APPBAR_LOCK`.
-fn set_main_appbar_reservation(main_win: tauri::WebviewWindow, reserve: bool) {
-    if reserve {
-        register_appbar(main_win);
-    } else if let Ok(hwnd) = main_win.hwnd() {
+fn set_main_appbar_reservation(main_win: tauri::WebviewWindow, _reserve: bool) {
+    // `notch_mode_reserves_work_area` decides `_reserve` and is always false:
+    // the notch must overlay top appbars, so the reservation is always released
+    // and the window pinned to the monitor's physical top edge.
+    if let Ok(hwnd) = main_win.hwnd() {
         // Ask the shell to remove the reservation unconditionally: the flag
         // may look clean while the shell still holds the strip.
         unregister_appbar_native(hwnd);
         MAIN_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
+        pin_main_to_monitor_top(&main_win, hwnd);
         re_assert_topmost(hwnd);
     }
 }
 
-/// Whether the notch's 40px top strip should currently be reserved as an AppBar.
-/// Only fixed mode reserves screen space; smart and peek hide the notch freely.
-/// An unset mode defaults to fixed, matching SETTINGS.md and `re_register_appbars`.
-fn notch_mode_reserves_work_area(mode: Option<&str>) -> bool {
+/// The primary monitor's physical rect — MONITORINFO.rcMonitor, never the
+/// work area: a Monitor::position()/size() that reflects the work area would
+/// land the notch below a top appbar (the very bug this fixes).
+fn primary_monitor_rc() -> Option<windows::Win32::Foundation::RECT> {
+    unsafe {
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::Graphics::Gdi::{
+            GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTOPRIMARY,
+        };
+        let hmon = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !GetMonitorInfoW(hmon, &mut mi).as_bool() {
+            return None;
+        }
+        Some(mi.rcMonitor)
+    }
+}
+
+/// Where the notch's top-left corner belongs: centred on the primary
+/// monitor's physical top edge.
+fn main_notch_target(main_win: &tauri::WebviewWindow) -> Option<(i32, i32)> {
+    let size = main_win.outer_size().ok()?;
+    let rc = primary_monitor_rc()?;
+    Some(notch_top_left(
+        rc.left,
+        rc.top,
+        rc.right - rc.left,
+        size.width as i32,
+    ))
+}
+
+/// The visible top-level frame: `WebviewWindow::hwnd()` can resolve to a
+/// child host (the webview controller) rather than the 'Tauri Window' the
+/// user sees, so find our own process's visible frame by enumeration.
+fn main_frame_hwnd() -> Option<windows::Win32::Foundation::HWND> {
+    unsafe {
+        use windows::core::BOOL;
+        use windows::Win32::Foundation::{HWND, LPARAM};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            EnumWindows, GetClassNameW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+        };
+        struct Ctx {
+            pid: u32,
+            found: HWND,
+        }
+        unsafe extern "system" fn cb(hwnd: HWND, lp: LPARAM) -> BOOL {
+            let ctx = &mut *(lp.0 as *mut Ctx);
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            if pid == ctx.pid && IsWindowVisible(hwnd).as_bool() {
+                let mut cls = [0u16; 64];
+                let cn = GetClassNameW(hwnd, &mut cls) as usize;
+                if String::from_utf16_lossy(&cls[..cn]) == "Tauri Window" {
+                    let mut t = [0u16; 128];
+                    let tn = GetWindowTextW(hwnd, &mut t) as usize;
+                    if String::from_utf16_lossy(&t[..tn]) == "bloom" {
+                        ctx.found = hwnd;
+                        return BOOL(0);
+                    }
+                }
+            }
+            BOOL(1)
+        }
+        let mut ctx = Ctx {
+            pid: std::process::id(),
+            found: HWND::default(),
+        };
+        let _ = EnumWindows(Some(cb), LPARAM(&mut ctx as *mut _ as isize));
+        if ctx.found.0.is_null() {
+            None
+        } else {
+            Some(ctx.found)
+        }
+    }
+}
+
+fn pin_main_to_monitor_top(main_win: &tauri::WebviewWindow, hwnd: windows::Win32::Foundation::HWND) {
+    // hwnd() may resolve to a child host rather than the visible frame —
+    // pin the frame we can enumerate, falling back to the root ancestor.
+    let enum_hwnd = main_frame_hwnd();
+    let root_hwnd = unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_ROOT};
+        GetAncestor(hwnd, GA_ROOT)
+    };
+    crate::diagnostics::record(
+        "main_appbar",
+        &format!(
+            "hwnd-resolve: raw={:p} root={:p} enum={:?}",
+            hwnd.0, root_hwnd.0,
+            enum_hwnd.map(|h| format!("{:p}", h.0)),
+        ),
+    );
+    let hwnd = enum_hwnd.unwrap_or_else(|| {
+        if root_hwnd.0.is_null() {
+            hwnd
+        } else {
+            root_hwnd
+        }
+    });
+    MAIN_PIN_HWND.store(hwnd.0 as usize, Ordering::Relaxed);
+    let Some((x, y)) = main_notch_target(main_win) else {
+        return;
+    };
+    unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER, SWP_NOSIZE,
+        };
+        let mut before = windows::Win32::Foundation::RECT::default();
+        let _ = windows::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut before);
+        let ok = SetWindowPos(hwnd, None, x, y, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+        let mut after = windows::Win32::Foundation::RECT::default();
+        let _ = windows::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut after);
+        crate::diagnostics::record(
+            "main_appbar",
+            &format!(
+                "pin: hwnd={:p} target={x},{y} ok={ok:?} before={},{}-{},{} after={},{}-{},{}",
+                hwnd.0,
+                before.left, before.top, before.right, before.bottom,
+                after.left, after.top, after.right, after.bottom,
+            ),
+        );
+    }
+}
+
+/// Whether the notch's top strip should currently be reserved as an AppBar.
+/// Never: an ABE_TOP AppBar is clamped below any earlier top appbar —
+/// MyDockFinder's 24 px bar pushed the notch down to y = 24 — so the notch
+/// must sit on the monitor's physical top edge without asking the shell for
+/// space.
+fn notch_mode_reserves_work_area(_mode: Option<&str>) -> bool {
+    false
+}
+
+/// Fixed mode keeps the notch always visible, so the top-edge reveal has
+/// nothing to reveal. An unset mode defaults to fixed, matching SETTINGS.md.
+fn notch_mode_is_fixed(mode: Option<&str>) -> bool {
     mode.map(|m| m == "fixed").unwrap_or(true)
+}
+
+/// Top-left corner for the notch on the primary monitor's physical rect
+/// (`rcMonitor`), horizontally centred — never the work area, which a top
+/// appbar can shrink.
+fn notch_top_left(monitor_x: i32, monitor_y: i32, monitor_width: i32, window_width: i32) -> (i32, i32) {
+    (
+        monitor_x + (monitor_width - window_width).max(0) / 2,
+        monitor_y,
+    )
 }
 
 /// Bring the main AppBar registration in line with the configured notch mode.
@@ -4491,8 +4645,8 @@ fn recover_from_webview_failure(handle: &AppHandle) {
 mod tests {
     use super::{
         is_helper_name, is_launchable_entry, is_primary_monitor, is_start_menu_process_path,
-        notch_mode_reserves_work_area, pack_cursor, trim_thumbnail_cache, unpack_cursor,
-        win_number_index,
+        notch_mode_is_fixed, notch_mode_reserves_work_area, notch_top_left, pack_cursor,
+        trim_thumbnail_cache, unpack_cursor, win_number_index,
     };
 
     #[test]
@@ -4543,14 +4697,46 @@ mod tests {
     }
 
     #[test]
-    fn only_fixed_notch_mode_reserves_the_work_area() {
-        assert!(notch_mode_reserves_work_area(Some("fixed")));
-        assert!(!notch_mode_reserves_work_area(Some("smart")));
-        assert!(!notch_mode_reserves_work_area(Some("peek")));
-        // Legacy alias for smart
-        assert!(!notch_mode_reserves_work_area(Some("auto-hide")));
+    fn the_notch_never_reserves_the_work_area() {
+        // The notch overlays top appbars (e.g. MyDockFinder). Registering an
+        // ABE_TOP AppBar lets the shell clamp it below an earlier top appbar,
+        // so no mode reserves screen space.
+        for mode in [
+            Some("fixed"),
+            Some("smart"),
+            Some("peek"),
+            Some("auto-hide"),
+            None,
+        ] {
+            assert!(!notch_mode_reserves_work_area(mode));
+        }
+    }
+
+    #[test]
+    fn only_fixed_notch_mode_stays_visible() {
         // Unset defaults to fixed, matching SETTINGS.md
-        assert!(notch_mode_reserves_work_area(None));
+        for (mode, fixed) in [
+            (Some("fixed"), true),
+            (Some("smart"), false),
+            (Some("peek"), false),
+            (Some("auto-hide"), false),
+            (None, true),
+        ] {
+            assert_eq!(notch_mode_is_fixed(mode), fixed);
+        }
+    }
+
+    #[test]
+    fn notch_top_left_centres_on_the_monitor_not_the_work_area() {
+        // Full-width primary monitor: top-left of rcMonitor, y = 0.
+        assert_eq!(notch_top_left(0, 0, 1536, 1536), (0, 0));
+        // Narrower window still centres on the monitor rect, y stays 0.
+        assert_eq!(notch_top_left(0, 0, 1536, 800), (368, 0));
+        // A top appbar shrinking the work area (e.g. work area top 40) must
+        // not push the notch down: inputs are the monitor rect only.
+        assert_eq!(notch_top_left(1920, 0, 2560, 2560), (1920, 0));
+        // Window wider than the monitor clamps at the monitor's left edge.
+        assert_eq!(notch_top_left(0, 0, 1536, 2000), (0, 0));
     }
 
     #[test]

@@ -347,6 +347,11 @@ fn main() {
 
             sync_overlays(app.handle());
 
+            // Release any stale top-strip reservation and pin the notch to the
+            // monitor's physical top edge, above top appbars like
+            // MyDockFinder's bar.
+            reconcile_main_appbar(app.handle());
+
             // Initialize the overlay window — on Windows, set_position doesn't
             // take effect on a window that has never been shown. Show it once
             // to register it with the compositor, then hide immediately.

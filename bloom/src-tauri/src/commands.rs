@@ -459,13 +459,12 @@ pub async fn change_dock_mode(app: AppHandle, mode: String) {
 #[tauri::command]
 pub async fn change_notch_mode(app: AppHandle, mode: String) {
     if let Some(main_win) = app.get_webview_window("main") {
-        if mode == "fixed" {
-            crate::services::apply_main_appbar_mode(&app, true);
-        } else {
+        // The notch never reserves a top strip (it overlays top appbars), so
+        // the reservation is always released. Locked helper so a concurrent
+        // display/power event cannot interleave with the AppBar call.
+        crate::services::apply_main_appbar_mode(&app, false);
+        if mode != "fixed" {
             let _ = main_win.show();
-            // Locked helper so a concurrent display/power event cannot
-            // interleave between the mode decision and the AppBar call.
-            crate::services::apply_main_appbar_mode(&app, false);
 
             let main_clone = main_win.clone();
             tauri::async_runtime::spawn(async move {
@@ -486,6 +485,10 @@ pub async fn change_notch_mode(app: AppHandle, mode: String) {
             let target_height = (420.0 * bloom_scale * scale) as u32;
             let _ = main_win.set_position(tauri::PhysicalPosition::new(m_pos.x, m_pos.y));
             let _ = main_win.set_size(tauri::PhysicalSize::new(m_size.width, target_height));
+            // Re-pin last so the final SetWindowPos wins: a work-area-clamped
+            // set_position (or a work-area-derived monitor position) lands the
+            // notch below a top appbar.
+            crate::services::apply_main_appbar_mode(&app, false);
         }
 
         let current = CURRENT_NOTCH_OVERLAP.load(Ordering::Relaxed);
