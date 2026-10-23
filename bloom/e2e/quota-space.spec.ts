@@ -56,11 +56,13 @@ const fixture = (): QuotaAgent[] => [
 	}
 ];
 
-const emitSnapshot = (page: Page) =>
+const emitReadings = (page: Page, readings: QuotaAgent[]) =>
 	page.evaluate(
 		([ev, pl]) => (window as any).__emit(ev, pl),
-		["quota-snapshot", fixture()]
+		["quota-snapshot", readings]
 	);
+
+const emitSnapshot = (page: Page) => emitReadings(page, fixture());
 
 const invokes = (page: Page): Promise<{ cmd: string; args: any }[]> =>
 	page.evaluate(() => (window as any).__invokes);
@@ -233,4 +235,211 @@ test("controls never take focus", async ({ page }) => {
 	expect(await active()).toBe(before);
 	await page.getByTestId("quota-pin").click();
 	expect(await active()).toBe(before);
+});
+
+/* The helper reports up to seven readers. With all of them present the
+   island must grow to fit the ring row — never the other way round. */
+const SEVEN_IDS = ["claude", "kiro", "codex", "cursor", "copilot", "devin", "antigravity"];
+
+const sevenFixture = (): QuotaAgent[] => [
+	{
+		id: "claude",
+		state: "failed",
+		err: "Sign-in expired.",
+		help: "Open Claude Code to renew its sign-in, then choose Refresh."
+	},
+	{
+		id: "kiro",
+		state: "ok",
+		used: 62,
+		detail: "Credits",
+		windows: [{ label: "credits", used: 62 }]
+	},
+	{
+		id: "codex",
+		state: "ok",
+		used: 10,
+		windows: [{ label: "5h", used: 10 }],
+		reset5h: later(3.4 * HOUR)
+	},
+	{ id: "cursor", state: "ok", used: 71 },
+	{
+		id: "copilot",
+		state: "stale",
+		used: 90,
+		err: "gh api timed out",
+		lastGoodAt: new Date(Date.now() - 42 * 60000).toISOString(),
+		observedAt: new Date(Date.now() - 60000).toISOString()
+	},
+	{
+		id: "devin",
+		state: "ok",
+		used: 56,
+		plan: "Pro",
+		windows: [
+			{ label: "week", used: 28 },
+			{ label: "day", used: 56 }
+		],
+		details: [
+			{ label: "Day", value: "56% used", resetAt: later(6.3 * HOUR) },
+			{ label: "Week", value: "28% used", resetAt: later(2 * 24 * HOUR + 6.3 * HOUR) }
+		]
+	},
+	{
+		id: "antigravity",
+		state: "ok",
+		used: 0,
+		reset5h: later(4.9 * HOUR),
+		groups: [
+			{ name: "Gemini 3 Pro", windows: [{ label: "5h", used: 0 }] },
+			{ name: "Claude Sonnet 4.5", windows: [{ label: "5h", used: 0 }] },
+			{ name: "GPT-OSS 120B", windows: [{ label: "5h", used: 0 }] }
+		]
+	}
+];
+
+// A selected agent whose detail block is far taller than any screen cap.
+const longFixture = (): QuotaAgent[] => [
+	{
+		id: "claude",
+		state: "ok",
+		used: 12,
+		details: Array.from({ length: 60 }, (_, i) => ({
+			label: `Window ${i + 1} with a long quota label`,
+			value: `${i}% used`,
+			resetAt: later((i + 1) * HOUR)
+		}))
+	},
+	...sevenFixture().slice(1)
+];
+
+const box = async (page: Page, selector: string) =>
+	(await page.locator(selector).boundingBox())!;
+
+// The island's width and position spring together; wait until the rect is
+// stable for three samples before asserting geometry.
+const settlePill = async (page: Page) => {
+	let last = "";
+	for (let i = 0; i < 30; i++) {
+		const b = await box(page, "div.bloom");
+		const cur = `${b.x}|${b.width}|${b.height}`;
+		if (cur === last) {
+			const again = await box(page, "div.bloom");
+			if (`${again.x}|${again.width}|${again.height}` === cur) return;
+		}
+		last = cur;
+		await page.waitForTimeout(120);
+	}
+};
+
+test.describe("seven-agent density", () => {
+	test("the ring row stays inside the island", async ({ page }) => {
+		await emitReadings(page, sevenFixture());
+		await settlePill(page);
+		const pill = await box(page, "div.bloom");
+		const qs = await box(page, "[data-testid=quota-space]");
+		expect(qs.x).toBeGreaterThanOrEqual(pill.x - 0.5);
+		expect(qs.x + qs.width).toBeLessThanOrEqual(pill.x + pill.width + 0.5);
+		for (const id of SEVEN_IDS) {
+			const cell = await box(page, `[data-testid=quota-cell-${id}]`);
+			expect(cell.x).toBeGreaterThanOrEqual(pill.x - 0.5);
+			expect(cell.x + cell.width).toBeLessThanOrEqual(pill.x + pill.width + 0.5);
+		}
+	});
+
+	test("each cell's contents stay inside its own box", async ({ page }) => {
+		await emitReadings(page, sevenFixture());
+		await settlePill(page);
+		for (const id of SEVEN_IDS) {
+			const cell = page.getByTestId(`quota-cell-${id}`);
+			const cr = (await cell.boundingBox())!;
+			// Text lines ellipsize at the cell edge; the ring block sits
+			// inside the tile like in the standalone widget.
+			for (const part of [".qs-name", ".qs-basis", ".qs-cell-top"]) {
+				const pr = (await cell.locator(part).boundingBox())!;
+				expect(pr.x).toBeGreaterThanOrEqual(cr.x - 0.5);
+				expect(pr.x + pr.width).toBeLessThanOrEqual(cr.x + cr.width + 0.5);
+			}
+		}
+	});
+
+	// zoom leaves scrollWidth in unzoomed CSS px while rects scale: the
+	// width contract must hold at every Bloom scale, not just 1.
+	for (const bloomScale of [0.8, 1.25]) {
+		test(`the ring row stays inside the island at scale ${bloomScale}`, async ({
+			page
+		}) => {
+			await page.evaluate(
+				(v) => localStorage.setItem("bloom-scale", v),
+				String(bloomScale)
+			);
+			await page.reload();
+			await page.waitForTimeout(900);
+			await emitReadings(page, sevenFixture());
+			await openQuotaSpace(page);
+			await settlePill(page);
+			const pill = await box(page, "div.bloom");
+			const qs = await box(page, "[data-testid=quota-space]");
+			expect(qs.x).toBeGreaterThanOrEqual(pill.x - 0.5);
+			expect(qs.x + qs.width).toBeLessThanOrEqual(pill.x + pill.width + 0.5);
+			for (const id of SEVEN_IDS) {
+				const cell = await box(page, `[data-testid=quota-cell-${id}]`);
+				expect(cell.x).toBeGreaterThanOrEqual(pill.x - 0.5);
+				expect(cell.x + cell.width).toBeLessThanOrEqual(
+					pill.x + pill.width + 0.5
+				);
+			}
+		});
+	}
+
+	test("the selected cell reads differently from a hovered one", async ({ page }) => {
+		await emitReadings(page, sevenFixture());
+		const sel = page.getByTestId("quota-cell-devin");
+		await sel.click();
+		const hov = page.getByTestId("quota-cell-codex");
+		await hov.hover();
+		const paint = (el: typeof sel) =>
+			el.evaluate((e) => {
+				const s = getComputedStyle(e);
+				return `${s.backgroundColor}|${s.boxShadow}`;
+			});
+		expect(await paint(sel)).not.toBe(await paint(hov));
+	});
+
+	test("the footer keeps clearance above the island's bottom edge", async ({ page }) => {
+		await emitReadings(page, sevenFixture());
+		await page.waitForTimeout(1200);
+		const pill = await box(page, "div.bloom");
+		const footer = await box(page, ".qs-footer");
+		expect(pill.y + pill.height - (footer.y + footer.height)).toBeGreaterThanOrEqual(4);
+	});
+
+	test("long detail content scrolls and keeps the footer reachable", async ({ page }) => {
+		await emitReadings(page, longFixture());
+		await page.getByTestId("quota-cell-claude").click();
+		await page.waitForTimeout(400);
+		const dims = await page
+			.locator(".quota-viewport")
+			.evaluate((e) => ({ scroll: e.scrollHeight, client: e.clientHeight }));
+		expect(dims.scroll).toBeGreaterThan(dims.client);
+		await page.getByTestId("quota-refresh").scrollIntoViewIfNeeded();
+		await expect(page.getByTestId("quota-refresh")).toBeVisible();
+	});
+
+	test("leaving the quota space releases its height", async ({ page }) => {
+		await emitReadings(page, sevenFixture());
+		await page.waitForTimeout(1200);
+		// Cycle to the next panel; the quota space must unmount and report a
+		// zero height so the window can shrink back.
+		const next = page.locator("button.panel-arrow.next");
+		for (let i = 0; i < 4 && (await quotaSpace(page).count()) > 0; i++) {
+			await next.click();
+			await page.waitForTimeout(400);
+		}
+		await expect(quotaSpace(page)).toHaveCount(0);
+		const heights = (await invokes(page))
+			.filter((i) => i.cmd === "set_quota_panel_height")
+			.map((i) => i.args?.height);
+		expect(heights).toContain(0);
+	});
 });

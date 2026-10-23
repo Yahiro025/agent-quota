@@ -1984,6 +1984,7 @@ function App() {
 	// The observer watches `.qs`, not the scroll viewport, so the cap never
 	// feeds back into the requested height.
 	const [quotaSpaceHeight, setQuotaSpaceHeight] = useState(0);
+	const [quotaSpaceWidth, setQuotaSpaceWidth] = useState(0);
 	const quotaSpaceMeasureRef = useCallback(
 		(el: HTMLDivElement | null) => {
 			const target = el?.firstElementChild;
@@ -1997,12 +1998,19 @@ function App() {
 					? target.getBoundingClientRect().bottom - pill.getBoundingClientRect().top
 					: target.getBoundingClientRect().height;
 				setQuotaSpaceHeight(h / scale);
+				// zoom scales client rects but not scroll extents, so
+				// scrollWidth is already in the island's unzoomed CSS px.
+				// The pill's 12px side padding is added back so the island
+				// covers all of `.qs` inside its padded area.
+				setQuotaSpaceWidth(target.scrollWidth + 24);
 			});
 			ro.observe(target);
 			return () => ro.disconnect();
 		},
 		[scale]
 	);
+	// `.qs` is width:max-content, so a changed ring row resizes the element
+	// itself and the observer re-measures with no reset bookkeeping.
 
 	// One visibility controller: the open panel is only ever moved by the
 	// user, alerts record themselves beside it, and a deferred gesture
@@ -2949,8 +2957,9 @@ function App() {
 		if (isCalendarMode) return 480;
 		if (bloomMode === "shelf") return 380;
 		if (bloomMode === "command-center" && isOpen) return 350;
-		// The quota space's minimum width, like the standalone widget.
-		if (bloomMode === "quotas") return 386;
+		// The quota space sizes to its ring row: the standalone widget's 386
+		// minimum, grown to the measured cell content for all seven agents.
+		if (bloomMode === "quotas") return Math.max(386, Math.ceil(quotaSpaceWidth));
 		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "overview") return 350;
 		if (showMusicOnStatusHover) {
 			return 170 + (settingsVisualizerEnabled ? 30 : 0);
@@ -3766,6 +3775,10 @@ function App() {
 											animate={{ opacity: 1 }}
 											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
 											transition={{ type: "spring", stiffness: 400, damping: 30 }}
+											// The island is the width contract: `.qs` reports its
+											// ring-row need through scrollWidth while this wrapper
+											// and the viewport stay clamped to the pill.
+											style={{ width: "100%", minWidth: 0 }}
 										>
 											<div ref={quotaSpaceMeasureRef} className="quota-viewport">
 												<QuotaPanel
