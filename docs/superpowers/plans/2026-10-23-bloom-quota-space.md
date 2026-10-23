@@ -62,17 +62,17 @@
   - Tauri `set_quota_panel_height(app, height: u32) -> Result<(), String>`. Pass 0 to restore the normal notch height.
   - `pub fn clamp_height(requested: u32, monitor: u32) -> u32`, which returns `min(max(requested, NORMAL), monitor)`.
 
-- [ ] Write the tests:
+- [x] Write the tests:
   - `refresh_line(None)` equals the exact `all` JSON plus `\n`.
   - `refresh_line(Some("devin"))` carries `"id":"devin"`.
   - `clamp_height(2000, 1080) == 1080` and `clamp_height(0, 1080) == NORMAL`.
-- [ ] Run `cargo test --locked quota` and expect FAIL.
-- [ ] Implement it:
+- [x] Run `cargo test --locked quota` and expect FAIL.
+- [x] Implement it:
   - After writing HELLO, `pump` moves `child.stdin` into a `static HELPER_STDIN: Mutex<Option<ChildStdin>>`. This keeps the pipe open, so the existing "do not drop stdin" invariant holds. `note_exit` clears it.
   - `refresh_quota` writes `refresh_line` to it, or returns `Ok(())` when it is `None`.
   - `set_quota_panel_height` resizes the main frame through the existing notch sizing path, then calls `apply_main_appbar_mode(&app, false)` last so the top-centre pin wins.
-- [ ] Run `cargo test --locked`, `cargo check --locked` and `cargo clippy --locked --all-targets`, and expect PASS.
-- [ ] Commit with the message `feat(bloom): refresh quotas and fit the notch to the quota space`.
+- [x] Run `cargo test --locked`, `cargo check --locked` and `cargo clippy --locked --all-targets`, and expect PASS.
+- [x] Commit with the message `feat(bloom): refresh quotas and fit the notch to the quota space`.
 
 ### Task 3: Pure view logic
 

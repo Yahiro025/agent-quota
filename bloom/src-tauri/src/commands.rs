@@ -498,6 +498,36 @@ pub async fn change_notch_mode(app: AppHandle, mode: String) {
     }
 }
 
+#[tauri::command]
+pub fn refresh_quota(id: Option<String>) -> Result<(), String> {
+    crate::quota_helper::write_refresh(id.as_deref())
+}
+
+#[tauri::command]
+pub fn set_quota_panel_height(app: AppHandle, height: u32) -> Result<(), String> {
+    let Some(main_win) = app.get_webview_window("main") else {
+        return Ok(());
+    };
+    if let Ok(Some(monitor)) = main_win.primary_monitor() {
+        let m_pos = monitor.position();
+        let m_size = monitor.size();
+        let scale = monitor.scale_factor();
+        let bloom_scale = crate::utils::get_bloom_scale(&app);
+        let normal = (crate::quota_helper::NORMAL_HEIGHT as f64 * bloom_scale * scale) as u32;
+        // 0 restores the resting notch; any other request is floored at the
+        // resting height and capped at the monitor, so an over-tall quota
+        // space scrolls instead of overflowing the screen.
+        let requested = if height == 0 { normal } else { height.max(normal) };
+        let target = crate::quota_helper::clamp_height(requested, m_size.height);
+        let _ = main_win.set_position(tauri::PhysicalPosition::new(m_pos.x, m_pos.y));
+        let _ = main_win.set_size(tauri::PhysicalSize::new(m_size.width, target));
+        // Re-pin last so the top-centre pin wins over the resize, same as
+        // change_notch_mode.
+        crate::services::apply_main_appbar_mode(&app, false);
+    }
+    Ok(())
+}
+
 fn get_uwp_launch_cmd(exe_path: &str) -> Option<String> {
     // A packaged app can only be started through its AppUserModelID, and the
     // application part after `!` is whatever the package declares ("Claude",

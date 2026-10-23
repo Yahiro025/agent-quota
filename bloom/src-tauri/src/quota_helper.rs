@@ -12,7 +12,8 @@
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
@@ -26,6 +27,17 @@ const EVENT_SNAPSHOT: &str = "quota-snapshot";
 /// Breathing room between a helper exit and the next spawn, so a helper
 /// that dies on startup cannot tight-loop the supervisor thread.
 const RESTART_DELAY: Duration = Duration::from_secs(1);
+
+/// The resting notch height in unscaled px — the same 420
+/// `change_notch_mode` multiplies by bloom scale and the monitor's scale
+/// factor. `clamp_height` never lets the quota space shrink below it.
+pub const NORMAL_HEIGHT: u32 = 420;
+
+/// The running helper's stdin. `pump` parks it here after HELLO so the pipe
+/// stays open for the child's whole life — dropping the handle would close
+/// the pipe and make the helper exit — and so `refresh_quota` can write to
+/// it. `note_exit` clears it once the child is gone.
+static HELPER_STDIN: Mutex<Option<ChildStdin>> = Mutex::new(None);
 
 /// One parsed line's effect on the supervisor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,10 +112,45 @@ pub fn apply_line(state: &mut HelperState, line: &str) -> Apply {
 /// Records a helper exit. With no snapshot on file the quota surface is
 /// unavailable; with one, the last readings stay and `unavailable` stays
 /// false so the panel keeps showing slightly-stale data until respawn.
+/// Also drops the dead child's stdin so a refresh can never write to a
+/// closed pipe.
 pub fn note_exit(state: &mut HelperState) {
+    if let Ok(mut slot) = HELPER_STDIN.lock() {
+        *slot = None;
+    }
     if state.readings.is_empty() {
         state.unavailable = true;
     }
+}
+
+/// One refresh request line for the helper's stdin: `id` names a single
+/// agent, `None` asks for every agent at once.
+pub fn refresh_line(id: Option<&str>) -> String {
+    format!("{{\"v\":1,\"op\":\"refresh\",\"id\":\"{}\"}}\n", id.unwrap_or("all"))
+}
+
+/// Fits a requested quota-space height between the resting notch height and
+/// the monitor, so an over-tall panel scrolls instead of overflowing the
+/// screen and a collapsed one lands back at the normal height.
+pub fn clamp_height(requested: u32, monitor: u32) -> u32 {
+    requested.max(NORMAL_HEIGHT).min(monitor)
+}
+
+/// Writes one refresh line to the running helper's stdin. A dead or
+/// restarting helper is a no-op: the next snapshot revives the button, so
+/// the caller never has to retry.
+pub fn write_refresh(id: Option<&str>) -> Result<(), String> {
+    let Ok(mut slot) = HELPER_STDIN.lock() else {
+        return Err("quota helper stdin lock poisoned".to_string());
+    };
+    let Some(stdin) = slot.as_mut() else {
+        return Ok(());
+    };
+    let line = refresh_line(id);
+    stdin
+        .write_all(line.as_bytes())
+        .and_then(|()| stdin.flush())
+        .map_err(|e| e.to_string())
 }
 
 /// Starts the supervisor on its own thread and returns at once. Setup must
@@ -154,12 +201,20 @@ fn run_once(exe: &Path, app: &AppHandle, state: &mut HelperState) -> std::io::Re
 }
 
 /// The protocol half of one helper lifetime: hello, then one line at a
-/// time. `child.stdin` is deliberately not taken — dropping it would close
-/// the pipe and make the helper exit — and stderr is left unread at NUL.
+/// time. After HELLO the child's stdin moves into HELPER_STDIN — dropping
+/// it would close the pipe and make the helper exit — and stderr is left
+/// unread at NUL.
 fn pump(child: &mut Child, app: &AppHandle, state: &mut HelperState) -> std::io::Result<()> {
-    if let Some(stdin) = child.stdin.as_mut() {
+    if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(HELLO)?;
         stdin.flush()?;
+        if let Ok(mut slot) = HELPER_STDIN.lock() {
+            *slot = Some(stdin);
+        } else {
+            // A poisoned lock cannot hold the pipe; keeping the handle local
+            // still keeps it open for this pump's lifetime.
+            let _keep_open = stdin;
+        }
     }
     let Some(stdout) = child.stdout.take() else {
         return Ok(());
@@ -267,6 +322,25 @@ mod tests {
         assert_eq!(state.readings.len(), 1);
         assert_eq!(state.readings[0]["id"], "codex");
         assert!(!state.unavailable);
+    }
+
+    #[test]
+    fn refresh_line_defaults_to_all() {
+        assert_eq!(
+            refresh_line(None),
+            "{\"v\":1,\"op\":\"refresh\",\"id\":\"all\"}\n"
+        );
+    }
+
+    #[test]
+    fn refresh_line_carries_one_agent() {
+        assert!(refresh_line(Some("devin")).contains("\"id\":\"devin\""));
+    }
+
+    #[test]
+    fn clamp_height_bounds_between_normal_and_monitor() {
+        assert_eq!(clamp_height(2000, 1080), 1080);
+        assert_eq!(clamp_height(0, 1080), NORMAL_HEIGHT);
     }
 
     #[test]

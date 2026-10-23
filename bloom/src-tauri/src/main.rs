@@ -136,6 +136,8 @@ fn main() {
             toggle_dock,
             change_dock_mode,
             change_notch_mode,
+            refresh_quota,
+            set_quota_panel_height,
             sync_appbar,
             open_app,
             launch_new_instance,
