@@ -157,13 +157,13 @@
 **Files:**
 - Create: `bloom/e2e/quota-space.spec.ts`, plus a fixture with the photo's values (devin 56% Day plus 28% Week on a Pro plan, claude failed, cursor 71% Plan, codex 10% 5h, antigravity 0% 5h)
 
-- [ ] Run Vite. Mock `@tauri-apps/api` `invoke` and `listen` so they emit the fixture as `quota-snapshot`. Assert the following:
+- [x] Run Vite. Mock `@tauri-apps/api` `invoke` and `listen` so they emit the fixture as `quota-snapshot`. Assert the following:
   - The texts `Used`, `Devin · Pro`, `Day · 56% used`, `Unavailable` and `1 failed` appear.
   - Clicking the Codex cell changes the title.
   - Clicking a reset swaps to the clock format.
   - Refresh calls `refresh_quota` with `{ id: null }`.
-- [ ] Save a screenshot and compare it by eye with `C:\Users\Bennett\.t3\userdata\attachments\7065c746-4c11-42b0-9764-7bbaa630c07f-fcdd6bd7-34b7-40df-8c03-2b3ffd2fc8ab.png`. Note any deviations in the task report.
-- [ ] Commit with the message `test(bloom): e2e the quota space`.
+- [x] Save a screenshot and compare it by eye with `C:\Users\Bennett\.t3\userdata\attachments\7065c746-4c11-42b0-9764-7bbaa630c07f-fcdd6bd7-34b7-40df-8c03-2b3ffd2fc8ab.png`. Note any deviations in the task report.
+- [x] Commit with the message `test(bloom): e2e the quota space`.
 
 ### Task 7: Desktop verification and standalone removal
 
