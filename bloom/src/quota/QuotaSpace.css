@@ -1,0 +1,355 @@
+/* Quota space — the open view of the standalone Agent Quota widget inside
+   Bloom's notch. Inks, sizes and section heights mirror widget/widget.go
+   (whiteInk/dimInk/mutedInk/errorInk/staleInk). */
+
+/* The notch window may be shorter than the content when the panel would
+   exceed the monitor; this wrapper caps and scrolls so `.qs` itself stays
+   unconstrained and always reports its true height to Rust. */
+.quota-viewport {
+	width: 100%;
+	max-height: 100vh;
+	overflow-y: auto;
+	overflow-x: hidden;
+	scrollbar-width: thin;
+}
+
+.qs {
+	width: 100%;
+	min-width: 386px;
+	box-sizing: border-box;
+	color: #f4f2f6;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+/* --- header: "Used" caption, pin and close (24 px) --- */
+
+.qs-header {
+	display: flex;
+	align-items: center;
+	height: 24px;
+	padding: 0 10px 0 24px;
+	box-sizing: border-box;
+}
+
+.qs-caption {
+	font-size: 11px;
+	font-weight: 400;
+	color: #b9b3c1;
+}
+
+.qs-header-actions {
+	margin-left: auto;
+	display: flex;
+	gap: 4px;
+}
+
+.qs-icon-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 22px;
+	padding: 0;
+	border: none;
+	border-radius: 5px;
+	background: transparent;
+	color: #b9b3c1;
+	cursor: pointer;
+}
+
+.qs-icon-btn:hover,
+.qs-icon-btn.active {
+	background: #141414;
+	color: #f4f2f6;
+}
+
+/* --- ring row: one tile per agent (72 px) --- */
+
+.qs-rings {
+	display: flex;
+	align-items: stretch;
+	height: 72px;
+	padding: 0 16px;
+	box-sizing: border-box;
+}
+
+.qs-cell {
+	flex: 1 1 0;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 0 2px;
+	border: none;
+	border-radius: 8px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+
+.qs-cell:hover,
+.qs-cell.selected {
+	background: #101010;
+}
+
+.qs-cell-top {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	height: 32px;
+	margin-top: 6px;
+}
+
+.qs-ring {
+	position: relative;
+	width: 28px;
+	height: 28px;
+	flex: none;
+}
+
+.qs-ring-svg {
+	display: block;
+	width: 28px;
+	height: 28px;
+}
+
+.qs-ring-track {
+	fill: none;
+	stroke: rgba(255, 255, 255, 0.14);
+	stroke-width: 3;
+}
+
+.qs-ring-fill {
+	fill: none;
+	stroke-width: 3;
+	stroke-linecap: round;
+}
+
+.qs-mark {
+	position: absolute;
+	inset: 6px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.qs-mark svg,
+.qs-mark img {
+	width: 100%;
+	height: 100%;
+	border-radius: 4px;
+}
+
+.qs-pct {
+	font-size: 11.5px;
+	font-weight: 600;
+	line-height: 1;
+}
+
+.qs-pct.empty {
+	color: #a19aa9;
+	font-weight: 500;
+}
+
+.qs-name {
+	margin-top: 1px;
+	max-width: 100%;
+	font-size: 10.5px;
+	font-weight: 500;
+	color: #f4f2f6;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.qs-basis {
+	margin-top: 3px;
+	max-width: 100%;
+	font-size: 10px;
+	font-weight: 400;
+	color: #a19aa9;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* --- selected agent's detail block --- */
+
+.qs-detail {
+	padding: 8px 24px 6px;
+	box-sizing: border-box;
+}
+
+.qs-detail-title {
+	font-size: 12.5px;
+	font-weight: 500;
+	color: #f4f2f6;
+	margin-bottom: 4px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.qs-line {
+	font-size: 11px;
+	font-weight: 400;
+	line-height: 15px;
+	color: #b9b3c1;
+	overflow-wrap: anywhere;
+}
+
+.qs-line.qs-observed {
+	font-size: 10px;
+	color: #a19aa9;
+}
+
+.qs-line.qs-stale {
+	margin-top: 4px;
+	color: #edc28b;
+}
+
+.qs-line.qs-error {
+	color: #f4b2ab;
+}
+
+/* model-group table, matching drawGroups in widget/paint.go */
+.qs-groups {
+	margin-top: 6px;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.qs-group-row {
+	display: grid;
+	align-items: center;
+	font-size: 10px;
+	font-weight: 400;
+	color: #b9b3c1;
+}
+
+.qs-group-head {
+	color: #a19aa9;
+}
+
+.qs-group-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.qs-group-col {
+	text-align: right;
+}
+
+/* --- detail control strip: groups toggle, reset toggle, recovery hint --- */
+
+.qs-controls {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 2px 8px;
+	margin-top: 6px;
+}
+
+.qs-ctl {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 20px;
+	padding: 0 6px;
+	border: none;
+	border-radius: 5px;
+	background: transparent;
+	font-size: 10px;
+	font-weight: 400;
+	color: #a19aa9;
+	cursor: pointer;
+}
+
+.qs-ctl:hover {
+	background: #141414;
+	color: #f4f2f6;
+}
+
+/* --- empty state --- */
+
+.qs-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 30px 24px 38px;
+	box-sizing: border-box;
+}
+
+.qs-empty-title {
+	font-size: 12.5px;
+	font-weight: 500;
+	color: #f4f2f6;
+}
+
+.qs-empty-sub {
+	margin-top: 6px;
+	font-size: 11px;
+	font-weight: 400;
+	color: #b9b3c1;
+}
+
+/* --- divider + footer (36 px) --- */
+
+.qs-divider {
+	height: 1px;
+	margin: 0 24px;
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.qs-footer {
+	display: flex;
+	align-items: center;
+	height: 36px;
+	padding: 0 14px 0 24px;
+	box-sizing: border-box;
+}
+
+.qs-failed {
+	font-size: 10px;
+	font-weight: 400;
+	color: #f4b2ab;
+}
+
+.qs-refresh {
+	margin-left: auto;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	height: 24px;
+	padding: 0 8px;
+	border: none;
+	border-radius: 5px;
+	background: transparent;
+	font-size: 10px;
+	font-weight: 400;
+	color: #a19aa9;
+	cursor: pointer;
+}
+
+.qs-refresh:hover:not(:disabled) {
+	background: #141414;
+	color: #f4f2f6;
+}
+
+.qs-refresh:disabled {
+	cursor: default;
+}
+
+.qs-spin {
+	animation: qs-rotate 0.9s linear infinite;
+}
+
+@keyframes qs-rotate {
+	to {
+		transform: rotate(360deg);
+	}
+}

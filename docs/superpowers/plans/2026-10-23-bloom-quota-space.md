@@ -137,20 +137,20 @@
   - From Task 2: `invoke("refresh_quota", { id })` and `invoke("set_quota_panel_height", { height })`.
 - Produces: `QuotaPanel({ readings, selected, onSelect, pinned, onPin, onClose }: QuotaPanelProps)`.
 
-- [ ] Implement the layout from spec section 1:
+- [x] Implement the layout from spec section 1:
   - Header: the `Used` caption on the left, and pin and close buttons on the right.
   - Ring row: SVG ring, mark, percentage, name and basis for each agent. The selected tile and hover highlight use the widget ink colours from `widget/widget.go`.
   - Detail block: the `<Name> · <Plan>` title, then `detailLines`. Then the groups toggle (`N model groups`), the stale note with `lastGoodAt`, the observation time, and the error. The hint is a button that calls `refresh_quota(id)`.
   - Divider, then the footer: a refresh button, disabled with a spinner while `anyBusy` is true, and `N failed`.
   - Empty state when there are no readings.
-- [ ] Make every control a `<button tabIndex={-1}>` with `onMouseDown={e => e.preventDefault()}`, so nothing takes focus. Add no key handlers.
-- [ ] Measure the content with a `ResizeObserver`. On each change, call `set_quota_panel_height(scaledHeight)` while the panel is mounted, and `set_quota_panel_height(0)` on unmount.
-- [ ] In `App.tsx`:
+- [x] Make every control a `<button tabIndex={-1}>` with `onMouseDown={e => e.preventDefault()}`, so nothing takes focus. Add no key handlers.
+- [x] Measure the content with a `ResizeObserver`. On each change, call `set_quota_panel_height(scaledHeight)` while the panel is mounted, and `set_quota_panel_height(0)` on unmount.
+- [x] In `App.tsx`:
   - Keep `selected` and `pinned` state.
   - While pinned and on the quota panel, skip the pointer-leave collapse. Switching panels unpins. `onClose` collapses the notch.
   - Clicking the urgent alert sets `selected` to that agent before opening the quota panel.
-- [ ] Run `bun run build` and `bun test`, and expect PASS.
-- [ ] Commit with the message `feat(bloom): render the full Agent Quota view in the quota space`.
+- [x] Run `bun run build` and `bun test`, and expect PASS.
+- [x] Commit with the message `feat(bloom): render the full Agent Quota view in the quota space`.
 
 ### Task 6: Playwright QA against the reference
 

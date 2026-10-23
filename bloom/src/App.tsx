@@ -1975,6 +1975,28 @@ function App() {
 		};
 	}, []);
 
+	// The quota space's selected agent and pin live here: the urgent alert
+	// sets the selection before opening, and the pin rides the shared notch
+	// pin so pointer-leave release defers exactly like a Wi-Fi password.
+	const [quotaSelected, setQuotaSelected] = useState<string | undefined>(undefined);
+	const [quotaPinned, setQuotaPinned] = useState(false);
+	// Measured content height of the quota space, in the pill's own CSS px.
+	// The observer watches `.qs`, not the scroll viewport, so the cap never
+	// feeds back into the requested height.
+	const [quotaSpaceHeight, setQuotaSpaceHeight] = useState(0);
+	const quotaSpaceMeasureRef = useCallback(
+		(el: HTMLDivElement | null) => {
+			const target = el?.firstElementChild;
+			if (!el || !target) return undefined;
+			const ro = new ResizeObserver(() => {
+				setQuotaSpaceHeight(target.getBoundingClientRect().height / scale);
+			});
+			ro.observe(target);
+			return () => ro.disconnect();
+		},
+		[scale]
+	);
+
 	// One visibility controller: the open panel is only ever moved by the
 	// user, alerts record themselves beside it, and a deferred gesture
 	// swallows an alert whole.
@@ -2172,6 +2194,29 @@ function App() {
 		},
 		[setNotchPinned]
 	);
+
+	// The quota pin is not a typing/pairing gesture, so it only sets the
+	// shared notch pin; the attention controller never sees it.
+	const handleQuotaPin = useCallback(
+		(pinned: boolean) => {
+			setQuotaPinned(pinned);
+			setNotchPinned(pinned);
+		},
+		[setNotchPinned]
+	);
+
+	// The pin is in memory only and belongs to the quota panel; leaving the
+	// panel unpins so a stale pin cannot hold the notch open elsewhere.
+	useEffect(() => {
+		if (bloomMode !== "quotas" && quotaPinned) handleQuotaPin(false);
+	}, [bloomMode, quotaPinned, handleQuotaPin]);
+
+	// Close acts like the pointer leaving: unpin first so the release is
+	// not deferred, then run the shared release path.
+	const closeQuotaSpace = () => {
+		handleQuotaPin(false);
+		releaseNotchHover();
+	};
 
 	// In peek mode, briefly show the notch when a new track starts or playback
 	// resumes. The notch itself never switches views for media; the collapsed
@@ -2897,7 +2942,9 @@ function App() {
 		if (isCalendarMode) return 480;
 		if (bloomMode === "shelf") return 380;
 		if (bloomMode === "command-center" && isOpen) return 350;
-		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "quotas" || bloomMode === "overview") return 350;
+		// The quota space's minimum width, like the standalone widget.
+		if (bloomMode === "quotas") return 386;
+		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "overview") return 350;
 		if (showMusicOnStatusHover) {
 			return 170 + (settingsVisualizerEnabled ? 30 : 0);
 		}
@@ -2935,7 +2982,10 @@ function App() {
 			return shelfOverflowing ? 190 : 176;
 		}
 		if (bloomMode === "command-center") return isOpen ? 230 : 36;
-		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "quotas" || bloomMode === "overview") return 300;
+		// The quota space follows its measured content height (the window is
+		// resized to match by set_quota_panel_height inside the panel).
+		if (bloomMode === "quotas") return Math.max(Math.ceil(quotaSpaceHeight), 180);
+		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "overview") return 300;
 		if (bloomMode === "status") return 36;
 		if (isMusicMode && isOpen) {
 			const hasProgressBar = (mediaInfo.duration_ms ?? 0) > 0;
@@ -3710,7 +3760,16 @@ function App() {
 											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
 											transition={{ type: "spring", stiffness: 400, damping: 30 }}
 										>
-											<QuotaPanel readings={quotaReadings} />
+											<div ref={quotaSpaceMeasureRef} className="quota-viewport">
+												<QuotaPanel
+													readings={quotaReadings}
+													selected={quotaSelected}
+													onSelect={setQuotaSelected}
+													pinned={quotaPinned}
+													onPin={handleQuotaPin}
+													onClose={closeQuotaSpace}
+												/>
+											</div>
 										</motion.div>
 									)}
 								</AnimatePresence>
@@ -4294,7 +4353,12 @@ function App() {
 										>
 											<QuotaAlert
 												readings={quotaReadings}
-												onOpen={() => openNotch("quotas")}
+												onOpen={() => {
+													// Open the space already focused on the urgent agent.
+													const first = quotaReadings.find(urgent);
+													if (first) setQuotaSelected(first.id);
+													openNotch("quotas");
+												}}
 											/>
 										</motion.div>
 									)}
