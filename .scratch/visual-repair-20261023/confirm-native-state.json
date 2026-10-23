@@ -1,0 +1,22 @@
+{
+  "url": "http://tauri.localhost/",
+  "viewport": {
+    "w": 1536,
+    "h": 420,
+    "dpr": 1.25
+  },
+  "bloom": {
+    "x": 748.4500122070312,
+    "y": -100,
+    "width": 39.10000228881836,
+    "height": 28.899999618530273,
+    "top": -100,
+    "right": 787.5500144958496,
+    "bottom": -71.10000038146973,
+    "left": 748.4500122070312
+  },
+  "text": "12:51 am",
+  "visible": "visible",
+  "scale": null,
+  "notchMode": "peek"
+}

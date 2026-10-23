@@ -1,0 +1,16 @@
+$ playwright test -g seven-agent
+
+Running 8 tests using 1 worker
+
+  ok 1 quota-space.spec.ts:336:2 › seven-agent density › the ring row stays inside the island (3.1s)
+  ok 2 quota-space.spec.ts:350:2 › seven-agent density › each cell's contents stay inside its own box (3.4s)
+  ok 3 quota-space.spec.ts:369:3 › seven-agent density › the ring row stays inside the island at scale 0.8 (4.7s)
+  ok 4 quota-space.spec.ts:369:3 › seven-agent density › the ring row stays inside the island at scale 1.25 (4.5s)
+  ok 5 quota-space.spec.ts:395:2 › seven-agent density › the selected cell reads differently from a hovered one (2.9s)
+  ok 6 quota-space.spec.ts:409:2 › seven-agent density › the footer keeps clearance above the island's bottom edge (3.5s)
+  ok 7 quota-space.spec.ts:417:2 › seven-agent density › long detail content scrolls and keeps the footer reachable (3.9s)
+  ok 8 quota-space.spec.ts:429:2 › seven-agent density › leaving the quota space releases its height (4.0s)
+
+  Slow test file: quota-space.spec.ts (30.0s)
+  Consider splitting slow test files to speed up parallel execution
+  8 passed (31.2s)

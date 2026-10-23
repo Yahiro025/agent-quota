@@ -443,3 +443,98 @@ test.describe("seven-agent density", () => {
 		expect(heights).toContain(0);
 	});
 });
+
+/* The island is bounded by the display, not by content alone: max-content
+   measures every string unwrapped, so reader errors, hints, detail labels
+   and group names can otherwise push cells offscreen (width) or drop the
+   footer past the window's bottom edge (height). */
+const LONG_STRING = `reader failed fetching https://quota.invalid/api/${"segment-".repeat(24)}end`;
+
+// Long unbroken strings in every lane that feeds `.qs` max-content.
+const wideFixture = (): QuotaAgent[] => {
+	const agents = sevenFixture();
+	agents[0] = { ...agents[0], err: LONG_STRING, help: LONG_STRING };
+	agents[5] = {
+		...agents[5],
+		details: [{ label: LONG_STRING, value: "56% used", resetAt: later(6.3 * HOUR) }]
+	};
+	agents[6] = {
+		...agents[6],
+		groups: [{ name: LONG_STRING, windows: [{ label: "5h", used: 0 }] }]
+	};
+	return agents;
+};
+
+// Load at a chosen scale and viewport, then open quotas on wideFixture.
+const openWide = async (page: Page, bloomScale: number, w: number, h: number) => {
+	await page.setViewportSize({ width: w, height: h });
+	await page.evaluate((v) => localStorage.setItem("bloom-scale", v), String(bloomScale));
+	await page.reload();
+	await page.waitForTimeout(900);
+	await emitReadings(page, wideFixture());
+	await openQuotaSpace(page);
+	await settlePill(page);
+};
+
+test.describe("display bounds", () => {
+	// A narrow display plus unbounded strings: the island must stop at the
+	// available width while capped cells ellipsize rather than clip.
+	for (const bloomScale of [0.8, 1, 1.25]) {
+		test(`long strings keep the island inside the display at scale ${bloomScale}`, async ({
+			page
+		}) => {
+			await openWide(page, bloomScale, 560, 720);
+			const innerWidth = await page.evaluate(() => window.innerWidth);
+			const pill = await box(page, "div.bloom");
+			const qs = await box(page, "[data-testid=quota-space]");
+			expect(pill.width).toBeLessThanOrEqual(innerWidth + 0.5);
+			expect(qs.x).toBeGreaterThanOrEqual(pill.x - 0.5);
+			expect(qs.x + qs.width).toBeLessThanOrEqual(pill.x + pill.width + 0.5);
+			for (const id of SEVEN_IDS) {
+				const cell = await box(page, `[data-testid=quota-cell-${id}]`);
+				expect(cell.x).toBeGreaterThanOrEqual(pill.x - 0.5);
+				expect(cell.x + cell.width).toBeLessThanOrEqual(pill.x + pill.width + 0.5);
+			}
+			// Capped cells ellipsize; the name lane keeps its own type size.
+			const name = page.getByTestId("quota-cell-devin").locator(".qs-name");
+			expect(await name.evaluate((e) => getComputedStyle(e).fontSize)).toBe("10.5px");
+		});
+	}
+
+	// Sixty detail rows outgrow any monitor: the scrollport must stop at
+	// the window's interior (below the 36px status row) so the footer is
+	// reachable inside the window, not merely DOM-visible past its edge.
+	for (const bloomScale of [0.8, 1, 1.25]) {
+		test(`the scrolled footer stays inside the window at scale ${bloomScale}`, async ({
+			page
+		}) => {
+			await page.setViewportSize({ width: 640, height: 480 });
+			await page.evaluate(
+				(v) => localStorage.setItem("bloom-scale", v),
+				String(bloomScale)
+			);
+			await page.reload();
+			await page.waitForTimeout(900);
+			await emitReadings(page, longFixture());
+			await openQuotaSpace(page);
+			await page.getByTestId("quota-cell-claude").click();
+			await page.waitForTimeout(400);
+			const innerHeight = await page.evaluate(() => window.innerHeight);
+			const vp = page.locator(".quota-viewport");
+			const dims = await vp.evaluate((e) => ({
+				scroll: e.scrollHeight,
+				client: e.clientHeight,
+				bottom: e.getBoundingClientRect().bottom
+			}));
+			expect(dims.scroll).toBeGreaterThan(dims.client);
+			// The viewport's painted bottom edge may not pass the window's
+			// bottom edge — the physical clip a mocked harness cannot show.
+			expect(dims.bottom).toBeLessThanOrEqual(innerHeight + 0.5);
+			await vp.evaluate((e) => {
+				e.scrollTop = e.scrollHeight;
+			});
+			const footer = await box(page, ".qs-footer");
+			expect(footer.y + footer.height).toBeLessThanOrEqual(innerHeight + 0.5);
+		});
+	}
+});

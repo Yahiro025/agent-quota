@@ -1,0 +1,4 @@
+REST: {"bloom":{"x":698,"y":0,"width":140,"height":36,"top":0,"right":838,"bottom":36,"left":698},"qs":null,"qsInPill":null,"cells":[],"selPaint":null,"captionPx":null,"namePx":null,"footer":null,"footerClearance":null,"vp":null,"detailText":""}
+QUOTA: {"bloom":{"x":668,"y":0,"width":200,"height":36,"top":0,"right":868,"bottom":36,"left":668},"qs":null,"qsInPill":null,"cells":[],"selPaint":null,"captionPx":null,"namePx":null,"footer":null,"footerClearance":null,"vp":null,"detailText":""}
+REFRESH-HIT: null
+AFTER-SWITCH: {"before":36,"after":{"h":252,"qs":true}}

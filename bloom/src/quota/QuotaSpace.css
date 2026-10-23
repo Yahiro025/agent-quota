@@ -8,7 +8,10 @@
 .quota-viewport {
 	width: 100%;
 	min-width: 0; /* a flex item may not outgrow the island to its min-content */
-	max-height: 100vh;
+	/* --qs-max-h is the window's interior below the 36px status row, set
+	   in unzoomed px by the measuring code (App.tsx). The fallback is
+	   exact at scale 1 before the first measurement. */
+	max-height: var(--qs-max-h, calc(100vh - 36px));
 	overflow-y: auto;
 	overflow-x: hidden;
 	scrollbar-width: thin;
@@ -16,9 +19,13 @@
 
 .qs {
 	/* max-content reports the ring row's true need through scrollWidth;
-	   386px is the standalone widget's minimum width, never smaller. */
+	   386px is the standalone widget's minimum width, never smaller.
+	   --qs-max-w caps that need at the pill's interior edge so the island
+	   never outgrows the display: capped children wrap or ellipsize
+	   inside it rather than pushing cells offscreen. */
 	width: max-content;
 	min-width: 386px;
+	max-width: var(--qs-max-w, calc(100vw - 24px));
 	padding-bottom: 8px;
 	box-sizing: border-box;
 	color: #f4f2f6;

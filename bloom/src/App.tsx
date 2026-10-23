@@ -1992,7 +1992,7 @@ function App() {
 			// `.qs` sits below the status row inside `.bloom`; the island must
 			// cover its bottom edge, not merely its own height. Measuring the
 			// edge delta is invariant to the pill's enter/leave translate.
-			const ro = new ResizeObserver(() => {
+			const measure = () => {
 				const pill = el.closest(".bloom");
 				const h = pill
 					? target.getBoundingClientRect().bottom - pill.getBoundingClientRect().top
@@ -2002,10 +2002,29 @@ function App() {
 				// scrollWidth is already in the island's unzoomed CSS px.
 				// The pill's 12px side padding is added back so the island
 				// covers all of `.qs` inside its padded area.
-				setQuotaSpaceWidth(target.scrollWidth + 24);
-			});
+				// innerWidth/innerHeight are the window's unzoomed CSS
+				// size; /scale returns the display bound to the island's
+				// coordinate space. `.qs` and the scrollport get the caps
+				// (--qs-max-w/-h, on the viewport element so `.qs`
+				// inherits) while the island itself is clamped here too.
+				const capW = Math.floor(window.innerWidth / scale);
+				el.style.setProperty("--qs-max-w", `${capW - 24}px`);
+				el.style.setProperty(
+					"--qs-max-h",
+					`${Math.floor(window.innerHeight / scale) - 36}px`
+				);
+				setQuotaSpaceWidth(Math.min(target.scrollWidth + 24, capW));
+			};
+			const ro = new ResizeObserver(measure);
 			ro.observe(target);
-			return () => ro.disconnect();
+			// The caps follow the real window size: set_quota_panel_height
+			// resizes the window under the scrollport, which never resizes
+			// `.qs` itself, so the observer alone would keep stale caps.
+			window.addEventListener("resize", measure);
+			return () => {
+				ro.disconnect();
+				window.removeEventListener("resize", measure);
+			};
 		},
 		[scale]
 	);

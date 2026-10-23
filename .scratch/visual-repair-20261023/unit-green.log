@@ -1,0 +1,74 @@
+bun test v1.4.2 (744846f84)
+
+src\quota\attention.test.ts:
+(pass) reduceAttention > open-panel sets the panel and nothing else [0.10ms]
+(pass) reduceAttention > an alert while idle records the id and keeps the panel [0.02ms]
+(pass) reduceAttention > timer completion arrives as an alert with id timer [0.01ms]
+(pass) reduceAttention > an alert while deferred stores nothing and keeps the panel [0.02ms]
+(pass) reduceAttention > alert-finished clears the alert and leaves the panel [0.03ms]
+(pass) reduceAttention > clear-defer re-enables alerts after a deferring gesture [0.02ms]
+(pass) reduceAttention > typing, dragging, pairing, and connecting each set deferred [0.04ms]
+(pass) reduceAttention > two alerts during typing are dropped, then a third lands after clear-defer [0.04ms]
+(pass) reduceAttention > no-op events return the same object [0.05ms]
+
+src\quota\protocol.test.ts:
+(pass) parseSnapshot > returns the readings array for a snapshot line [0.12ms]
+(pass) parseSnapshot > keeps used: 0 instead of treating it as absent [0.10ms]
+(pass) parseSnapshot > keeps used and err on a stale agent [0.03ms]
+(pass) parseSnapshot > returns null for ready, bye, and error lines [0.02ms]
+(pass) parseSnapshot > returns null for blank and non-JSON lines [0.05ms]
+(pass) parseSnapshot > returns null for a snapshot line without a readings array
+(pass) band > is green below 70 [0.02ms]
+(pass) band > is amber from 70 and below 90
+(pass) band > is red from 90
+(pass) urgent > is false when used is absent [0.03ms]
+(pass) urgent > is false below 90 [0.01ms]
+(pass) urgent > is true at 90
+(pass) quotaView > quota_hidden_on_rest_until_urgent [10.46ms]
+(pass) quotaView > countdown_and_clock_share_one_instant [0.31ms]
+(pass) overviewRows > overview_lists_only_live_activities [0.10ms]
+(pass) overviewRows > overview_is_not_the_default_panel [0.02ms]
+(pass) alertRows > keeps only readings at or above 90, in snapshot order [0.23ms]
+(pass) alertRows > is empty when nothing is urgent [0.06ms]
+(pass) alertRows > carries the band and reset the strip draws [0.07ms]
+
+src\quota\QuotaPanel.test.tsx:
+(pass) QuotaPanel > a zero-agent snapshot renders the empty state [6.18ms]
+(pass) QuotaPanel > all agents failed keeps the ring row, count, error and hint [2.30ms]
+(pass) QuotaPanel > a past 5h reset reads now, never a negative countdown [1.20ms]
+(pass) QuotaPanel > refresh is disabled while any agent is busy [1.93ms]
+(pass) QuotaPanel > every control is a focus-free button [0.83ms]
+
+src\quota\quotaView.test.ts:
+(pass) basis > state labels [0.03ms]
+(pass) basis > a 5h window gives 5h, including inside groups [0.04ms]
+(pass) basis > Unlimited summary gives Unlimited [0.01ms]
+(pass) basis > groups give Models [0.01ms]
+(pass) basis > the fullest window gives its name [0.05ms]
+(pass) basis > per-agent fallbacks [0.03ms]
+(pass) detailLines > countdown rows join label, value and reset [0.08ms]
+(pass) detailLines > clock rows use the wall clock [0.23ms]
+(pass) detailLines > a past reset reads as a wall-clock time [0.07ms]
+(pass) detailLines > resetText stands in when there is no resetAt [0.02ms]
+(pass) detailLines > a stale agent keeps its resetLabel, not the 5h instant [0.02ms]
+(pass) detailLines > a stale agent without resetLabel shows metrics only [0.02ms]
+(pass) detailLines > waiting reads Checking usage [0.01ms]
+(pass) detailLines > failed surfaces the error, then the detail [0.02ms]
+(pass) formatReset > a time in the past gives now [0.01ms]
+(pass) formatReset > clock: true gives local h:mm AM/PM [0.12ms]
+(pass) formatReset > countdown for a future time [0.01ms]
+(pass) failedCount > counts failed agents [0.03ms]
+(pass) anyBusy > true when any reading is busy [0.03ms]
+(pass) defaultSelection > picks the first urgent agent [0.02ms]
+(pass) defaultSelection > picks the first failed agent when nothing is urgent [0.02ms]
+(pass) defaultSelection > falls back to the first agent, then undefined for empty [0.03ms]
+
+src\quota\marks\marks.test.ts:
+(pass) agentName > gives the seven exact names [0.02ms]
+(pass) initials > capitalises the first letter, matching marks.Initials [0.02ms]
+(pass) AgentMark > renders a mark for every agent and falls back for unknown ids [0.17ms]
+
+ 58 pass
+ 0 fail
+ 156 expect() calls
+Ran 58 tests across 5 files. [572.00ms]

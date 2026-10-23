@@ -1,0 +1,59 @@
+$ playwright test -g seven-agent
+
+Running 8 tests using 1 worker
+
+  ok 1 quota-space.spec.ts:336:2 › seven-agent density › the ring row stays inside the island (6.6s)
+  x  2 quota-space.spec.ts:350:2 › seven-agent density › each cell's contents stay inside its own box (3.1s)
+  ok 3 quota-space.spec.ts:369:3 › seven-agent density › the ring row stays inside the island at scale 0.8 (5.1s)
+  x  4 quota-space.spec.ts:369:3 › seven-agent density › the ring row stays inside the island at scale 1.25 (4.7s)
+  ok 5 quota-space.spec.ts:395:2 › seven-agent density › the selected cell reads differently from a hovered one (2.9s)
+  ok 6 quota-space.spec.ts:409:2 › seven-agent density › the footer keeps clearance above the island's bottom edge (3.5s)
+  ok 7 quota-space.spec.ts:417:2 › seven-agent density › long detail content scrolls and keeps the footer reachable (3.5s)
+  ok 8 quota-space.spec.ts:429:2 › seven-agent density › leaving the quota space releases its height (4.1s)
+
+
+  1) quota-space.spec.ts:350:2 › seven-agent density › each cell's contents stay inside its own box 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: >= [32m513.078125[39m
+    Received:    [31m510.328125[39m
+
+      358 | 			for (const part of [".qs-name", ".qs-basis", ".qs-cell-top"]) {
+      359 | 				const pr = (await cell.locator(part).boundingBox())!;
+    > 360 | 				expect(pr.x).toBeGreaterThanOrEqual(cr.x - 0.5);
+          | 				             ^
+      361 | 				expect(pr.x + pr.width).toBeLessThanOrEqual(cr.x + cr.width + 0.5);
+      362 | 			}
+      363 | 		}
+        at C:\Users\Bennett\Documents\PROJECT\agent-quota\bloom\e2e\quota-space.spec.ts:360:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\quota-space-seven-agent-de-5a455-nts-stay-inside-its-own-box\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) quota-space.spec.ts:369:3 › seven-agent density › the ring row stays inside the island at scale 1.25 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: <= [32m881.75[39m
+    Received:    [31m896.25[39m
+
+      382 | 			const qs = await box(page, "[data-testid=quota-space]");
+      383 | 			expect(qs.x).toBeGreaterThanOrEqual(pill.x - 0.5);
+    > 384 | 			expect(qs.x + qs.width).toBeLessThanOrEqual(pill.x + pill.width + 0.5);
+          | 			                        ^
+      385 | 			for (const id of SEVEN_IDS) {
+      386 | 				const cell = await box(page, `[data-testid=quota-cell-${id}]`);
+      387 | 				expect(cell.x).toBeGreaterThanOrEqual(pill.x - 0.5);
+        at C:\Users\Bennett\Documents\PROJECT\agent-quota\bloom\e2e\quota-space.spec.ts:384:28
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\quota-space-seven-agent-de-4e700-de-the-island-at-scale-1-25\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    quota-space.spec.ts:350:2 › seven-agent density › each cell's contents stay inside its own box ─
+    quota-space.spec.ts:369:3 › seven-agent density › the ring row stays inside the island at scale 1.25 
+  6 passed (36.1s)
+error: script "e2e" exited with code 1
