@@ -126,7 +126,11 @@ pub fn note_exit(state: &mut HelperState) {
 /// One refresh request line for the helper's stdin: `id` names a single
 /// agent, `None` asks for every agent at once.
 pub fn refresh_line(id: Option<&str>) -> String {
-    format!("{{\"v\":1,\"op\":\"refresh\",\"id\":\"{}\"}}\n", id.unwrap_or("all"))
+    // json! owns the id's escaping so it can never corrupt the line; the
+    // envelope stays literal so the field order is byte-exact whatever map
+    // order serde_json was built with.
+    let id = serde_json::json!(id.unwrap_or("all"));
+    format!("{{\"v\":1,\"op\":\"refresh\",\"id\":{id}}}\n")
 }
 
 /// Fits a requested quota-space height between the resting notch height and
@@ -200,22 +204,34 @@ fn run_once(exe: &Path, app: &AppHandle, state: &mut HelperState) -> std::io::Re
     result
 }
 
+/// Writes HELLO, then parks the child's stdin in HELPER_STDIN so
+/// `write_refresh` can reach it. A poisoned lock cannot hold the pipe, so
+/// the handle comes back to the caller, which must keep it alive until
+/// the read loop ends — dropping it closes the pipe and the helper exits.
+fn open_pipe(child: &mut Child) -> std::io::Result<Option<ChildStdin>> {
+    let Some(mut stdin) = child.stdin.take() else {
+        return Ok(None);
+    };
+    stdin.write_all(HELLO)?;
+    stdin.flush()?;
+    match HELPER_STDIN.lock() {
+        Ok(mut slot) => {
+            *slot = Some(stdin);
+            Ok(None)
+        }
+        Err(_) => Ok(Some(stdin)),
+    }
+}
+
 /// The protocol half of one helper lifetime: hello, then one line at a
 /// time. After HELLO the child's stdin moves into HELPER_STDIN — dropping
 /// it would close the pipe and make the helper exit — and stderr is left
 /// unread at NUL.
 fn pump(child: &mut Child, app: &AppHandle, state: &mut HelperState) -> std::io::Result<()> {
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(HELLO)?;
-        stdin.flush()?;
-        if let Ok(mut slot) = HELPER_STDIN.lock() {
-            *slot = Some(stdin);
-        } else {
-            // A poisoned lock cannot hold the pipe; keeping the handle local
-            // still keeps it open for this pump's lifetime.
-            let _keep_open = stdin;
-        }
-    }
+    // Parked at pump scope: when HELPER_STDIN is poisoned the pipe comes
+    // back in _keep_open, which must live until the read loop ends —
+    // dropping it earlier would close the pipe and make the helper exit.
+    let _keep_open = open_pipe(child)?;
     let Some(stdout) = child.stdout.take() else {
         return Ok(());
     };
@@ -335,6 +351,50 @@ mod tests {
     #[test]
     fn refresh_line_carries_one_agent() {
         assert!(refresh_line(Some("devin")).contains("\"id\":\"devin\""));
+    }
+
+    #[test]
+    fn refresh_line_escapes_the_id() {
+        // An id must stay inside its JSON string whatever it contains.
+        let line = refresh_line(Some("de\"vin"));
+        let parsed: Value = serde_json::from_str(line.trim_end()).unwrap();
+        assert_eq!(parsed["v"], 1);
+        assert_eq!(parsed["op"], "refresh");
+        assert_eq!(parsed["id"], "de\"vin");
+    }
+
+    #[test]
+    fn open_pipe_parks_stdin_until_the_lock_is_poisoned() {
+        let spawn = || {
+            Command::new("cmd.exe")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap()
+        };
+
+        // Healthy lock: the pipe moves into HELPER_STDIN for refresh.
+        let mut child = spawn();
+        assert!(open_pipe(&mut child).unwrap().is_none());
+        assert!(HELPER_STDIN.lock().unwrap().is_some());
+        *HELPER_STDIN.lock().unwrap() = None;
+        let _ = child.kill();
+        let _ = child.wait();
+
+        // Poisoned lock: the pipe comes back and stays writable, where an
+        // early drop would have closed it.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = HELPER_STDIN.lock().unwrap();
+            panic!("poison the helper stdin lock");
+        }));
+        let mut child = spawn();
+        let mut stdin = open_pipe(&mut child)
+            .unwrap()
+            .expect("poisoned lock returns the pipe to hold");
+        stdin.write_all(b"echo alive\r\n").unwrap();
+        drop(stdin);
+        let _ = child.wait();
     }
 
     #[test]
