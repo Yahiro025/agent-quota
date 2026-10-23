@@ -1,8 +1,0 @@
-$ playwright test -g "ring row stays inside the island\$|contents stay inside"
-
-Running 2 tests using 1 worker
-
-  ok 1 quota-space.spec.ts:336:2 › seven-agent density › the ring row stays inside the island (3.2s)
-  ok 2 quota-space.spec.ts:350:2 › seven-agent density › each cell's contents stay inside its own box (3.3s)
-
-  2 passed (7.3s)

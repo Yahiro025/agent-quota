@@ -40,6 +40,9 @@ pub fn set_window_region(window: Window, rects: Vec<IntRect>) {
     let Ok(hwnd) = window.hwnd() else {
         return;
     };
+    // hwnd() may resolve to a child host; the region must clip the visible
+    // root frame, or the frame keeps hit-testing stale (or everywhere).
+    let hwnd = crate::utils::frame_hwnd(hwnd);
     let scale = window.scale_factor().unwrap_or(1.0);
     // A region on a window that isn't layered turns its transparent pixels
     // opaque (see set_click_through). Make sure it's layered before the region

@@ -1,3 +1,4 @@
 # Built binary and ad-hoc debug/launch scratch
 agentquota.exe
 .debug-launch/
+.scratch/

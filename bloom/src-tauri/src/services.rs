@@ -2426,7 +2426,7 @@ fn apply_capture_ui_state(app: &AppHandle, active: bool) {
     if let Some(main_win) = app.get_webview_window("main") {
         if active {
             if let Ok(hwnd) = main_win.hwnd() {
-                set_click_through(hwnd, true);
+                set_click_through(frame_hwnd(hwnd), true);
             }
             let _ = main_win.hide();
         } else {
@@ -2675,9 +2675,9 @@ fn update_main_interaction(
         if let Some(main_win) = app_handle.get_webview_window("main") {
             if let Ok(hwnd) = main_win.hwnd() {
                 if MH_LAST_MAIN_IGNORE.load(Ordering::Relaxed) != 1 {
-                    re_assert_topmost(hwnd);
+                    re_assert_topmost(frame_hwnd(hwnd));
                 }
-                set_click_through(hwnd, true);
+                set_click_through(frame_hwnd(hwnd), true);
             }
             MH_LAST_MAIN_IGNORE.store(1, Ordering::Relaxed);
         }
@@ -2804,7 +2804,7 @@ fn update_main_interaction(
         // while a drag may be active, where it can visibly hitch the drag.
         if !drag_held {
             if let Ok(hwnd) = main_win.hwnd() {
-                re_assert_topmost(hwnd);
+                re_assert_topmost(frame_hwnd(hwnd));
             }
         }
         MH_LAST_MAIN_IGNORE.store(new_ignore, Ordering::Relaxed);
@@ -2827,14 +2827,14 @@ fn update_main_interaction(
         MH_LAST_TOPMOST_ASSERT_MS.store(now, Ordering::Relaxed);
         if let Ok(hwnd) = main_win.hwnd() {
             pin_main_to_monitor_top(&main_win, hwnd);
-            re_assert_topmost(hwnd);
+            re_assert_topmost(frame_hwnd(hwnd));
         }
     }
     // Applied on every update, not only on a change: it writes only when the
     // window's actual style differs, so it also repairs a style that tao
     // rewrote behind the cache's back.
     if let Ok(hwnd) = main_win.hwnd() {
-        set_click_through(hwnd, final_ignore);
+        set_click_through(frame_hwnd(hwnd), final_ignore);
     }
 }
 
@@ -3710,7 +3710,7 @@ fn set_main_appbar_reservation(main_win: tauri::WebviewWindow, _reserve: bool) {
         unregister_appbar_native(hwnd);
         MAIN_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
         pin_main_to_monitor_top(&main_win, hwnd);
-        re_assert_topmost(hwnd);
+        re_assert_topmost(frame_hwnd(hwnd));
     }
 }
 
@@ -4343,7 +4343,7 @@ fn reposition_all_windows(app_handle: &AppHandle) {
     // Re-assert topmost on all windows after repositioning to recover from any z-order loss
     if let Some(main_win) = app_handle.get_webview_window("main") {
         if let Ok(hwnd) = main_win.hwnd() {
-            re_assert_topmost(hwnd);
+            re_assert_topmost(frame_hwnd(hwnd));
         }
     }
     if let Some(dock_win) = app_handle.get_webview_window("dock") {

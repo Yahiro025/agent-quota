@@ -1223,6 +1223,24 @@ pub fn re_assert_topmost(hwnd: HWND) {
     }
 }
 
+/// Resolves `hwnd` to the top-level frame that actually receives input.
+///
+/// `WebviewWindow::hwnd()` may resolve to a child host rather than the
+/// visible frame (see `pin_main_to_monitor_top`), while hit testing — window
+/// region and click-through — must live on the root frame the user sees.
+/// Falls back to `hwnd` when there is no root ancestor.
+pub fn frame_hwnd(hwnd: HWND) -> HWND {
+    unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_ROOT};
+        let root = GetAncestor(hwnd, GA_ROOT);
+        if root.0.is_null() {
+            hwnd
+        } else {
+            root
+        }
+    }
+}
+
 /// Captures an HWND to a base64-encoded PNG thumbnail, scaling it down if it exceeds max_width x max_height.
 pub fn capture_hwnd_to_base64(hwnd: HWND, max_width: u32, max_height: u32) -> Option<String> {
     unsafe {
@@ -1369,6 +1387,58 @@ mod tests {
         click_through_style, expand_env_vars, is_placed_rect, marker_contents, parse_marker_pid,
         parse_marker_rect, parse_marker_secondaries, parse_marker_state,
     };
+
+    #[test]
+    fn frame_hwnd_resolves_the_root_frame() {
+        use windows::core::w;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_CHILD, WS_POPUP,
+        };
+        unsafe {
+            let parent = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                w!("STATIC"),
+                w!("parent"),
+                WS_POPUP,
+                0,
+                0,
+                10,
+                10,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("create parent window");
+            let child = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                w!("STATIC"),
+                w!("child"),
+                WS_CHILD,
+                0,
+                0,
+                10,
+                10,
+                Some(parent),
+                None,
+                None,
+                None,
+            )
+            .expect("create child window");
+            assert!(!parent.0.is_null() && !child.0.is_null());
+            // The defect this locks: hit-test state applied to a child host
+            // leaves the visible frame's region/style stale.
+            assert_eq!(super::frame_hwnd(child), parent);
+            assert_eq!(super::frame_hwnd(parent), parent);
+            assert_eq!(
+                super::frame_hwnd(HWND(12345usize as *mut _)),
+                HWND(12345usize as *mut _)
+            );
+            let _ = DestroyWindow(child);
+            let _ = DestroyWindow(parent);
+        }
+    }
 
     #[test]
     fn click_through_keeps_the_window_layered() {
