@@ -118,10 +118,10 @@
   - `AgentMark({ id }: { id: string }): JSX.Element`
   - `agentName(id: string): string`, which returns `Claude`, `Kiro`, `Codex`, `Cursor`, `Copilot`, `Devin` or `Antigravity`.
 
-- [ ] Test that `agentName` gives the seven exact names and that an unknown id falls back to initials (`initials("foo") === "F"`, matching `marks.Initials`).
-- [ ] Implement it. Claude, Codex and Cursor become inline SVG paths ported from `internal/marks/markpaths.go`, and the other agents import their asset files.
-- [ ] Run `bun test src/quota` and `bun run build`, and expect PASS.
-- [ ] Commit with the message `feat(bloom): add agent brand marks with attribution`.
+- [x] Test that `agentName` gives the seven exact names and that an unknown id falls back to initials (`initials("foo") === "F"`, matching `marks.Initials`).
+- [x] Implement it. Claude, Codex and Cursor become inline SVG paths ported from `internal/marks/markpaths.go`, and the other agents import their asset files.
+- [x] Run `bun test src/quota` and `bun run build`, and expect PASS.
+- [x] Commit with the message `feat(bloom): add agent brand marks with attribution`.
 
 ### Task 5: The quota space component
 
