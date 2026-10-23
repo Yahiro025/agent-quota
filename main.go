@@ -405,6 +405,7 @@ func (a *app) buildView() widget.View {
 			}
 		case quota.Failed:
 			it.Detail = err
+			it.Help = quota.RecoveryHint(id, err)
 		default:
 			it.Detail = "Checking…"
 		}

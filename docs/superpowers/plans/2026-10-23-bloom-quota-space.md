@@ -43,11 +43,11 @@
 **Interfaces:**
 - Produces: the snapshot reading JSON field `help` (string, omitted when empty).
 
-- [ ] Move any existing `recoveryHint` cases from `main_test.go` into `recovery_test.go`. If there are none, add `TestRecoveryHintDevinSignIn`, asserting the exact string `main.go` returns today for `("devin", "Sign-in expired.")`.
-- [ ] Add `TestSnapshotCarriesHelpNotSecrets`. It encodes a Failed devin reading and asserts the line contains `"help":` and contains none of `token`, `apiKey`, `password` or `credential`.
-- [ ] Run `go test ./quota/...` and expect FAIL.
-- [ ] Implement it, then run `gofmt -l .` (no output), `go vet ./...` and `go test ./...`, and expect PASS.
-- [ ] Commit with the message `feat(quota): send recovery hints to the service client`.
+- [x] Move any existing `recoveryHint` cases from `main_test.go` into `recovery_test.go`. If there are none, add `TestRecoveryHintDevinSignIn`, asserting the exact string `main.go` returns today for `("devin", "Sign-in expired.")`.
+- [x] Add `TestSnapshotCarriesHelpNotSecrets`. It encodes a Failed devin reading and asserts the line contains `"help":` and contains none of `token`, `apiKey`, `password` or `credential`.
+- [x] Run `go test ./quota/...` and expect FAIL.
+- [x] Implement it, then run `gofmt -l .` (no output), `go vet ./...` and `go test ./...`, and expect PASS.
+- [x] Commit with the message `feat(quota): send recovery hints to the service client`.
 
 ### Task 2: Rust refresh command and quota-space height
 

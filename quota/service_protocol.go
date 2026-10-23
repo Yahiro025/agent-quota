@@ -58,6 +58,7 @@ type ServiceAgent struct {
 	Used       *float64        `json:"used,omitempty"`
 	Detail     string          `json:"detail,omitempty"`
 	Err        string          `json:"err,omitempty"`
+	Help       string          `json:"help,omitempty"`
 	Plan       string          `json:"plan,omitempty"`
 	Summary    string          `json:"summary,omitempty"`
 	ResetLabel string          `json:"resetLabel,omitempty"`

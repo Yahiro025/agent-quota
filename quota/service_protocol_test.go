@@ -55,3 +55,38 @@ func TestEncodeSnapshotOmitsZeroTimesAndKeepsZeroUsed(t *testing.T) {
 		t.Fatal("encoder added a newline")
 	}
 }
+
+func TestSnapshotCarriesHelpNotSecrets(t *testing.T) {
+	changed := make(chan struct{}, 4)
+	p := NewPoller(
+		func(id string) Reading { return Fail("Sign-in expired.") },
+		func(id string) bool { return true },
+		func() { changed <- struct{}{} },
+	)
+	s := NewService(p)
+	s.Handle(`{"v":1,"op":"refresh","id":"devin"}`)
+	select {
+	case <-changed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no change was said")
+	}
+
+	raw, err := EncodeEvent(s.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := string(raw)
+	// A failed reading sends both the reason and its recovery hint: the
+	// client's detail block needs the pair to render the review-focus state.
+	if !strings.Contains(line, `"err":"Sign-in expired."`) {
+		t.Fatalf("no err in %s", line)
+	}
+	if !strings.Contains(line, `"help":"Open Devin to renew its sign-in, then choose Refresh."`) {
+		t.Fatalf("no help in %s", line)
+	}
+	for _, secret := range []string{"token", "apiKey", "password", "credential"} {
+		if strings.Contains(line, secret) {
+			t.Fatalf("snapshot leaks %q: %s", secret, line)
+		}
+	}
+}

@@ -80,6 +80,11 @@ func (s *Service) agent(id string) ServiceAgent {
 		Reset5h:    r.Reset5h,
 		ObservedAt: r.ObservedAt,
 	}
+	// A failure (or a stale reading's latest error) carries the same recovery
+	// hint the standalone shows, so the client can offer the fix in place.
+	if state == Failed || state == Stale {
+		a.Help = RecoveryHint(id, errText)
+	}
 	// Stale's displayed reading is the last good one, so its Used pointer is
 	// exactly the kept value; Failed displays an empty reading and sends none.
 	a.Used = r.Used
