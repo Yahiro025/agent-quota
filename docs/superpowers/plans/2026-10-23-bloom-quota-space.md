@@ -90,7 +90,7 @@
   - `defaultSelection(as: QuotaAgent[]): string | undefined`
   - `formatReset(at: string, now: Date, clock: boolean): string`
 
-- [ ] Write the tests. Each case is mirrored from `widget/seam.go` `seamBasis`/`seamDetail` and `widget/reset_test.go`:
+- [x] Write the tests. Each case is mirrored from `widget/seam.go` `seamBasis`/`seamDetail` and `widget/reset_test.go`:
   - `basis`:
     - waiting gives `Checking…`, failed gives `Unavailable`, stale gives `Stale`.
     - Windows `[{label:"5h"}]` give `5h`. Summary `Unlimited` gives `Unlimited`. Groups give `Models`.
@@ -102,9 +102,9 @@
     - `clock: true` gives local `h:mm AM/PM`, using the same format as the Go `reset_test` clock cases.
   - `failedCount`: one failed agent among five gives 1.
   - `defaultSelection`: returns the first urgent (90% or more) or failed agent, else the first agent, else `undefined` for `[]`.
-- [ ] Run `bun test src/quota` and expect FAIL.
-- [ ] Implement it, then run `bun test src/quota` and expect PASS.
-- [ ] Commit with the message `feat(bloom): port the quota seam view logic`.
+- [x] Run `bun test src/quota` and expect FAIL.
+- [x] Implement it, then run `bun test src/quota` and expect PASS.
+- [x] Commit with the message `feat(bloom): port the quota seam view logic`.
 
 ### Task 4: Brand marks
 

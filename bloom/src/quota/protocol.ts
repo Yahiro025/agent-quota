@@ -34,6 +34,7 @@ export interface QuotaAgent {
 	used?: number;
 	detail?: string;
 	err?: string;
+	help?: string;
 	plan?: string;
 	summary?: string;
 	resetLabel?: string;
