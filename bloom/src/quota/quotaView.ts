@@ -252,7 +252,9 @@ const wholePercent = (v: number): string =>
 // seamDetail in widget/seam.go: the fallback block when no per-window
 // detail rows arrived.
 const seamDetailText = (a: QuotaAgent, now: Date, clock: boolean): string => {
-	const reset = reset5hPanelText(a.reset5h, now, clock);
+	// Go only turns reset5h into a row's reset when the state is OK
+	// (main.go buildView); a stale row falls back to its resetLabel.
+	const reset = a.state === "ok" ? reset5hPanelText(a.reset5h, now, clock) : "";
 	if ((a.groups?.length ?? 0) > 0) {
 		let s = `${a.groups!.length} model groups`;
 		if (reset) s += "  ·  " + reset;

@@ -118,6 +118,30 @@ describe("detailLines", () => {
 		]);
 	});
 
+	// Go only gives a 5h-window reset a display row when the state is OK
+	// (main.go buildView), so a stale agent's reset5h must not win over
+	// the resetLabel the last good reading still carries.
+	test("a stale agent keeps its resetLabel, not the 5h instant", () => {
+		const a = agent({
+			state: "stale",
+			summary: "Plan usage",
+			reset5h: "2026-10-23T01:30:00Z",
+			resetLabel: "28 Oct"
+		});
+		expect(detailLines(a, NOW, false)).toEqual([
+			"Plan usage  ·  resets 28 Oct"
+		]);
+	});
+
+	test("a stale agent without resetLabel shows metrics only", () => {
+		const a = agent({
+			state: "stale",
+			windows: [{ label: "week", used: 38 }],
+			reset5h: "2026-10-23T01:30:00Z"
+		});
+		expect(detailLines(a, NOW, false)).toEqual(["Week 38%"]);
+	});
+
 	test("waiting reads Checking usage", () => {
 		expect(detailLines(agent({ state: "waiting" }), NOW, false)).toEqual([
 			"Checking usage…"
