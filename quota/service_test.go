@@ -127,6 +127,58 @@ func TestStaleKeepsLastGoodUsed(t *testing.T) {
 	}
 }
 
+// The panel's stale note reads lastGoodAt off the wire, so the snapshot
+// line itself has to carry the poller's last-good instant, not just the
+// reading it kept.
+func TestStaleSnapshotLineCarriesLastGoodAt(t *testing.T) {
+	reads := 0
+	changed := make(chan struct{}, 4)
+	p := NewPoller(func(id string) Reading {
+		reads++
+		if reads == 1 {
+			return newReading(40, "ok")
+		}
+		return Fail("timeout")
+	}, func(id string) bool { return true }, func() { changed <- struct{}{} })
+	s := NewService(p)
+
+	wait := func() {
+		select {
+		case <-changed:
+		case <-time.After(5 * time.Second):
+			t.Fatal("no change was said")
+		}
+	}
+	s.Handle(`{"v":1,"op":"refresh","id":"claude"}`)
+	wait()
+	s.Handle(`{"v":1,"op":"refresh","id":"claude"}`)
+	wait()
+
+	raw, err := EncodeEvent(s.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := string(raw)
+	if !strings.Contains(line, `"lastGoodAt"`) {
+		t.Fatalf("snapshot line lacks lastGoodAt: %s", line)
+	}
+	var ev ServiceEvent
+	if err := json.Unmarshal(raw, &ev); err != nil {
+		t.Fatal(err)
+	}
+	claude := findAgent(t, ev, "claude")
+	if claude.State != "stale" {
+		t.Fatalf("claude = %+v", claude)
+	}
+	_, at, ok := p.LastGoodAt("claude")
+	if !ok {
+		t.Fatal("poller has no last good for claude")
+	}
+	if !claude.LastGoodAt.Equal(at) {
+		t.Fatalf("lastGoodAt = %v, want %v", claude.LastGoodAt, at)
+	}
+}
+
 func TestShutdownSaysByeAndServeReturns(t *testing.T) {
 	p := NewPoller(
 		func(id string) Reading { return Fail("unused") },
