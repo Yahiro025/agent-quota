@@ -2197,12 +2197,10 @@ static MH_LAST_DOCK_IGNORE: AtomicI32 = AtomicI32::new(-1);
 static MH_LAST_OV_IGNORE: AtomicI32 = AtomicI32::new(-1);
 static MH_LAST_EDGE_HOVER: AtomicI32 = AtomicI32::new(-1);
 static MH_LAST_TOP_EDGE_HOVER: AtomicI32 = AtomicI32::new(-1);
-static MH_LAST_LEFT_EDGE_HOVER: AtomicI32 = AtomicI32::new(-1);
-static MH_LAST_RIGHT_EDGE_HOVER: AtomicI32 = AtomicI32::new(-1);
+static MH_LAST_CONTROLS_EDGE_HOVER: AtomicI32 = AtomicI32::new(-1);
 static MH_DOCK_EXPIRY_MS: AtomicI64 = AtomicI64::new(0);
 static MH_TOPBAR_EXPIRY_MS: AtomicI64 = AtomicI64::new(0);
-static MH_LEFT_EXPIRY_MS: AtomicI64 = AtomicI64::new(0);
-static MH_RIGHT_EXPIRY_MS: AtomicI64 = AtomicI64::new(0);
+static MH_CONTROLS_EXPIRY_MS: AtomicI64 = AtomicI64::new(0);
 static MH_LAST_MONITOR_UPDATE_MS: AtomicI64 = AtomicI64::new(0);
 static MH_CACHED_MON_POS: Mutex<Option<(i32, i32)>> = Mutex::new(None);
 static MH_CACHED_MON_SIZE: Mutex<Option<(u32, u32)>> = Mutex::new(None);
@@ -2296,6 +2294,46 @@ fn volume_mixer_physical_rect_for(app: &AppHandle) -> Option<(i32, i32, i32, i32
     ))
 }
 
+/// Number of 42px columns the right-edge controls card shows: one per
+/// enabled overlay (volume, brightness).
+fn controls_card_columns(app: &AppHandle) -> i32 {
+    let mut cols = 0;
+    if overlay_enabled(app, "bloom-volume-overlay-enabled") {
+        cols += 1;
+    }
+    if overlay_enabled(app, "bloom-brightness-overlay-enabled") {
+        cols += 1;
+    }
+    cols
+}
+
+/// The right-edge trigger band: the last 8px of the monitor.
+fn right_edge_band(
+    cursor: windows::Win32::Foundation::POINT,
+    mon_pos: (i32, i32),
+    mon_size: (u32, u32),
+) -> bool {
+    cursor.x >= mon_pos.0 + mon_size.0 as i32 - 8
+        && cursor.y >= mon_pos.1
+        && cursor.y <= mon_pos.1 + mon_size.1 as i32
+}
+
+/// Physical rect `(x, y, w, h)` of the right-edge controls card: `cols` × 42
+/// CSS px wide, 196 tall, flush with the monitor's right edge and vertically
+/// centered. `scale` already includes `bloom-scale`.
+fn controls_card_physical_rect(
+    mon_pos: (i32, i32),
+    mon_size: (u32, u32),
+    scale: f64,
+    cols: i32,
+) -> (i32, i32, i32, i32) {
+    let nw = (42.0 * cols.max(0) as f64 * scale) as i32;
+    let nh = (196.0 * scale) as i32;
+    let nx = mon_pos.0 + mon_size.0 as i32 - nw;
+    let ny = mon_pos.1 + (mon_size.1 as i32 / 2) - (nh / 2);
+    (nx, ny, nw, nh)
+}
+
 /// The mouse hook only runs on mouse movement, so a cursor that stops just
 /// outside the mixer would leave it open indefinitely. This watchdog re-checks
 /// the position and closes the card as soon as the cursor is off it.
@@ -2316,18 +2354,20 @@ fn setup_volume_mixer_watchdog(app_handle: AppHandle) {
         if inside {
             continue;
         }
-        let at_left_edge = app_handle
+        let at_right_edge = app_handle
             .primary_monitor()
             .ok()
             .flatten()
             .is_some_and(|m| {
                 let pos = m.position();
                 let size = m.size();
-                pt.x <= pos.x + 8 && pt.y >= pos.y && pt.y <= pos.y + size.height as i32
+                pt.x >= pos.x + size.width as i32 - 8
+                    && pt.y >= pos.y
+                    && pt.y <= pos.y + size.height as i32
             });
-        if !at_left_edge && MH_LAST_LEFT_EDGE_HOVER.swap(0, Ordering::Relaxed) != 0 {
-            MH_LEFT_EXPIRY_MS.store(0, Ordering::Relaxed);
-            let _ = app_handle.emit("volume-edge-hover", false);
+        if !at_right_edge && MH_LAST_CONTROLS_EDGE_HOVER.swap(0, Ordering::Relaxed) != 0 {
+            MH_CONTROLS_EXPIRY_MS.store(0, Ordering::Relaxed);
+            let _ = app_handle.emit("controls-edge-hover", false);
         }
     });
 }
@@ -3246,77 +3286,54 @@ fn process_mouse_position(app_handle: &AppHandle, cursor: windows::Win32::Founda
             cursor.x >= rx && cursor.x <= rx + rw && cursor.y >= ry && cursor.y <= ry + rh
         });
 
-        // --- Left Edge (Volume) ---
+        // --- Right Edge (Volume + Brightness controls) ---
+        // Both controls live on one card hanging off the right edge; the left
+        // edge reveals nothing.
         if !fg_fs {
-            let at_left_edge =
-                cursor.x <= (mon_x + 8) && cursor.y >= mon_y && cursor.y <= (mon_y + mon_h);
+            let at_right_edge =
+                right_edge_band(cursor, (mon_x, mon_y), (mon_w as u32, mon_h as u32));
 
             // The collapsed card extends past the 8px edge band, so once the
             // edge hover is established, keep it alive while the cursor is
             // over the card too (otherwise pausing on the mixer button lets
             // the hover expire and the HUD hides mid-click).
-            let over_card = !at_left_edge
+            let over_card = !at_right_edge
                 && !in_mixer
-                && MH_LAST_LEFT_EDGE_HOVER.load(Ordering::Relaxed) != 0
+                && MH_LAST_CONTROLS_EDGE_HOVER.load(Ordering::Relaxed) != 0
                 && app_handle
                     .primary_monitor()
                     .ok()
                     .flatten()
                     .is_some_and(|m| {
                         let bloom_scale = crate::utils::get_bloom_scale(app_handle);
-                        let ms = m.size();
-                        let mp = m.position();
-                        let sc = m.scale_factor() * bloom_scale;
-                        let nw = (42.0 * sc) as i32;
-                        let nh = (196.0 * sc) as i32;
-                        let nx = mp.x;
-                        let ny = mp.y + (ms.height as i32 / 2) - (nh / 2);
+                        let (nx, ny, nw, nh) = controls_card_physical_rect(
+                            (m.position().x, m.position().y),
+                            (m.size().width, m.size().height),
+                            m.scale_factor() * bloom_scale,
+                            controls_card_columns(app_handle),
+                        );
                         cursor.x >= nx
                             && cursor.x <= nx + nw
                             && cursor.y >= ny
                             && cursor.y <= ny + nh
                     });
 
-            if at_left_edge || in_mixer || over_card {
-                MH_LEFT_EXPIRY_MS.store(now + 500, Ordering::Relaxed);
+            if at_right_edge || in_mixer || over_card {
+                MH_CONTROLS_EXPIRY_MS.store(now + 500, Ordering::Relaxed);
             }
 
-            let final_left_hover = now < MH_LEFT_EXPIRY_MS.load(Ordering::Relaxed);
-            let prev = MH_LAST_LEFT_EDGE_HOVER.load(Ordering::Relaxed);
-            let new_val = if final_left_hover { 1 } else { 0 };
+            let final_hover = now < MH_CONTROLS_EXPIRY_MS.load(Ordering::Relaxed);
+            let prev = MH_LAST_CONTROLS_EDGE_HOVER.load(Ordering::Relaxed);
+            let new_val = if final_hover { 1 } else { 0 };
             if prev != new_val {
-                let _ = app_handle.emit("volume-edge-hover", final_left_hover);
-                MH_LAST_LEFT_EDGE_HOVER.store(new_val, Ordering::Relaxed);
+                let _ = app_handle.emit("controls-edge-hover", final_hover);
+                MH_LAST_CONTROLS_EDGE_HOVER.store(new_val, Ordering::Relaxed);
             }
         } else {
-            let prev = MH_LAST_LEFT_EDGE_HOVER.load(Ordering::Relaxed);
+            let prev = MH_LAST_CONTROLS_EDGE_HOVER.load(Ordering::Relaxed);
             if prev != 0 {
-                let _ = app_handle.emit("volume-edge-hover", false);
-                MH_LAST_LEFT_EDGE_HOVER.store(0, Ordering::Relaxed);
-            }
-        }
-
-        // --- Right Edge (Brightness) ---
-        if !fg_fs {
-            let at_right_edge =
-                cursor.x >= (mon_x + mon_w - 8) && cursor.y >= mon_y && cursor.y <= (mon_y + mon_h);
-
-            if at_right_edge {
-                MH_RIGHT_EXPIRY_MS.store(now + 500, Ordering::Relaxed);
-            }
-
-            let final_right_hover = now < MH_RIGHT_EXPIRY_MS.load(Ordering::Relaxed);
-            let prev = MH_LAST_RIGHT_EDGE_HOVER.load(Ordering::Relaxed);
-            let new_val = if final_right_hover { 1 } else { 0 };
-            if prev != new_val {
-                let _ = app_handle.emit("brightness-edge-hover", final_right_hover);
-                MH_LAST_RIGHT_EDGE_HOVER.store(new_val, Ordering::Relaxed);
-            }
-        } else {
-            let prev = MH_LAST_RIGHT_EDGE_HOVER.load(Ordering::Relaxed);
-            if prev != 0 {
-                let _ = app_handle.emit("brightness-edge-hover", false);
-                MH_LAST_RIGHT_EDGE_HOVER.store(0, Ordering::Relaxed);
+                let _ = app_handle.emit("controls-edge-hover", false);
+                MH_LAST_CONTROLS_EDGE_HOVER.store(0, Ordering::Relaxed);
             }
         }
 
@@ -3335,15 +3352,14 @@ fn process_mouse_position(app_handle: &AppHandle, cursor: windows::Win32::Founda
                 // The overlay applies `bloom-scale` as CSS zoom, so the cards
                 // are larger than 42x196 CSS px for non-default scales.
                 let bloom_scale = crate::utils::get_bloom_scale(app_handle);
-                let over_left = in_mixer
+                let over_controls = in_mixer
                     || if let Ok(Some(m)) = ov_win.primary_monitor() {
-                        let ms = m.size();
-                        let mp = m.position();
-                        let sc = m.scale_factor() * bloom_scale;
-                        let nw = (42.0 * sc) as i32;
-                        let nh = (196.0 * sc) as i32;
-                        let nx = mp.x;
-                        let ny = mp.y + (ms.height as i32 / 2) - (nh / 2);
+                        let (nx, ny, nw, nh) = controls_card_physical_rect(
+                            (m.position().x, m.position().y),
+                            (m.size().width, m.size().height),
+                            m.scale_factor() * bloom_scale,
+                            controls_card_columns(app_handle),
+                        );
                         cursor.x >= nx
                             && cursor.x <= nx + nw
                             && cursor.y >= ny
@@ -3352,20 +3368,7 @@ fn process_mouse_position(app_handle: &AppHandle, cursor: windows::Win32::Founda
                         false
                     };
 
-                let over_right = if let Ok(Some(m)) = ov_win.primary_monitor() {
-                    let ms = m.size();
-                    let mp = m.position();
-                    let sc = m.scale_factor() * bloom_scale;
-                    let nw = (42.0 * sc) as i32;
-                    let nh = (196.0 * sc) as i32;
-                    let nx = mp.x + ms.width as i32 - nw;
-                    let ny = mp.y + (ms.height as i32 / 2) - (nh / 2);
-                    cursor.x >= nx && cursor.x <= nx + nw && cursor.y >= ny && cursor.y <= ny + nh
-                } else {
-                    false
-                };
-
-                let should_ignore = !(over_left || over_right);
+                let should_ignore = !over_controls;
                 let prev = MH_LAST_OV_IGNORE.load(Ordering::Relaxed);
                 let new_val = if should_ignore { 1 } else { 0 };
                 if prev != new_val {
@@ -4644,9 +4647,10 @@ fn recover_from_webview_failure(handle: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_helper_name, is_launchable_entry, is_primary_monitor, is_start_menu_process_path,
-        notch_mode_is_fixed, notch_mode_reserves_work_area, notch_top_left, pack_cursor,
-        trim_thumbnail_cache, unpack_cursor, win_number_index,
+        controls_card_physical_rect, is_helper_name, is_launchable_entry, is_primary_monitor,
+        is_start_menu_process_path, notch_mode_is_fixed, notch_mode_reserves_work_area,
+        notch_top_left, pack_cursor, right_edge_band, trim_thumbnail_cache, unpack_cursor,
+        win_number_index,
     };
 
     #[test]
@@ -4664,6 +4668,42 @@ mod tests {
     fn overlap_detection_is_limited_to_the_primary_monitor() {
         assert!(is_primary_monitor(1));
         assert!(!is_primary_monitor(0));
+    }
+
+    #[test]
+    fn controls_card_hangs_on_the_right_edge() {
+        let pos = (0, 0);
+        let size = (1920, 1080);
+        // Two controls → an 84px card flush with the right edge, centered.
+        assert_eq!(
+            controls_card_physical_rect(pos, size, 1.0, 2),
+            (1920 - 84, (1080 - 196) / 2, 84, 196)
+        );
+        // A single control halves the width but stays on the right edge.
+        assert_eq!(
+            controls_card_physical_rect(pos, size, 1.0, 1),
+            (1920 - 42, (1080 - 196) / 2, 42, 196)
+        );
+        // Scaled, offset monitor: still flush with that monitor's right edge.
+        assert_eq!(
+            controls_card_physical_rect((100, 50), (2560, 1440), 1.5, 2),
+            (100 + 2560 - 126, 50 + (1440 - 294) / 2, 126, 294)
+        );
+    }
+
+    #[test]
+    fn right_edge_band_only_triggers_on_the_right() {
+        let pt = |x: i32, y: i32| windows::Win32::Foundation::POINT { x, y };
+        let pos = (0, 0);
+        let size = (1920, 1080);
+        assert!(right_edge_band(pt(1919, 500), pos, size));
+        assert!(right_edge_band(pt(1912, 0), pos, size));
+        assert!(right_edge_band(pt(1912, 1080), pos, size));
+        // The left edge reveals nothing.
+        assert!(!right_edge_band(pt(0, 500), pos, size));
+        assert!(!right_edge_band(pt(7, 500), pos, size));
+        assert!(!right_edge_band(pt(1911, 500), pos, size));
+        assert!(!right_edge_band(pt(1919, 1081), pos, size));
     }
 
     #[test]

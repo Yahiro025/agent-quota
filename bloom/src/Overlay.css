@@ -94,27 +94,26 @@ body,
 	transition: width 0.3s ease;
 }
 
-/* ─── Volume Notch (Left Edge) ──────────────────────────────────────────── */
+/* ─── Controls Notch (Right Edge) ───────────────────────────────────────── */
 
-.volume-notch-wrapper {
+.controls-notch-wrapper {
 	position: fixed;
-	left: 0;
+	right: 0;
 	top: 50%;
 	transform: translateY(-50%);
 	overflow: visible;
-	transform-origin: left center;
+	transform-origin: right center;
 	--surface-bg: var(--bloom-bg, rgba(0, 0, 0, 0.8));
 	isolation: isolate;
 }
 
-.volume-notch {
+.controls-notch {
 	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: space-between;
-	padding: 16px 0 14px;
-	border-radius: 0 18px 18px 0;
-	width: 42px;
+	flex-direction: row;
+	justify-content: flex-end;
+	padding: 0;
+	border-radius: 18px 0 0 18px;
+	width: 84px;
 	height: 196px;
 	position: relative;
 	pointer-events: auto;
@@ -124,22 +123,32 @@ body,
 /* The card and its flares are painted by the EdgeSurface in the wrapper
    (see components/EdgeSurface.css), outside the card so its
    `overflow: hidden` can clip the mixer while the card grows. */
-.volume-notch-wrapper > .edge-surface {
-	border-radius: 0 18px 18px 0;
+.controls-notch-wrapper > .edge-surface {
+	border-radius: 18px 0 0 18px;
 }
 
-.volume-notch-content-group {
+/* One 42px column per enabled control, anchored to the right edge. */
+.controls-notch-content-group {
+	display: flex;
+	flex-direction: row;
+	align-items: stretch;
+	justify-content: flex-end;
+	height: 100%;
+	flex-shrink: 0;
+	align-self: flex-end;
+}
+
+.controls-notch-column {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	justify-content: space-between;
-	height: 100%;
 	width: 42px;
-	align-self: flex-start;
-	flex-shrink: 0;
+	height: 100%;
+	padding: 16px 0 14px;
 }
 
-.volume-notch-bar {
+.controls-notch-bar {
 	width: 10px;
 	flex: 1;
 	min-height: 0;
@@ -149,7 +158,7 @@ body,
 	overflow: hidden;
 }
 
-.volume-notch-fill {
+.controls-notch-fill {
 	position: absolute;
 	bottom: 0;
 	left: 0;
@@ -234,7 +243,8 @@ body,
 
 .volume-mixer-panel {
 	position: absolute;
-	left: 42px;
+	/* Set inline: the card width, so the panel opens inward to the left. */
+	right: 84px;
 	top: 0;
 	bottom: 0;
 	/* Overridden inline with the dynamic width (grows with the app count). */
@@ -395,61 +405,6 @@ body,
 	opacity: 1;
 }
 
-/* ─── Brightness Notch (Right Edge) ─────────────────────────────────────── */
-
-.brightness-notch-wrapper {
-	position: fixed;
-	right: 0;
-	top: 50%;
-	transform: translateY(-50%);
-	overflow: visible;
-	transform-origin: right center;
-}
-
-.brightness-notch {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: space-between;
-	padding: 16px 0;
-	border-radius: 18px 0 0 18px;
-	width: 42px;
-	height: 196px;
-	position: relative;
-	pointer-events: auto;
-	/* Painted by its EdgeSurface child (see components/EdgeSurface.css). */
-	--surface-bg: var(--bloom-bg, rgba(0, 0, 0, 0.8));
-	isolation: isolate;
-}
-
-.brightness-notch-content-group {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: space-between;
-	height: 100%;
-	width: 100%;
-}
-
-.brightness-notch-bar {
-	width: 10px;
-	height: 136px;
-	background: rgba(255, 255, 255, 0.2);
-	border-radius: 20px;
-	position: relative;
-	overflow: hidden;
-	margin-top: 4px;
-}
-
-.brightness-notch-fill {
-	position: absolute;
-	bottom: 0;
-	left: 0;
-	width: 100%;
-	background: var(--bloom-text, white);
-	border-radius: 20px;
-}
-
 .brightness-notch-icon {
 	width: 20px;
 	height: 20px;
@@ -457,7 +412,7 @@ body,
 	align-items: center;
 	justify-content: center;
 	color: var(--bloom-text, rgba(255, 255, 255, 0.95));
-	margin-top: 10px;
+	margin-top: 8px;
 }
 
 .brightness-icon-container {
@@ -470,7 +425,6 @@ body,
 
 /* ─── Light Mode ────────────────────────────────────────────────────────── */
 
-.light-mode .volume-notch-bar,
-.light-mode .brightness-notch-bar {
+.light-mode .controls-notch-bar {
 	background: rgba(0, 0, 0, 0.12);
 }

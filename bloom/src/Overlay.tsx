@@ -13,6 +13,7 @@ import "./Overlay.css";
 import { EdgeSurface } from "./components/EdgeSurface";
 import { initTheme } from "./theme";
 import { createRegionSender, measureElements, type RegionRect } from "./windowRegion";
+import { controlsCardWidth } from "./overlayControls";
 
 // ─── App Volume Mixer ───────────────────────────────────────────────────────
 
@@ -172,28 +173,39 @@ const MIXER_MAX_PANEL_WIDTH =
 	(MIXER_MAX_COLUMNS - 1) * MIXER_COLUMN_GAP;
 // A HUD card's size in CSS px before `bloom-scale`; the backend's edge
 // hit-testing uses the same 42x196.
-const HUD_CARD_WIDTH = 42;
 const HUD_CARD_HEIGHT = 196;
 
 // Last fetched session list, so reopening the mixer renders at the right width
 // immediately instead of growing out of the empty-state width.
 let lastKnownSessions: AudioSession[] = [];
 
-function VolumeNotch({
+// One right-edge surface holding both sliders: each enabled control gets a
+// 42px column, and the app mixer expands inward (leftward) from the card.
+function ControlsNotch({
 	volume,
 	isMuted,
+	brightness,
 	onVolumeChange,
+	onBrightnessChange,
 	mixerExpanded,
-	onMixerExpandedChange
+	onMixerExpandedChange,
+	showVolume,
+	showBrightness
 }: {
 	volume: number;
 	isMuted: boolean;
+	brightness: number;
 	onVolumeChange: (vol: number) => void;
+	onBrightnessChange: (val: number) => void;
 	mixerExpanded: boolean;
 	onMixerExpandedChange: (expanded: boolean) => void;
+	showVolume: boolean;
+	showBrightness: boolean;
 }) {
+	const cardWidth = controlsCardWidth(showVolume, showBrightness);
 	const percentage = Math.round(volume * 100);
 	const barRef = useRef<HTMLDivElement>(null);
+	const brightnessBarRef = useRef<HTMLDivElement>(null);
 	const shellRef = useRef<HTMLDivElement>(null);
 	const draggingRef = useRef<number | null>(null);
 
@@ -370,10 +382,29 @@ function VolumeNotch({
 		startDrag(e.clientY);
 	};
 
+	const handleBrightnessBarInteraction = (e: React.MouseEvent | React.TouchEvent) => {
+		if (!brightnessBarRef.current) return;
+		const rect = brightnessBarRef.current.getBoundingClientRect();
+		const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+		const relativeY = rect.bottom - clientY;
+		const newBrightness = Math.max(0, Math.min(100, (relativeY / rect.height) * 100));
+		onBrightnessChange(newBrightness);
+	};
+	const startBrightnessDrag = useMouseSliderDrag((clientY) => {
+			if (!brightnessBarRef.current) return;
+			const rect = brightnessBarRef.current.getBoundingClientRect();
+			const relativeY = rect.bottom - clientY;
+			const newBrightness = Math.max(0, Math.min(100, (relativeY / rect.height) * 100));
+			onBrightnessChange(newBrightness);
+	});
+	const handleBrightnessMouseDown = (e: React.MouseEvent) => {
+		startBrightnessDrag(e.clientY);
+	};
+
 	return (
 		<motion.div
-			className="volume-notch-wrapper"
-			style={{ transformOrigin: "left center" }}
+			className="controls-notch-wrapper"
+			style={{ transformOrigin: "right center" }}
 			initial={{ scaleX: 0, scaleY: 0.5, opacity: 0, filter: "blur(12px)", y: "-50%" }}
 			animate={{ scaleX: 1, scaleY: 1, opacity: 1, filter: "blur(0px)", y: "-50%" }}
 			exit={
@@ -381,7 +412,7 @@ function VolumeNotch({
 					? {
 							// Retract the expanded card as one surface. Scaling X would
 							// squash the app list into the edge.
-							x: -64,
+							x: 64,
 							opacity: 0,
 							filter: "blur(8px)",
 							y: "-50%",
@@ -398,65 +429,93 @@ function VolumeNotch({
 			}
 			transition={{ type: "spring", stiffness: 450, damping: 25, mass: 0.7 }}
 		>
-			<EdgeSurface edge="left" />
+			<EdgeSurface edge="right" />
 			<motion.div
 				ref={shellRef}
-				className="volume-notch"
-				animate={{ width: mixerExpanded ? 42 + mixerPanelWidth : 42 }}
+				className="controls-notch"
+				animate={{ width: mixerExpanded ? cardWidth + mixerPanelWidth : cardWidth }}
 				transition={{ type: "spring", bounce: 0, duration: 0.35 }}
 				onAnimationComplete={reportPanelBounds}
 			>
 				<motion.div
-					className="volume-notch-content-group"
-					initial={{ opacity: 0, x: -10 }}
+					className="controls-notch-content-group"
+					style={{ width: cardWidth }}
+					initial={{ opacity: 0, x: 10 }}
 					animate={{ opacity: 1, x: 0 }}
-					exit={{ opacity: 0, x: -5, transition: { duration: 0.15 } }}
+					exit={{ opacity: 0, x: 5, transition: { duration: 0.15 } }}
 					transition={{ delay: 0.05, duration: 0.2, ease: "easeOut" }}
 				>
-					<div
-						ref={barRef}
-						className="volume-notch-bar"
-						onMouseDown={handleMouseDown}
-						onTouchStart={handleBarInteraction}
-						style={{ cursor: "pointer" }}
-					>
-						<motion.div
-							className="volume-notch-fill"
-							initial={false}
-							animate={{ height: isMuted ? "0%" : `${percentage}%` }}
-							transition={{ type: "spring", stiffness: 300, damping: 35 }}
-						/>
-					</div>
-					<button
-						className={`volume-notch-action ${mixerExpanded ? "active" : ""} ${
-							showPercentage ? "showing-percent" : ""
-						}`}
-						onClick={(e) => {
-							e.stopPropagation();
-							onMixerExpandedChange(!mixerExpanded);
-						}}
-						title="App volume mixer"
-					>
-						<span className="volume-notch-action-icon">
-							<SpeakerIcon size={16} muted={isMuted} />
-						</span>
-						<span className="volume-notch-action-mixer">
-							<MixerIcon size={16} />
-						</span>
-						<span className="volume-notch-action-percent">{isMuted ? "0%" : `${percentage}%`}</span>
-					</button>
+					{showBrightness && (
+						<div className="controls-notch-column">
+							<div
+								ref={brightnessBarRef}
+								className="controls-notch-bar"
+								onMouseDown={handleBrightnessMouseDown}
+								onTouchStart={handleBrightnessBarInteraction}
+								style={{ cursor: "pointer" }}
+							>
+								<motion.div
+									className="controls-notch-fill"
+									initial={false}
+									animate={{ height: `${brightness}%` }}
+									transition={{ type: "spring", stiffness: 300, damping: 35 }}
+								/>
+							</div>
+							<div className="brightness-notch-icon">
+								<SunIcon brightness={brightness} />
+							</div>
+						</div>
+					)}
+					{showVolume && (
+						<div className="controls-notch-column">
+							<div
+								ref={barRef}
+								className="controls-notch-bar"
+								onMouseDown={handleMouseDown}
+								onTouchStart={handleBarInteraction}
+								style={{ cursor: "pointer" }}
+							>
+								<motion.div
+									className="controls-notch-fill"
+									initial={false}
+									animate={{ height: isMuted ? "0%" : `${percentage}%` }}
+									transition={{ type: "spring", stiffness: 300, damping: 35 }}
+								/>
+							</div>
+							<button
+								className={`volume-notch-action ${mixerExpanded ? "active" : ""} ${
+									showPercentage ? "showing-percent" : ""
+								}`}
+								onClick={(e) => {
+									e.stopPropagation();
+									onMixerExpandedChange(!mixerExpanded);
+								}}
+								title="App volume mixer"
+							>
+								<span className="volume-notch-action-icon">
+									<SpeakerIcon size={16} muted={isMuted} />
+								</span>
+								<span className="volume-notch-action-mixer">
+									<MixerIcon size={16} />
+								</span>
+								<span className="volume-notch-action-percent">
+									{isMuted ? "0%" : `${percentage}%`}
+								</span>
+							</button>
+						</div>
+					)}
 				</motion.div>
 
 				<AnimatePresence>
 					{mixerExpanded && (
 						<motion.div
 							className="volume-mixer-panel"
-							style={{ width: mixerPanelWidth }}
+							style={{ width: mixerPanelWidth, right: cardWidth }}
 							initial={{ opacity: 0 }}
 							animate={{ opacity: 1 }}
 							exit={{
 								opacity: 0,
-								x: -18,
+								x: 18,
 								transition: {
 									x: { duration: 0.28, ease: [0.32, 0.72, 0, 1] },
 									opacity: { duration: 0.18, delay: 0.1 }
@@ -495,8 +554,6 @@ function VolumeNotch({
 	);
 }
 
-// ─── Brightness Notch ───────────────────────────────────────────────────────
-
 const SunIcon = ({ brightness }: { brightness: number }) => (
 	<motion.div
 		className="brightness-icon-container"
@@ -515,83 +572,6 @@ const SunIcon = ({ brightness }: { brightness: number }) => (
 	</motion.div>
 );
 
-function BrightnessNotch({
-	brightness,
-	onBrightnessChange
-}: {
-	brightness: number;
-	onBrightnessChange: (val: number) => void;
-}) {
-	const barRef = useRef<HTMLDivElement>(null);
-
-	const handleBarInteraction = (e: React.MouseEvent | React.TouchEvent) => {
-		if (!barRef.current) return;
-		const rect = barRef.current.getBoundingClientRect();
-		const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
-		const relativeY = rect.bottom - clientY;
-		const newBrightness = Math.max(0, Math.min(100, (relativeY / rect.height) * 100));
-		onBrightnessChange(newBrightness);
-	};
-
-	const startDrag = useMouseSliderDrag((clientY) => {
-			if (!barRef.current) return;
-			const rect = barRef.current.getBoundingClientRect();
-			const relativeY = rect.bottom - clientY;
-			const newBrightness = Math.max(0, Math.min(100, (relativeY / rect.height) * 100));
-			onBrightnessChange(newBrightness);
-	});
-	const handleMouseDown = (e: React.MouseEvent) => {
-		startDrag(e.clientY);
-	};
-
-	return (
-		<motion.div
-			className="brightness-notch-wrapper"
-			style={{ transformOrigin: "right center" }}
-			initial={{ scaleX: 0, scaleY: 0.5, opacity: 0, filter: "blur(12px)", y: "-50%" }}
-			animate={{ scaleX: 1, scaleY: 1, opacity: 1, filter: "blur(0px)", y: "-50%" }}
-			exit={{
-				scaleX: 0,
-				scaleY: 0.8,
-				opacity: 0,
-				filter: "blur(12px)",
-				y: "-50%",
-				transition: { duration: 0.2, ease: [0.32, 0.72, 0, 1] }
-			}}
-			transition={{ type: "spring", stiffness: 450, damping: 25, mass: 0.7 }}
-		>
-			<div className="brightness-notch">
-				<EdgeSurface edge="right" />
-				<motion.div
-					className="brightness-notch-content-group"
-					initial={{ opacity: 0, x: 10 }}
-					animate={{ opacity: 1, x: 0 }}
-					exit={{ opacity: 0, x: 5, transition: { duration: 0.15 } }}
-					transition={{ delay: 0.05, duration: 0.2, ease: "easeOut" }}
-				>
-					<div
-						ref={barRef}
-						className="brightness-notch-bar"
-						onMouseDown={handleMouseDown}
-						onTouchStart={handleBarInteraction}
-						style={{ cursor: "pointer" }}
-					>
-						<motion.div
-							className="brightness-notch-fill"
-							initial={false}
-							animate={{ height: `${brightness}%` }}
-							transition={{ type: "spring", stiffness: 300, damping: 35 }}
-						/>
-					</div>
-					<div className="brightness-notch-icon">
-						<SunIcon brightness={brightness} />
-					</div>
-				</motion.div>
-			</div>
-		</motion.div>
-	);
-}
-
 // ─── Main Overlay Component ─────────────────────────────────────────────────
 
 function OverlayApp() {
@@ -599,7 +579,7 @@ function OverlayApp() {
 		return initTheme();
 	}, []);
 
-	type Mode = "idle" | "volume" | "brightness" | "splash" | "updating";
+	type Mode = "idle" | "controls" | "splash" | "updating";
 	const [mode, setMode] = useState<Mode>("idle");
 	const [updateStatus, setUpdateStatus] = useState<string>("checking");
 	const [updateProgress, setUpdateProgress] = useState(0);
@@ -730,14 +710,19 @@ function OverlayApp() {
 			const { volume: newVolume, is_muted } = event.payload;
 			setVolume(newVolume);
 			setIsMuted(is_muted);
-			setMode("volume");
+			setMode("controls");
 			resetHideTimeout();
 		});
 
-		const volEdgePromise = listen<boolean>("volume-edge-hover", (event) => {
-			if (splashActiveRef.current || !volumeOverlayEnabled || !volumeEdgeEnabled) return;
+		// One right-edge surface: hovering it reveals whichever enabled
+		// controls the user opted into edge reveal for.
+		const controlsEdgePromise = listen<boolean>("controls-edge-hover", (event) => {
+			const revealable =
+				(volumeOverlayEnabled && volumeEdgeEnabled) ||
+				(brightnessOverlayEnabled && brightnessEdgeEnabled);
+			if (splashActiveRef.current || !revealable) return;
 			if (event.payload) {
-				setMode("volume");
+				setMode("controls");
 				if (timeoutRef.current) clearTimeout(timeoutRef.current);
 			} else {
 				if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -753,19 +738,8 @@ function OverlayApp() {
 			invoke("hide_native_osd");
 			const { brightness: newBrightness } = event.payload;
 			setBrightness(newBrightness);
-			setMode("brightness");
+			setMode("controls");
 			resetHideTimeout();
-		});
-
-		const brightEdgePromise = listen<boolean>("brightness-edge-hover", (event) => {
-			if (splashActiveRef.current || !brightnessOverlayEnabled || !brightnessEdgeEnabled) return;
-			if (event.payload) {
-				setMode("brightness");
-				if (timeoutRef.current) clearTimeout(timeoutRef.current);
-			} else {
-				if (timeoutRef.current) clearTimeout(timeoutRef.current);
-				timeoutRef.current = setTimeout(() => setMode("idle"), 1500);
-			}
 		});
 
 		const autoUpdatePromise = listen<{ status: string; progress?: number }>(
@@ -789,9 +763,8 @@ function OverlayApp() {
 
 		return () => {
 			volPromise.then((fn) => fn());
-			volEdgePromise.then((fn) => fn());
+			controlsEdgePromise.then((fn) => fn());
 			brightPromise.then((fn) => fn());
-			brightEdgePromise.then((fn) => fn());
 			autoUpdatePromise.then((fn) => fn());
 			document.removeEventListener("contextmenu", preventContext);
 		};
@@ -814,13 +787,10 @@ function OverlayApp() {
 	// Side effects: reset overlay mode to idle when overlay is disabled
 	useEffect(() => {
 		if (splashActiveRef.current) return;
-		if (!volumeOverlayEnabled && mode === "volume") setMode("idle");
-	}, [volumeOverlayEnabled, mode]);
-
-	useEffect(() => {
-		if (splashActiveRef.current) return;
-		if (!brightnessOverlayEnabled && mode === "brightness") setMode("idle");
-	}, [brightnessOverlayEnabled, mode]);
+		if (!volumeOverlayEnabled && !brightnessOverlayEnabled && mode === "controls") {
+			setMode("idle");
+		}
+	}, [volumeOverlayEnabled, brightnessOverlayEnabled, mode]);
 
 	// ── Window Visibility Management ──
 	useEffect(() => {
@@ -865,7 +835,7 @@ function OverlayApp() {
 		(newVol: number) => {
 			setVolume(newVol);
 			setIsMuted(newVol === 0);
-			setMode("volume");
+			setMode("controls");
 			resetHideTimeout();
 			sendVolume(newVol);
 		},
@@ -912,14 +882,12 @@ function OverlayApp() {
 	const handleBrightnessChange = useCallback(
 		(newBrightness: number) => {
 			setBrightness(newBrightness);
-			setMode("brightness");
+			setMode("controls");
 			resetHideTimeout();
 			sendBrightness(newBrightness);
 		},
 		[resetHideTimeout, sendBrightness]
 	);
-
-	const isLeft = mode === "volume";
 
 	const sendOverlayRegion = useMemo(
 		() =>
@@ -930,10 +898,11 @@ function OverlayApp() {
 	);
 
 	// Clip the full-screen overlay to what it draws (see window_region.rs).
-	// The splashes cover the screen. Otherwise each HUD has a home zone at its
-	// edge, the full card size, so a card scaling in from the edge is never
-	// clipped; with the mixer open the left zone spans the widest mixer. The
-	// HUDs and the mixer panel are measured on top, padded for their shadows.
+	// The splashes cover the screen. Otherwise the controls card has a home
+	// zone on the right edge at its full size, so a card scaling in from the
+	// edge is never clipped; with the mixer open the zone spans the widest
+	// panel, which grows leftward. The card and panel are measured on top,
+	// padded for their shadows.
 	useEffect(() => {
 		const width = window.innerWidth;
 		const height = window.innerHeight;
@@ -942,10 +911,11 @@ function OverlayApp() {
 			return;
 		}
 		const pad = 24 * scale;
-		const cardWidth = HUD_CARD_WIDTH * scale;
 		const cardHeight = HUD_CARD_HEIGHT * scale;
-		const leftWidth =
-			(mixerExpanded ? HUD_CARD_WIDTH + MIXER_MAX_PANEL_WIDTH : HUD_CARD_WIDTH) * scale;
+		const rightWidth =
+			(controlsCardWidth(volumeOverlayEnabled, brightnessOverlayEnabled) +
+				(mixerExpanded ? MIXER_MAX_PANEL_WIDTH : 0)) *
+			scale;
 		const zone = (x: number, w: number): RegionRect => ({
 			x,
 			y: (height - cardHeight) / 2 - pad,
@@ -953,12 +923,10 @@ function OverlayApp() {
 			height: cardHeight + pad * 2
 		});
 		sendOverlayRegion([
-			zone(0, leftWidth + pad),
-			zone(width - cardWidth - pad, cardWidth + pad),
+			zone(width - rightWidth - pad, rightWidth + pad),
 			...measureElements([
-				[".volume-notch-wrapper", 24],
-				[".volume-mixer-panel", 24],
-				[".brightness-notch-wrapper", 24]
+				[".controls-notch-wrapper", 24],
+				[".volume-mixer-panel", 24]
 			])
 		]);
 	});
@@ -1028,7 +996,7 @@ function OverlayApp() {
 						height: "100%",
 						display: "flex",
 						alignItems: "center",
-						justifyContent: isLeft ? "flex-start" : "flex-end",
+						justifyContent: "flex-end",
 						width: "100%"
 					}}
 				>
@@ -1038,21 +1006,18 @@ function OverlayApp() {
 							if (mixerExpandedRef.current) collapseMixer();
 						}}
 					>
-						{mode === "volume" && (
-							<VolumeNotch
+						{mode === "controls" && (
+							<ControlsNotch
 								volume={volume}
 								isMuted={isMuted}
+								brightness={brightness}
 								onVolumeChange={handleVolumeChange}
+								onBrightnessChange={handleBrightnessChange}
 								mixerExpanded={mixerExpanded}
 								onMixerExpandedChange={handleMixerExpandedChange}
-								key="volume-island"
-							/>
-						)}
-						{mode === "brightness" && (
-							<BrightnessNotch
-								brightness={brightness}
-								onBrightnessChange={handleBrightnessChange}
-								key="brightness-island"
+								showVolume={volumeOverlayEnabled}
+								showBrightness={brightnessOverlayEnabled}
+								key="controls-island"
 							/>
 						)}
 					</AnimatePresence>

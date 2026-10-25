@@ -1,4 +1,4 @@
-import { Volume2, Sun, ArrowLeftToLine, ArrowRightToLine } from "lucide-react";
+import { Volume2, Sun, ArrowRightToLine } from "lucide-react";
 import { SettingRow } from "./SettingRow";
 
 interface OverlaysTabProps {
@@ -35,9 +35,9 @@ export function OverlaysTab({
 
 				{volumeOverlayEnabled && (
 					<SettingRow
-						icon={ArrowLeftToLine}
+						icon={ArrowRightToLine}
 						label="Show on Edge Hover"
-						desc="Slide in from left edge"
+						desc="Slide in from right edge"
 					>
 						<label className="toggle-switch">
 							<input type="checkbox" checked={volumeEdgeEnabled} onChange={toggleVolumeEdge} />
