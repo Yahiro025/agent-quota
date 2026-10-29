@@ -207,25 +207,14 @@ func CodexIn(home string, now time.Time) Reading {
 	// OrderByDescending is stable: equal times keep the walk's order.
 	sort.SliceStable(files, func(a, b int) bool { return files[a].at.After(files[b].at) })
 	for _, f := range files[:min(len(files), 8)] {
-		// Codex may be writing to it right now; a plain read shares it on both systems.
-		b, err := core.ReadFile(f.path)
+		// Read from the end: a rollout can be hundreds of MB and only its last accepted
+		// line counts, so holding it whole cost over a gigabyte per poll.
+		q, ok, err := rolloutLimits(f.path, now)
 		if err != nil {
 			return Fail(fmt.Sprintf("Couldn’t read Codex’s logs: %v", err))
 		}
-		var last *Reading
-		// StreamReader.ReadLine: \n, \r and \r\n all end a line.
-		for _, l := range strings.Split(core.TextOf(b), "\n") {
-			for _, line := range strings.Split(l, "\r") {
-				if !strings.Contains(line, `"rate_limits"`) {
-					continue
-				}
-				if q, ok := ParseCodexLine(line, now); ok {
-					last = &q
-				}
-			}
-		}
-		if last != nil {
-			return *last
+		if ok {
+			return q
 		}
 	}
 	return Fail("Codex hasn’t recorded any limits yet — use it once.")
