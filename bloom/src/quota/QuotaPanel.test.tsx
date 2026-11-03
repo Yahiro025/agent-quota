@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { QuotaAgent } from "./protocol";
-import { QuotaPanel } from "./QuotaPanel";
+import { QuotaHoverCard, QuotaPanel } from "./QuotaPanel";
 
 // Server markup keeps these tests DOM-free: effects (and therefore the
 // ResizeObserver / invoke calls) never run, so nothing needs Tauri.
@@ -12,6 +12,7 @@ const props = {
 	onSelect: noop,
 	pinned: false,
 	onPin: noop,
+	onCompact: noop,
 	onClose: noop
 };
 
@@ -24,7 +25,7 @@ describe("QuotaPanel", () => {
 		expect(html).not.toContain("quota-cell-");
 	});
 
-	test("all agents failed keeps the ring row, count, error and hint", () => {
+	test("all agents failed keeps the ring row, error and hint, no global count", () => {
 		const readings: QuotaAgent[] = [
 			{
 				id: "claude",
@@ -37,7 +38,7 @@ describe("QuotaPanel", () => {
 		const html = renderToStaticMarkup(<QuotaPanel readings={readings} {...props} />);
 		expect(html).toContain('data-testid="quota-cell-claude"');
 		expect(html).toContain('data-testid="quota-cell-devin"');
-		expect(html).toContain("2 failed");
+		expect(html).not.toContain("quota-failed");
 		// The default selection is the first failed agent.
 		expect(html).toContain("oauth expired");
 		expect(html).toContain("Sign in again");
@@ -57,7 +58,7 @@ describe("QuotaPanel", () => {
 		];
 		const html = renderToStaticMarkup(<QuotaPanel readings={readings} {...props} />);
 		expect(html).toContain('data-testid="quota-reset"');
-		expect(html).toContain("5h · now");
+		expect(html).toContain("resets now");
 		expect(html).not.toContain("-1m");
 	});
 
@@ -69,7 +70,14 @@ describe("QuotaPanel", () => {
 		const html = renderToStaticMarkup(<QuotaPanel readings={readings} {...props} />);
 		expect(html).toContain('data-testid="quota-refresh"');
 		expect(html).toContain('disabled=""');
-		expect(html).toContain("Checking…");
+		expect(html).toContain('aria-label="Checking…"');
+	});
+
+	test("the header offers the compact toggle", () => {
+		const readings: QuotaAgent[] = [{ id: "claude", state: "ok", used: 40 }];
+		const html = renderToStaticMarkup(<QuotaPanel readings={readings} {...props} />);
+		expect(html).toContain('data-testid="quota-compact"');
+		expect(html).toContain('aria-label="Compact quota space"');
 	});
 
 	test("every control is a focus-free button", () => {
@@ -90,5 +98,45 @@ describe("QuotaPanel", () => {
 			expect(tag).toContain('type="button"');
 		}
 		expect(html).not.toContain("onkeydown");
+		expect(html).toContain("Just checked");
+		expect(html).not.toContain("1 failed");
+	});
+});
+
+describe("QuotaHoverCard", () => {
+	test("one row per window, no reader count and no source line", () => {
+		const html = renderToStaticMarkup(
+			<QuotaHoverCard
+				a={{
+					id: "codex",
+					state: "ok",
+					used: 55,
+					details: [
+						{
+							label: "5h",
+							value: "55% used",
+							resetAt: new Date(Date.now() + 4 * 3600_000).toISOString()
+						},
+						{
+							label: "Week",
+							value: "16% used",
+							resetAt: new Date(Date.now() + 5 * 86400_000).toISOString()
+						}
+					]
+				}}
+				place="2 of 5"
+			/>
+		);
+		expect(html).toContain("Codex");
+		expect(html).toContain("2 of 5");
+		expect(html).toContain(">5h<");
+		expect(html).toContain(">55%<");
+		expect(html).toContain(">Week<");
+		expect(html).toContain(">16%<");
+		expect(html).toContain("resets in");
+		expect(html).toContain("qh-reset-at");
+		expect(html).not.toContain("1 failed");
+		expect(html).not.toContain("Source observed");
+		expect(html).not.toContain("% used");
 	});
 });

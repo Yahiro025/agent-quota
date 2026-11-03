@@ -1,16 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronDown, ChevronRight, Clock, Pin, RefreshCw, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, Minimize2, Pin, RefreshCw, X } from "lucide-react";
 import { band, type QuotaAgent } from "./protocol";
 import { AgentMark, agentName } from "./marks";
-import {
-	anyBusy,
-	basis,
-	defaultSelection,
-	detailLines,
-	failedCount,
-	formatReset
-} from "./quotaView";
+import { agentRings, anyBusy, basis, defaultSelection, detailRows } from "./quotaView";
 import "./QuotaSpace.css";
 
 export interface QuotaPanelProps {
@@ -19,7 +13,12 @@ export interface QuotaPanelProps {
 	onSelect: (id: string) => void;
 	pinned: boolean;
 	onPin: (pinned: boolean) => void;
+	// Collapses the whole space into the notch's own row, where the marks live.
+	onCompact: () => void;
 	onClose: () => void;
+	// Replaces the empty state's subline when readings exist but every agent
+	// is hidden in settings, so the panel does not claim to be waiting.
+	emptyHint?: string;
 }
 
 // Same ring paint as the standalone widget: green below 70, amber from 70,
@@ -54,26 +53,142 @@ const groupLabels = (a: QuotaAgent): string[] => {
 const groupLabelName = (label: string): string =>
 	label === "week" ? "Week" : label === "day" ? "Day" : label;
 
-function Ring({ used }: { used: number | undefined }) {
-	const pct = typeof used === "number" ? Math.round(used) : undefined;
-	const r = 11;
+// Two concentric rings: the outer track is always the longer window and
+// the inner the shorter one, matching the standalone widget's ring pair.
+// Both tracks render even when a ring has no arc so the pair's signature
+// never collapses to a single circle.
+const RING_ARC = (used: number, r: number) => {
+	const pct = Math.min(Math.max(Math.round(used), 0), 100);
 	const c = 2 * Math.PI * r;
-	const fill = pct === undefined ? 0 : (Math.min(Math.max(pct, 0), 100) / 100) * c;
+	return { c, fill: (pct / 100) * c, color: BAND_COLOR[band(pct)] };
+};
+
+function Ring({
+	inner,
+	outer,
+	stale
+}: {
+	inner: number | undefined;
+	outer: number | undefined;
+	stale?: boolean;
+}) {
+	const dim = stale ? 0.55 : undefined;
 	return (
 		<svg viewBox="0 0 28 28" className="qs-ring-svg" aria-hidden="true">
-			<circle cx="14" cy="14" r={r} className="qs-ring-track" />
-			{pct !== undefined && (
+			<circle cx="14" cy="14" r={12.25} className="qs-ring-track" />
+			<circle cx="14" cy="14" r={9.5} className="qs-ring-track" />
+			{outer !== undefined && (
 				<circle
 					cx="14"
 					cy="14"
-					r={r}
-					className="qs-ring-fill"
-					stroke={BAND_COLOR[band(pct)]}
-					strokeDasharray={`${fill} ${c}`}
+					r={12.25}
+					className="qs-ring-fill qs-ring-outer"
+					stroke={RING_ARC(outer, 12.25).color}
+					strokeDasharray={`${RING_ARC(outer, 12.25).fill} ${RING_ARC(outer, 12.25).c}`}
+					opacity={dim}
+					transform="rotate(-90 14 14)"
+				/>
+			)}
+			{inner !== undefined && (
+				<circle
+					cx="14"
+					cy="14"
+					r={9.5}
+					className="qs-ring-fill qs-ring-inner"
+					stroke={RING_ARC(inner, 9.5).color}
+					strokeDasharray={`${RING_ARC(inner, 9.5).fill} ${RING_ARC(inner, 9.5).c}`}
+					opacity={dim}
 					transform="rotate(-90 14 14)"
 				/>
 			)}
 		</svg>
+	);
+}
+
+// The ring pair with the agent's brand mark centred inside: the same tile
+// the quota space draws per agent, reused by the collapsed hover badge.
+export function QuotaRingMark({ a }: { a: QuotaAgent }) {
+	const { inner, outer } = agentRings(a);
+	return (
+		<span className="qs-ring">
+			<Ring inner={inner} outer={outer} stale={a.state === "stale"} />
+			<span className="qs-mark">
+				<AgentMark id={a.id} />
+			</span>
+		</span>
+	);
+}
+
+const switchEase = [0.16, 1, 0.3, 1] as const;
+
+export function QuotaHoverCard({ a, place }: { a: QuotaAgent; place?: string }) {
+	const [now, setNow] = useState(() => new Date());
+	const reduce = useReducedMotion();
+	useEffect(() => {
+		const timer = window.setInterval(() => setNow(new Date()), 1000);
+		return () => window.clearInterval(timer);
+	}, []);
+	const rows = a.state === "ok" || a.state === "stale" ? detailRows(a, now, false) : [];
+	const transition = reduce ? { duration: 0 } : { duration: 0.22, ease: switchEase };
+	return (
+		<div className="qh" data-testid="quota-hover-card">
+			<AnimatePresence mode="popLayout" initial={false}>
+				<motion.div
+					key={a.id}
+					initial={reduce ? false : { opacity: 0, y: 6 }}
+					animate={{ opacity: 1, y: 0 }}
+					exit={reduce ? undefined : { opacity: 0, y: -6 }}
+					transition={transition}
+				>
+					<div className="qh-title">
+						<span>
+							{agentName(a.id)}
+							{a.plan ? <span className="qh-plan"> · {a.plan}</span> : null}
+						</span>
+						{place ? <span className="qh-place">{place}</span> : null}
+					</div>
+					{a.state === "waiting" && <div className="qh-line">Checking…</div>}
+					{a.state === "failed" && (
+						<div className="qh-line qh-error">{a.err || a.detail || "Unavailable"}</div>
+					)}
+					{rows.length > 0 && (
+						<div className="qh-rows">
+							{rows.map((row, i) => (
+								<div key={i} className="qh-row">
+									<span className="qh-label">{row.label}</span>
+									<span className="qh-usage">
+										{typeof row.used === "number" && (
+											<span className="qh-bar" aria-hidden="true">
+												<span
+													className="qh-fill"
+													style={{
+														width: `${Math.min(Math.max(Math.round(row.used), 0), 100)}%`,
+														backgroundColor: BAND_COLOR[band(Math.round(row.used))]
+													}}
+												/>
+											</span>
+										)}
+										<span className="qh-val">{row.value}</span>
+									</span>
+									{row.reset && (
+										<span className="qh-reset">
+											<span>{row.reset}</span>
+											{row.resetClock ? (
+												<span className="qh-reset-at">{row.resetClock}</span>
+											) : null}
+										</span>
+									)}
+								</div>
+							))}
+						</div>
+					)}
+					{rows.length === 0 && (a.state === "ok" || a.state === "stale") && (
+						<div className="qh-line">{basis(a)}</div>
+					)}
+					{a.state === "stale" && a.err && <div className="qh-line qh-stale">{a.err}</div>}
+				</motion.div>
+			</AnimatePresence>
+		</div>
 	);
 }
 
@@ -87,19 +202,26 @@ export function QuotaPanel({
 	onSelect,
 	pinned,
 	onPin,
-	onClose
+	onCompact,
+	onClose,
+	emptyHint
 }: QuotaPanelProps) {
 	const [now, setNow] = useState(() => new Date());
 	// In-memory only: countdown is the default; a click on any reset display
 	// switches every reset to the wall clock, like the standalone widget.
 	const [clock, setClock] = useState(false);
 	const [groupsOpen, setGroupsOpen] = useState(false);
+	const [checkedAt, setCheckedAt] = useState(() => Date.now());
 	const rootRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
 		const timer = window.setInterval(() => setNow(new Date()), 1000);
 		return () => window.clearInterval(timer);
 	}, []);
+
+	useEffect(() => {
+		setCheckedAt(Date.now());
+	}, [readings]);
 
 	// The panel drives the notch's height while mounted. `.qs` is
 	// unconstrained (the scroll cap lives on the wrapping viewport), so the
@@ -133,7 +255,14 @@ export function QuotaPanel({
 		: defaultSelection(readings);
 	const sel = readings.find((a) => a.id === selectedId);
 	const busy = anyBusy(readings);
-	const failed = failedCount(readings);
+	const minutesAgo = Math.floor((now.getTime() - checkedAt) / 60000);
+	const checkedText = busy
+		? "Checking…"
+		: minutesAgo < 1
+			? "Just checked"
+			: minutesAgo < 60
+				? `${minutesAgo} min ago`
+				: `${Math.floor(minutesAgo / 60)} h ago`;
 
 	// A helper that is down or restarting rejects the invoke; that is a
 	// no-op, and the next snapshot repaints anyway.
@@ -143,11 +272,14 @@ export function QuotaPanel({
 
 	const groupsToggle =
 		sel !== undefined &&
-		(sel.details?.length ?? 0) === 0 &&
 		(sel.groups?.length ?? 0) > 0 &&
 		(sel.state === "ok" || sel.state === "stale");
 
-	const resetText = sel?.reset5h ? formatReset(sel.reset5h, now, clock) : "";
+	// The countdown/clock toggle shows when any visible row carries a reset.
+	const hasReset =
+		sel !== undefined &&
+		(sel.state === "ok" || sel.state === "stale") &&
+		Boolean(sel.reset5h || (sel.details ?? []).some((d) => d.resetAt));
 
 	return (
 		<div
@@ -159,6 +291,18 @@ export function QuotaPanel({
 			<div className="qs-header">
 				<span className="qs-caption">Used</span>
 				<span className="qs-header-actions">
+					<button
+						type="button"
+						className="qs-icon-btn"
+						tabIndex={-1}
+						onMouseDown={(e) => e.preventDefault()}
+						onClick={onCompact}
+						aria-label="Compact quota space"
+						title="Compact"
+						data-testid="quota-compact"
+					>
+						<Minimize2 size={12} />
+					</button>
 					<button
 						type="button"
 						className={`qs-icon-btn${pinned ? " active" : ""}`}
@@ -190,7 +334,7 @@ export function QuotaPanel({
 			{readings.length === 0 ? (
 				<div className="qs-empty">
 					<span className="qs-empty-title">No agents enabled</span>
-					<span className="qs-empty-sub">Waiting for the quota helper.</span>
+					<span className="qs-empty-sub">{emptyHint ?? "Waiting for the quota helper."}</span>
 				</div>
 			) : (
 				<>
@@ -205,23 +349,15 @@ export function QuotaPanel({
 									tabIndex={-1}
 									onMouseDown={(e) => e.preventDefault()}
 									onClick={() => onSelect(a.id)}
+									aria-label={agentName(a.id)}
 									title={agentName(a.id)}
 									data-testid={`quota-cell-${a.id}`}
 								>
 									<span className="qs-cell-top">
-										<span className="qs-ring">
-											<Ring used={a.used} />
-											<span className="qs-mark">
-												<AgentMark id={a.id} />
-											</span>
-										</span>
+										<QuotaRingMark a={a} />
 										<span
 											className={`qs-pct${pct === undefined ? " empty" : ""}`}
-											style={
-												pct === undefined
-													? undefined
-													: { color: BAND_COLOR[band(pct)] }
-											}
+											style={pct === undefined ? undefined : { color: BAND_COLOR[band(pct)] }}
 										>
 											{pct === undefined ? "—" : `${pct}%`}
 										</span>
@@ -235,147 +371,152 @@ export function QuotaPanel({
 
 					{sel !== undefined && (
 						<div className="qs-detail" data-testid="quota-detail">
-							<div className="qs-detail-title">
-								{agentName(sel.id)}
-								{sel.plan ? ` · ${sel.plan}` : ""}
+							<div className="qs-detail-head">
+								<div className="qs-detail-title">
+									{agentName(sel.id)}
+									{sel.plan ? ` · ${sel.plan}` : ""}
+								</div>
 							</div>
-							{detailLines(sel, now, clock).map((line, i) => (
-								<div
-									key={i}
-									className={`qs-line${sel.state === "failed" ? " qs-error" : ""}`}
-								>
-									{line}
-								</div>
-							))}
-							{groupsOpen && groupsToggle && (
-								<div className="qs-groups" data-testid="quota-groups">
-									<div
-										className="qs-group-row qs-group-head"
-										style={{
-											gridTemplateColumns: `1fr repeat(${groupLabels(sel).length}, 48px)`
-										}}
-									>
-										<span />
-										{groupLabels(sel).map((label) => (
-											<span key={label} className="qs-group-col">
-												{groupLabelName(label)}
-											</span>
-										))}
-									</div>
-									{(sel.groups ?? []).map((g) => (
-										<div
-											key={g.name}
-											className="qs-group-row"
-											style={{
-												gridTemplateColumns: `1fr repeat(${groupLabels(sel).length}, 48px)`
-											}}
-										>
-											<span className="qs-group-name">{g.name}</span>
-											{groupLabels(sel).map((label) => {
-												const w = g.windows.find((x) => x.label === label);
-												return (
-													<span key={label} className="qs-group-col">
-														{w ? `${Math.round(w.used)}%` : "—"}
-													</span>
-												);
-											})}
-										</div>
-									))}
-								</div>
-							)}
-							{sel.observedAt && (
-								<div className="qs-line qs-observed">
-									Source observed {timeText(sel.observedAt)}
-								</div>
-							)}
-							{sel.state === "stale" && (
+							{sel.state === "waiting" && <div className="qs-line">Checking usage…</div>}
+							{sel.state === "failed" && (
 								<>
-									{sel.lastGoodAt && (
-										<div className="qs-line qs-stale">
-											Last good {timeText(sel.lastGoodAt)}
+									<div className="qs-line qs-error">{sel.err || sel.detail || "Unavailable"}</div>
+									{sel.help && (
+										<div className="qs-controls">
+											<button
+												type="button"
+												className="qs-ctl qs-hint"
+												tabIndex={-1}
+												onMouseDown={(e) => e.preventDefault()}
+												onClick={() => refresh(sel.id)}
+												title={`Refresh ${agentName(sel.id)}`}
+												data-testid="quota-hint"
+											>
+												{sel.help}
+											</button>
 										</div>
 									)}
-									{sel.err && <div className="qs-line qs-error">{sel.err}</div>}
 								</>
 							)}
-							{(groupsToggle || resetText !== "" || (sel.state === "failed" && sel.help)) && (
-								<div className="qs-controls">
+							{(sel.state === "ok" || sel.state === "stale") && (
+								<>
+									<div className="qs-metrics">
+										{detailRows(sel, now, clock).map((row, i) => (
+											<div key={i} className="qs-metric-row">
+												<span className="qs-metric-label">{row.label}</span>
+												<span className="qs-metric-usage">
+													{typeof row.used === "number" && (
+														<span className="qs-metric-bar" aria-hidden="true">
+															<span
+																className="qs-metric-fill"
+																style={{
+																	width: `${Math.min(Math.max(Math.round(row.used), 0), 100)}%`,
+																	backgroundColor: BAND_COLOR[band(Math.round(row.used))]
+																}}
+															/>
+														</span>
+													)}
+													<span className="qs-metric-val">{row.value}</span>
+												</span>
+												{row.reset && <span className="qs-metric-reset">{row.reset}</span>}
+											</div>
+										))}
+									</div>
 									{groupsToggle && (
-										<button
-											type="button"
-											className="qs-ctl"
-											tabIndex={-1}
-											onMouseDown={(e) => e.preventDefault()}
-											onClick={() => setGroupsOpen((v) => !v)}
-											aria-expanded={groupsOpen}
-											data-testid="quota-groups-toggle"
-										>
-											{(sel.groups ?? []).length} model groups
-											{groupsOpen ? (
-												<ChevronDown size={11} />
-											) : (
-												<ChevronRight size={11} />
+										<div className="qs-controls">
+											<button
+												type="button"
+												className="qs-ctl"
+												tabIndex={-1}
+												onMouseDown={(e) => e.preventDefault()}
+												onClick={() => setGroupsOpen((v) => !v)}
+												aria-expanded={groupsOpen}
+												data-testid="quota-groups-toggle"
+											>
+												{(sel.groups ?? []).length} model groups
+												{groupsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+											</button>
+										</div>
+									)}
+									{groupsOpen && groupsToggle && (
+										<div className="qs-groups" data-testid="quota-groups">
+											<div
+												className="qs-group-row qs-group-head"
+												style={{
+													gridTemplateColumns: `1fr repeat(${groupLabels(sel).length}, 48px)`
+												}}
+											>
+												<span />
+												{groupLabels(sel).map((label) => (
+													<span key={label} className="qs-group-col">
+														{groupLabelName(label)}
+													</span>
+												))}
+											</div>
+											{(sel.groups ?? []).map((g) => (
+												<div
+													key={g.name}
+													className="qs-group-row"
+													style={{
+														gridTemplateColumns: `1fr repeat(${groupLabels(sel).length}, 48px)`
+													}}
+												>
+													<span className="qs-group-name">{g.name}</span>
+													{groupLabels(sel).map((label) => {
+														const w = g.windows.find((x) => x.label === label);
+														return (
+															<span key={label} className="qs-group-col">
+																{w ? `${Math.round(w.used)}%` : "—"}
+															</span>
+														);
+													})}
+												</div>
+											))}
+										</div>
+									)}
+									{sel.state === "stale" && (
+										<>
+											{sel.lastGoodAt && (
+												<div className="qs-line qs-stale">Last good {timeText(sel.lastGoodAt)}</div>
 											)}
-										</button>
+											{sel.err && <div className="qs-line qs-error">{sel.err}</div>}
+										</>
 									)}
-									{resetText !== "" && (
-										<button
-											type="button"
-											className="qs-ctl"
-											tabIndex={-1}
-											onMouseDown={(e) => e.preventDefault()}
-											onClick={() => setClock((v) => !v)}
-											title="Toggle countdown / clock"
-											data-testid="quota-reset"
-										>
-											<Clock size={11} />
-											{resetText === "now"
-												? "5h · now"
-												: clock
-													? `5h · at ${resetText}`
-													: `5h · in ${resetText}`}
-										</button>
-									)}
-									{sel.state === "failed" && sel.help && (
-										<button
-											type="button"
-											className="qs-ctl"
-											tabIndex={-1}
-											onMouseDown={(e) => e.preventDefault()}
-											onClick={() => refresh(sel.id)}
-											title={`Refresh ${agentName(sel.id)}`}
-											data-testid="quota-hint"
-										>
-											{sel.help}
-										</button>
-									)}
-								</div>
+								</>
 							)}
 						</div>
 					)}
+					<div className="qs-footer">
+						{hasReset && (
+							<button
+								type="button"
+								className="qs-ctl"
+								tabIndex={-1}
+								onMouseDown={(e) => e.preventDefault()}
+								onClick={() => setClock((v) => !v)}
+								title="Toggle countdown / clock"
+								data-testid="quota-reset"
+							>
+								<Clock size={10} />
+								<span>{clock ? "Clock" : "Countdown"}</span>
+							</button>
+						)}
+						<button
+							type="button"
+							className="qs-footer-refresh"
+							tabIndex={-1}
+							onMouseDown={(e) => e.preventDefault()}
+							onClick={() => refresh(null)}
+							disabled={busy}
+							aria-label={busy ? "Checking…" : "Refresh"}
+							data-testid="quota-refresh"
+						>
+							<RefreshCw size={12} className={busy ? "qs-spin" : undefined} />
+							<span>{checkedText}</span>
+						</button>
+					</div>
 				</>
 			)}
-
-			<div className="qs-divider" />
-			<div className="qs-footer">
-				{failed > 0 && (
-					<span className="qs-failed" data-testid="quota-failed">
-						{failed} failed
-					</span>
-				)}
-				<button
-					type="button"
-					className="qs-refresh"
-					tabIndex={-1}
-					onMouseDown={(e) => e.preventDefault()}
-					onClick={() => refresh(null)}
-					disabled={busy}
-					data-testid="quota-refresh"
-				>
-					<RefreshCw size={11} className={busy ? "qs-spin" : undefined} />
-					{busy ? "Checking…" : "Refresh"}
-				</button>
-			</div>
 		</div>
 	);
 }
