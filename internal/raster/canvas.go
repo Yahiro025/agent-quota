@@ -75,6 +75,18 @@ func (c *Canvas) FillRound(x, y, w, h, radius int, col color.RGBA) {
 	c.fillMask(mask, col)
 }
 
+// RoundContains excludes the transparent corners of FillRound from input.
+func RoundContains(rect image.Rectangle, radius int, p image.Point) bool {
+	if !p.In(rect) {
+		return false
+	}
+	r := float64(max(0, min(radius, rect.Dx()/2, rect.Dy()/2)))
+	x, y := float64(p.X)+.5, float64(p.Y)+.5
+	cx := max(float64(rect.Min.X)+r, min(x, float64(rect.Max.X)-r))
+	cy := max(float64(rect.Min.Y)+r, min(y, float64(rect.Max.Y)-r))
+	return (x-cx)*(x-cx)+(y-cy)*(y-cy) <= r*r
+}
+
 // StrokeRound draws a rounded-rectangle outline inside its bounds.
 func (c *Canvas) StrokeRound(x, y, w, h, radius, stroke int, col color.RGBA) {
 	if w <= 0 || h <= 0 || stroke <= 0 || col.A == 0 {

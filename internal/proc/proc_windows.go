@@ -13,7 +13,11 @@ import (
 )
 
 func hideWindow(c *exec.Cmd) {
-	c.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
+	// Batch commands already have a CmdLine; hiding them must preserve it.
+	if c.SysProcAttr == nil {
+		c.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	c.SysProcAttr.CreationFlags |= windows.CREATE_NO_WINDOW
 }
 
 // batCommand runs a .cmd or .bat as Rust's std does (make_bat_command_line): through
@@ -21,13 +25,17 @@ func hideWindow(c *exec.Cmd) {
 // Err) when it can't be passed as plain data. Go itself would hand cmd the arguments as
 // they are.
 func batCommand(script string, args []string) *exec.Cmd {
-	sys, _ := windows.GetSystemDirectory()
+	sys, err := windows.GetSystemDirectory()
 	c := exec.Command(sys + `\cmd.exe`)
 	hideWindow(c)
+	if err != nil {
+		c.Err = err
+		return c
+	}
 	var b strings.Builder
 	b.WriteString(`cmd.exe /e:ON /v:OFF /d /c "`)
-	if strings.Contains(script, `"`) || strings.HasSuffix(script, `\`) {
-		c.Err = errors.New("Windows file names may not contain `\"` or end with `\\`")
+	if strings.ContainsAny(script, "\"\x00\r\n") || strings.HasSuffix(script, `\`) {
+		c.Err = errors.New("batch file path contains an invalid character or trailing backslash")
 		return c
 	}
 	b.WriteString(`"` + script + `"`)

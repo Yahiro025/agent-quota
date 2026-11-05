@@ -8,7 +8,7 @@ import (
 )
 
 func TestDrawProvidesDistinctAgentMarksAtPillSize(t *testing.T) {
-	ids := []string{"claude", "kiro", "codex", "cursor", "copilot", "devin", "antigravity"}
+	ids := []string{"claude", "kiro", "codex", "cursor", "copilot", "devin", "antigravity", "grokbot", "commandcode", "qoder"}
 	seen := map[[32]byte]string{}
 	for _, id := range ids {
 		c := raster.New(24, 24)

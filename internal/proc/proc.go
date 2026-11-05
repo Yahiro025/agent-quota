@@ -126,7 +126,7 @@ func Home() string {
 func Hidden(exe string, args ...string) *exec.Cmd {
 	var c *exec.Cmd
 	if e := strings.ToLower(extension(exe)); e == "cmd" || e == "bat" {
-		c = exec.Command("cmd.exe", append([]string{"/d", "/c", exe}, args...)...)
+		c = batCommand(exe, args)
 	} else {
 		c = exec.Command(exe, args...)
 	}
