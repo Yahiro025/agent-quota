@@ -104,12 +104,11 @@ func TestPillResetAddsSecondLine(t *testing.T) {
 	if bytes.Equal(a.Pix, b.Pix) {
 		t.Fatal("PillReset did not change rendered pixels")
 	}
-	// The scan starts at y=24 on purpose: the raised percent inks rows ~7-16
-	// and its unraised twin ~14-23, so only the reset line (drawn at py+21,
-	// glyph ink ~22-29) can differ at y >= 24. Scanning from the midline would
-	// pass on moved percent ink alone even if no second line were drawn.
+	// Start below either percentage's ink, relative to the surface rather than
+	// the transparent shadow margin. Only the reset line can change this band.
 	lower := false
-	for y := 24; y < a.Bounds().Dy(); y++ {
+	pill := PillBounds(View{Items: []Item{base}})
+	for y := pill.Min.Y + 28; y < pill.Max.Y; y++ {
 		for x := 0; x < a.Bounds().Dx(); x++ {
 			i := a.PixOffset(x, y)
 			if !bytes.Equal(a.Pix[i:i+4], b.Pix[i:i+4]) {
@@ -133,7 +132,7 @@ func TestPillResetStaysInSlot(t *testing.T) {
 	with[0].PillReset = "9999h99m far too long to show"
 	a := Render(View{Items: items})
 	b := Render(View{Items: with})
-	slotEnd := pad + cell + pctGap + PctWidth
+	slotEnd := PillBounds(View{Items: items}).Min.X + pad + cell + pctGap + PctWidth
 	for y := 0; y < a.Bounds().Dy(); y++ {
 		for x := slotEnd; x < a.Bounds().Dx(); x++ {
 			i := a.PixOffset(x, y)
