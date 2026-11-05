@@ -89,9 +89,12 @@ const (
 	ItemCopilot     = "copilot"
 	ItemDevin       = "devin"
 	ItemAntigravity = "antigravity"
+	ItemGrokBot     = "grokbot"
+	ItemCommandCode = "commandcode"
+	ItemQoder       = "qoder"
 )
 
-var ItemAll = [7]string{ItemClaude, ItemKiro, ItemCodex, ItemCursor, ItemCopilot, ItemDevin, ItemAntigravity}
+var ItemAll = [10]string{ItemClaude, ItemKiro, ItemCodex, ItemCursor, ItemCopilot, ItemDevin, ItemAntigravity, ItemGrokBot, ItemCommandCode, ItemQoder}
 
 func ItemTitle(id string) string {
 	switch id {
@@ -109,6 +112,12 @@ func ItemTitle(id string) string {
 		return "Devin quota"
 	case ItemAntigravity:
 		return "Antigravity quota"
+	case ItemGrokBot:
+		return "Grok Bot quota"
+	case ItemCommandCode:
+		return "Command Code quota"
+	case ItemQoder:
+		return "Qoder quota"
 	}
 	return id
 }
@@ -130,6 +139,12 @@ func ItemShort(id string) string {
 		return "Devin"
 	case ItemAntigravity:
 		return "Antigravity"
+	case ItemGrokBot:
+		return "Grok Bot"
+	case ItemCommandCode:
+		return "Command Code"
+	case ItemQoder:
+		return "Qoder"
 	}
 	return id
 }
@@ -770,10 +785,17 @@ func ParseCursorSummary(text string) Reading {
 			reset = &t
 		}
 	}
-	for _, metric := range []struct{ key, label string }{{"totalPercentUsed", "Plan total"}, {"autoPercentUsed", "Auto"}, {"apiPercentUsed", "API"}} {
-		if value := d("individualUsage", "plan", metric.key); value != nil {
-			r.Details = append(r.Details, percentDetail(metric.label, *value, reset))
+	// Cursor's own dashboard names the two model buckets Cursor Models and Other
+	// Models; totalPercentUsed is their rounded blend, and the cents rows repeat
+	// what those percentages already say. Accounts that report only cents (older
+	// and team plans) keep the rows below.
+	if auto != nil || api != nil {
+		for _, metric := range []struct{ key, label string }{{"autoPercentUsed", "Cursor Models"}, {"apiPercentUsed", "Other Models"}} {
+			if value := d("individualUsage", "plan", metric.key); value != nil {
+				r.Details = append(r.Details, percentDetail(metric.label, *value, reset))
+			}
 		}
+		return r
 	}
 	for _, allowance := range []struct{ owner, key, label string }{{"individualUsage", "plan", "Plan"}, {"individualUsage", "overall", "Overall"}, {"teamUsage", "pooled", "Team pooled"}, {"individualUsage", "onDemand", "On-demand"}} {
 		u, limit := d(allowance.owner, allowance.key, "used"), d(allowance.owner, allowance.key, "limit")

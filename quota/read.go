@@ -222,27 +222,27 @@ func CodexIn(home string, now time.Time) Reading {
 
 // MARK: HTTP
 
-// httpGet is a GET with the given headers: its status and body, or false when the host
-// couldn't be reached (a connection error or the 15 s timeout, as HttpClient has).
-// Statuses are the caller's to read.
-func httpGet(url string, headers [][2]string) (int, string, bool) {
+// httpGet is a GET with the given headers: its status, response headers and body,
+// or false when the host couldn't be reached (a connection error or the 15 s timeout,
+// as HttpClient has). Statuses are the caller's to read.
+func httpGet(url string, headers [][2]string) (int, http.Header, string, bool) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return 0, "", false
+		return 0, nil, "", false
 	}
 	for _, h := range headers {
 		req.Header.Set(h[0], h[1])
 	}
 	res, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
-		return 0, "", false
+		return 0, nil, "", false
 	}
 	defer res.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))
 	if err != nil {
-		return 0, "", false
+		return 0, nil, "", false
 	}
-	return res.StatusCode, core.Lossy(body), true
+	return res.StatusCode, res.Header, core.Lossy(body), true
 }
 
 // MARK: Cursor
@@ -282,7 +282,8 @@ func Cursor(now time.Time) Reading {
 }
 
 // CursorToken is the token Cursor keeps in its database, as CursorToken reads it: text, or
-// a blob in UTF-16 when its second byte is zero, else UTF-8. Nil for none.
+// a blob in UTF-16 when its second byte is zero, else UTF-8. A value Cursor sealed at rest
+// is opened first. Nil for none.
 func CursorToken(db string) (*string, error) {
 	v, err := scalar(db, "SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'")
 	if err != nil {
@@ -310,6 +311,13 @@ func CursorToken(db string) (*string, error) {
 	default:
 		return nil, nil
 	}
+	if strings.HasPrefix(text, cursorSafeStoragePrefix) {
+		plain, err := decodeCursorSafeStorage(text, db)
+		if err != nil {
+			return nil, err
+		}
+		text = plain
+	}
 	if t, ok := CleanToken(text); ok {
 		return &t, nil
 	}
@@ -331,7 +339,7 @@ func CursorAt(db, url string, now time.Time) Reading {
 	if !ok {
 		return Fail("Cursor’s sign-in has expired — open Cursor to renew it.")
 	}
-	status, body, ok := httpGet(url, [][2]string{{"Cookie", cookie}, {"Accept", "application/json"}, {"User-Agent", "Hover"}})
+	status, _, body, ok := httpGet(url, [][2]string{{"Cookie", cookie}, {"Accept", "application/json"}, {"User-Agent", "Hover"}})
 	switch {
 	case !ok:
 		return Fail("Couldn’t reach cursor.com.")
@@ -427,7 +435,10 @@ func ClaudeWith(credentials, url string, now time.Time) Reading {
 	if sign.Expires != nil && !sign.Expires.After(now.Add(60*time.Second)) {
 		return Fail("Claude Code’s sign-in has expired — run claude to renew it.")
 	}
-	status, body, ok := httpGet(url, [][2]string{{"Authorization", "Bearer " + *sign.Token}, {"anthropic-beta", "oauth-2025-04-20"},
+	if r, blocked := checkBackoff(url, now); blocked {
+		return r
+	}
+	status, header, body, ok := httpGet(url, [][2]string{{"Authorization", "Bearer " + *sign.Token}, {"anthropic-beta", "oauth-2025-04-20"},
 		{"Accept", "application/json"}, {"User-Agent", "Hover"}})
 	switch {
 	case !ok:
@@ -437,10 +448,11 @@ func ClaudeWith(credentials, url string, now time.Time) Reading {
 	case status == 403:
 		return Fail("This sign-in can’t read plan usage — run claude and sign in again.")
 	case status == 429:
-		return Fail("Anthropic is limiting usage checks; Hover tries again in five minutes.")
+		return recordBackoff(url, "Anthropic", header.Get("Retry-After"), now)
 	case status < 200 || status >= 300:
 		return Fail(fmt.Sprintf("api.anthropic.com answered %d.", status))
 	}
+	clearBackoff(url)
 	return ParseClaudeUsage(body, sign.Plan, now)
 }
 
@@ -461,6 +473,12 @@ func Present(id string) bool {
 		return DevinPresent()
 	case ItemAntigravity:
 		return AntigravityPresent()
+	case ItemGrokBot:
+		return GrokBotPresent()
+	case ItemCommandCode:
+		return CommandCodePresent()
+	case ItemQoder:
+		return QoderPresent()
 	}
 	return false
 }
@@ -491,6 +509,12 @@ func ByID(id string) Reading {
 		return Devin()
 	case ItemAntigravity:
 		return Antigravity()
+	case ItemGrokBot:
+		return GrokBot()
+	case ItemCommandCode:
+		return CommandCode(now)
+	case ItemQoder:
+		return Qoder(now)
 	}
 	return Cursor(now)
 }

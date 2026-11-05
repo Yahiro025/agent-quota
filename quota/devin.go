@@ -129,17 +129,21 @@ func ParseDevin(text string, now time.Time) Reading {
 	}
 	used := 0.0
 	parts := []string{}
+	var windows []Window
 	if daily != nil {
 		u := 100 - *daily
 		used = max(used, min(max(u, 0), 100))
 		parts = append(parts, fmt.Sprintf("day %s%%", Custom(min(max(u, 0), 100), 0)))
+		windows = append(windows, Window{Label: "day", Used: min(max(u, 0), 100)})
 	}
 	if weekly != nil {
 		u := 100 - *weekly
 		used = max(used, min(max(u, 0), 100))
 		parts = append(parts, fmt.Sprintf("week %s%%", Custom(min(max(u, 0), 100), 0)))
+		windows = append(windows, Window{Label: "week", Used: min(max(u, 0), 100)})
 	}
 	resetText := ""
+	var generalReset *time.Time
 	for _, name := range []string{"dailyQuotaResetAtUnix", "weeklyQuotaResetAtUnix", "resetAt", "dailyResetAt", "reset_time", "resetsAt"} {
 		var seconds *float64
 		if name == "dailyQuotaResetAtUnix" || name == "weeklyQuotaResetAtUnix" {
@@ -154,6 +158,9 @@ func ParseDevin(text string, now time.Time) Reading {
 		if e := seconds; e != nil {
 			if t, ok := fromUnixSecs(*e); ok {
 				resetText = " · resets " + FormatLocal(t, "HH:mm")
+				if name != "dailyQuotaResetAtUnix" && name != "weeklyQuotaResetAtUnix" {
+					generalReset = &t
+				}
 				break
 			}
 		}
@@ -162,7 +169,32 @@ func ParseDevin(text string, now time.Time) Reading {
 	if plan != "" {
 		detail = plan + " · " + detail
 	}
-	return newReading(used, detail)
+	r := newReading(used, detail)
+	r.Plan, r.Windows = plan, windows
+	r.ResetLabel = strings.TrimPrefix(resetText, " · resets ")
+	for _, w := range windows {
+		name := "dailyQuotaResetAtUnix"
+		if w.Label == "week" {
+			name = "weeklyQuotaResetAtUnix"
+		}
+		var reset *time.Time
+		seconds := numOf(usage, name)
+		if raw := strOf(usage, name); raw != nil {
+			if value, err := strconv.ParseFloat(*raw, 64); err == nil {
+				seconds = &value
+			}
+		}
+		if seconds != nil {
+			if t, ok := fromUnixSecs(*seconds); ok {
+				reset = &t
+			}
+		}
+		r.Details = append(r.Details, percentDetail(w.Label, w.Used, reset))
+	}
+	if generalReset != nil {
+		r.Details = append(r.Details, Detail{Label: "General reset", Value: FormatLocal(*generalReset, "d MMM HH:mm")})
+	}
+	return r
 }
 
 // Devin posts GetUserStatus; ideVersion comes from `devin version` once at startup.
@@ -188,6 +220,9 @@ func DevinWith(server, key, ideVersion string, now time.Time) Reading {
 		return Fail("Devin CLI version couldn't be read.")
 	}
 	url := server + "/exa.seat_management_pb.SeatManagementService/GetUserStatus"
+	if r, blocked := checkBackoff(url, now); blocked {
+		return r
+	}
 	metadata := struct {
 		APIKey           string `json:"apiKey"`
 		IDEName          string `json:"ideName"`
@@ -222,11 +257,12 @@ func DevinWith(server, key, ideVersion string, now time.Time) Reading {
 	}
 	switch res.StatusCode {
 	case 200:
+		clearBackoff(url)
 		return ParseDevin(core.Lossy(b), now)
 	case 401, 403:
 		return Fail("Devin's sign-in was refused — sign in again.")
 	case 429:
-		return Fail("Devin is limiting usage checks; trying again in five minutes.")
+		return recordBackoff(url, "Devin", res.Header.Get("Retry-After"), now)
 	case 500:
 		return Fail("Devin's server failed — trying again in five minutes.")
 	default:

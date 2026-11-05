@@ -1,8 +1,11 @@
 package quota
 
-// Local and API readers poll every 30 seconds. Kiro and Antigravity retain five
-// minutes between CLI starts because their process trees are substantially heavier.
-// Manual refresh bypasses the interval but never overlaps a provider's current read.
+// Local and API readers poll every 30 seconds, while Claude, Kiro, Antigravity,
+// Command Code, and Qoder use five minutes. Anthropic rate-limits the usage
+// endpoint, while Kiro and Antigravity retain five minutes between CLI starts
+// because their process trees are substantially heavier; Command Code and Qoder
+// are billing endpoints where usage changes on billing cadences. Manual refresh
+// bypasses the interval but never overlaps a provider's current read.
 
 import (
 	"slices"
@@ -117,7 +120,7 @@ func (b *Book) RefreshOne(id string, force bool, now time.Time) bool {
 		return false
 	}
 	interval := Tick
-	if id == ItemKiro || id == ItemAntigravity {
+	if id == ItemKiro || id == ItemAntigravity || id == ItemClaude || id == ItemCommandCode || id == ItemQoder {
 		interval = Every
 	}
 	if !force {

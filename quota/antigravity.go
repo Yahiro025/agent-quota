@@ -75,34 +75,61 @@ func Antigravity() Reading {
 		return Fail("Antigravity quota needs agy 1.1.11 or newer. Update agy to show usage safely.")
 	}
 
-	result := runAntigravity(exe, []string{"-p", "/usage", "--output-format", "json", "--print-timeout", "20s"}, 25*time.Second)
-	if result.timedOut {
-		return Fail("Antigravity CLI didn't answer the usage check in time.")
+	return readAntigravityUsage(exe, 25*time.Second)
+}
+
+func readAntigravityUsage(exe string, limit time.Duration) Reading {
+	deadline := time.Now().Add(limit)
+	for attempt := 0; attempt < 2; attempt++ {
+		remaining := time.Until(deadline)
+		if remaining <= 0 || attempt > 0 && remaining <= time.Second {
+			return Fail("Antigravity CLI didn't answer the usage check in time.")
+		}
+		printLimit := 20 * time.Second
+		if attempt > 0 {
+			// Reserve shutdown time inside the original watchdog, rather than
+			// granting another full timeout to a transient backend retry.
+			printLimit = min(printLimit, remaining-time.Second)
+		}
+		result := runAntigravity(exe, []string{"-p", "/usage", "--output-format", "json", "--print-timeout", printLimit.String()}, remaining)
+		if result.timedOut {
+			return Fail("Antigravity CLI didn't answer the usage check in time.")
+		}
+		if result.tooLarge {
+			return Fail("Antigravity CLI returned too much output to read safely.")
+		}
+		if result.err != nil {
+			return Fail("Antigravity CLI couldn't be started.")
+		}
+		reading, modelTurn := parseAntigravityOutput(result.stdout, time.Now())
+		if modelTurn {
+			antigravityUnsupported.Lock()
+			antigravityUnsupported.latched = true
+			antigravityUnsupported.Unlock()
+			return Fail("Antigravity usage isn't available. `agy /usage` started a model turn, so quota checks stopped for this run. Update agy and restart agent-quota.")
+		}
+		if reading.OK() {
+			return reading
+		}
+		diagnostic := result.stdout + "\n" + result.stderr
+		if antigravitySignedOut(strings.ToLower(diagnostic)) || antigravityStructuredAuth(diagnostic) {
+			return Fail("Antigravity isn't signed in. Open agy to renew its sign-in, then refresh the quota.")
+		}
+		if antigravityServiceUnavailable(diagnostic) {
+			// A read-only /usage can recover from a 503 without waiting for
+			// the next five-minute poll. Never retry a model turn or sign-in.
+			if attempt == 0 && time.Until(deadline) > 2*time.Second {
+				time.Sleep(250 * time.Millisecond)
+				continue
+			}
+			return Fail("Antigravity's quota service is temporarily unavailable. Try Refresh shortly.")
+		}
+		if result.code != 0 {
+			return Fail(fmt.Sprintf("Antigravity usage check failed (exit %d).", result.code))
+		}
+		return Fail("Antigravity CLI didn't report a readable quota.")
 	}
-	if result.tooLarge {
-		return Fail("Antigravity CLI returned too much output to read safely.")
-	}
-	if result.err != nil {
-		return Fail("Antigravity CLI couldn't be started.")
-	}
-	reading, modelTurn := parseAntigravityOutput(result.stdout, time.Now())
-	if modelTurn {
-		antigravityUnsupported.Lock()
-		antigravityUnsupported.latched = true
-		antigravityUnsupported.Unlock()
-		return Fail("Antigravity usage isn't available. `agy /usage` started a model turn, so quota checks stopped for this run. Update agy and restart agent-quota.")
-	}
-	if reading.OK() {
-		return reading
-	}
-	diagnostic := result.stdout + "\n" + result.stderr
-	if antigravitySignedOut(strings.ToLower(diagnostic)) || antigravityStructuredAuth(diagnostic) {
-		return Fail("Antigravity isn't signed in. Open agy to renew its sign-in, then refresh the quota.")
-	}
-	if result.code != 0 {
-		return Fail(fmt.Sprintf("Antigravity usage check failed (exit %d).", result.code))
-	}
-	return Fail("Antigravity CLI didn't report a readable quota.")
+	return Fail("Antigravity's quota service is temporarily unavailable. Try Refresh shortly.")
 }
 
 // ParseAntigravity parses agy's print-mode JSON envelope without accessing the CLI or disk.
@@ -116,6 +143,8 @@ func ParseAntigravity(text string, now time.Time) Reading {
 
 type antigravityBucket struct {
 	group  string
+	id     string
+	name   string
 	window string
 	used   float64
 	reset  *time.Time
@@ -189,7 +218,8 @@ func parseAntigravityGroups(groups []any) []antigravityBucket {
 			if !ok || bucket["disabled"] == true {
 				continue
 			}
-			if id, ok := bucket["id"].(string); !ok || strings.TrimSpace(id) == "" {
+			id, ok := bucket["id"].(string)
+			if !ok || strings.TrimSpace(id) == "" {
 				continue
 			}
 			fraction, ok := bucket["remaining_fraction"].(float64)
@@ -203,7 +233,8 @@ func parseAntigravityGroups(groups []any) []antigravityBucket {
 					reset = &parsed
 				}
 			}
-			out = append(out, antigravityBucket{group: strings.TrimSpace(name), window: window, used: (1 - fraction) * 100, reset: reset})
+			bucketName, _ := bucket["name"].(string)
+			out = append(out, antigravityBucket{group: strings.TrimSpace(name), id: id, name: bucketName, window: window, used: (1 - fraction) * 100, reset: reset})
 		}
 	}
 	return out
@@ -240,7 +271,74 @@ func antigravityReading(buckets []antigravityBucket, now time.Time) Reading {
 	}
 	r := newReading(maxUsed, strings.Join(parts, " · "))
 	r.Reset5h = reset5h
+	windowLabel := func(window string) string {
+		if window == "weekly" {
+			return "week"
+		}
+		if window == "" {
+			return "usage"
+		}
+		return window
+	}
+	for _, bucket := range buckets {
+		duplicate, sameName := false, false
+		for _, other := range buckets {
+			if other.id != bucket.id && other.group == bucket.group && windowLabel(other.window) == windowLabel(bucket.window) {
+				duplicate = true
+				if other.name == bucket.name {
+					sameName = true
+				}
+			}
+		}
+		label := bucket.group
+		if duplicate {
+			identity := bucket.id
+			if bucket.name != "" {
+				identity = bucket.name
+				if sameName {
+					identity += " (" + bucket.id + ")"
+				}
+			}
+			label += " / " + identity
+		}
+		label += " / " + capital(windowLabel(bucket.window))
+		r.Details = append(r.Details, percentDetail(label, bucket.used, bucket.reset))
+		index := -1
+		for i := range r.Groups {
+			if r.Groups[i].Name == bucket.group {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			r.Groups = append(r.Groups, Group{Name: bucket.group})
+			index = len(r.Groups) - 1
+		}
+		label = windowLabel(bucket.window)
+		r.Groups[index].Windows = append(r.Groups[index].Windows, Window{Label: label, Used: bucket.used})
+	}
 	return r
+}
+
+func antigravityServiceUnavailable(output string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		if at := strings.Index(line, "AGY_ERROR:"); at >= 0 {
+			line = line[at+len("AGY_ERROR:"):]
+		}
+		var value map[string]any
+		if json.Unmarshal([]byte(strings.TrimSpace(line)), &value) != nil {
+			continue
+		}
+		if value["status"] == "UNAVAILABLE" && value["error_code"] == float64(503) {
+			return true
+		}
+		message, _ := value["error"].(string)
+		message = strings.ToLower(message)
+		if value["status"] == "ERROR" && strings.Contains(message, "unavailable") && (strings.Contains(message, "code 503") || strings.Contains(message, "http 503")) {
+			return true
+		}
+	}
+	return false
 }
 
 func antigravityStructuredAuth(output string) bool {

@@ -22,6 +22,9 @@ func TestPureParseAntigravityUsesEnabledGeminiAndClaudeGPTQuotas(t *testing.T) {
 	if strings.Contains(r.Detail, "5h") {
 		t.Errorf("disabled bucket appeared in detail: %q", r.Detail)
 	}
+	if len(r.Groups) != 2 || r.Groups[0].Name != "Gemini Models" || len(r.Groups[0].Windows) != 1 || r.Groups[0].Windows[0].Label != "week" || len(r.Groups[1].Windows) != 1 || r.Groups[1].Windows[0].Used != 80 {
+		t.Fatalf("inspector groups lost an enabled bucket or included a disabled one: %#v", r.Groups)
+	}
 }
 
 func TestParseAntigravityRejectsQuotaAnsweredAsModelTurn(t *testing.T) {
@@ -86,6 +89,96 @@ for /L %%i in (1,1,20000) do echo 123456789012345678901234567890
 	t.Setenv("AGY_VERSION", "1.3.4")
 	if r := Antigravity(); r.OK() || !strings.Contains(r.Detail, "too much output") {
 		t.Fatalf("oversized CLI response wasn't rejected at the capture limit: %#v", r)
+	}
+}
+
+func TestAntigravityRetriesUnavailableQuotaOnce(t *testing.T) {
+	marker := withAntigravityStub(t, `@echo off
+if "%1"=="--version" (
+ echo 1.3.5
+ exit /b 0
+)
+if exist "%AGY_MARKER%" goto recovered
+>>"%AGY_MARKER%" echo usage
+echo {"status":"ERROR","error":"backend service unavailable (code 503)","num_turns":0,"conversation_id":""}
+exit /b 1
+:recovered
+>>"%AGY_MARKER%" echo usage
+echo {"status":"SUCCESS","num_turns":0,"conversation_id":"","command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-weekly","window":"weekly","remaining_fraction":0.75}]}]}}}
+`)
+	r := Antigravity()
+	if !r.OK() || *r.Used != 25 {
+		t.Fatalf("temporary backend outage did not recover within the same read: %#v", r)
+	}
+	data, err := os.ReadFile(marker)
+	if err != nil || strings.Count(string(data), "usage") != 2 {
+		t.Fatalf("expected one retry, got %q (err %v)", data, err)
+	}
+}
+
+func TestAntigravityStopsAfterTwoUnavailableResponses(t *testing.T) {
+	marker := withAntigravityStub(t, `@echo off
+if "%1"=="--version" (
+ echo 1.3.5
+ exit /b 0
+)
+>>"%AGY_MARKER%" echo usage
+echo AGY_ERROR: {"status":"UNAVAILABLE","error_code":503,"message":"private-backend-diagnostic"}
+exit /b 1
+`)
+	r := Antigravity()
+	if r.OK() || !strings.Contains(r.Detail, "temporarily unavailable") || strings.Contains(r.Detail, "private-backend-diagnostic") {
+		t.Fatalf("service failure was hidden or exposed raw diagnostics: %#v", r)
+	}
+	data, err := os.ReadFile(marker)
+	if err != nil || strings.Count(string(data), "usage") != 2 {
+		t.Fatalf("unavailable service was not bounded to two attempts: %q (err %v)", data, err)
+	}
+}
+
+func TestAntigravityRetrySharesOriginalUsageDeadline(t *testing.T) {
+	marker := withAntigravityStub(t, `@echo off
+if exist "%AGY_MARKER%" goto hung
+>>"%AGY_MARKER%" echo usage
+echo {"status":"ERROR","error":"backend service unavailable (code 503)"}
+exit /b 1
+:hung
+>>"%AGY_MARKER%" echo usage
+:again
+goto again
+`)
+	start := time.Now()
+	r := readAntigravityUsage("agy.cmd", 2500*time.Millisecond)
+	if r.OK() || !strings.Contains(r.Detail, "in time") {
+		t.Fatalf("hung retry did not hit the shared watchdog: %#v", r)
+	}
+	if elapsed := time.Since(start); elapsed > 4*time.Second {
+		t.Fatalf("retry received a fresh watchdog instead of the remaining budget: %s", elapsed)
+	}
+	data, err := os.ReadFile(marker)
+	if err != nil || strings.Count(string(data), "usage") != 2 {
+		t.Fatalf("test did not exercise both attempts: %q (err %v)", data, err)
+	}
+}
+
+func TestAntigravityNeverRetriesAuthOrModelTurnsAsUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		name, output, diagnostic, want string
+	}{
+		{"auth", `{"status":"ERROR","error":"backend unavailable (code 503)"}`, `AGY_ERROR: {"status":"UNAUTHENTICATED","error_code":401}`, "renew"},
+		{"model turn", `{"status":"ERROR","error":"backend unavailable (code 503)","num_turns":1,"conversation_id":"already-started"}`, `AGY_ERROR: {"status":"UNAVAILABLE","error_code":503}`, "model turn"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			marker := withAntigravityStub(t, "@echo off\nif \"%1\"==\"--version\" (\n echo 1.3.5\n exit /b 0\n)\n>>\"%AGY_MARKER%\" echo usage\necho "+tc.output+"\necho "+tc.diagnostic+"\nexit /b 1\n")
+			r := Antigravity()
+			if r.OK() || !strings.Contains(r.Detail, tc.want) {
+				t.Fatalf("%s was masked as a retryable service outage: %#v", tc.name, r)
+			}
+			data, err := os.ReadFile(marker)
+			if err != nil || strings.Count(string(data), "usage") != 1 {
+				t.Fatalf("unsafe retry after %s: %q (err %v)", tc.name, data, err)
+			}
+		})
 	}
 }
 
