@@ -1,8 +1,8 @@
 // Brand marks for the quota rings, ported from internal/marks/marks.go.
 // Claude, Codex and Cursor are inline copies of the donor vector paths in
-// internal/marks/markpaths.go; Kiro, Copilot, Devin and Antigravity render
-// the asset files beside this file (see ATTRIBUTION.md). Nothing here is
-// new artwork.
+// internal/marks/markpaths.go; Kiro, Copilot, Devin, Antigravity, Command Code
+// and Qoder render the asset files beside this file (see ATTRIBUTION.md).
+// Nothing here is new artwork.
 
 import type { JSX } from "react";
 
@@ -10,6 +10,8 @@ const kiroUrl = new URL("./kiro.svg", import.meta.url).href;
 const copilotUrl = new URL("./copilot-24.svg", import.meta.url).href;
 const devinUrl = new URL("./devin.svg", import.meta.url).href;
 const antigravityUrl = new URL("./antigravity.png", import.meta.url).href;
+const commandCodeUrl = new URL("./commandcode.png", import.meta.url).href;
+const qoderUrl = new URL("./qoder.svg", import.meta.url).href;
 
 // Verbatim paths from internal/marks/markpaths.go (LobeHub Icons, MIT).
 const markClaude =
@@ -20,6 +22,9 @@ const markCodexGlyph =
 	"M12.546,13.909 C12.209,13.928 11.945,14.207 11.945,14.545 C11.945,14.883 12.209,15.162 12.546,15.181 L16.182,15.181 C16.418,15.194 16.641,15.076 16.763,14.874 C16.885,14.672 16.885,14.418 16.763,14.216 C16.641,14.014 16.418,13.896 16.182,13.909 L12.546,13.909 Z M8.462,9.23 C8.282,8.937 7.902,8.84 7.603,9.01 C7.305,9.18 7.195,9.557 7.356,9.861 L8.628,12.085 L7.362,14.221 C7.183,14.523 7.283,14.914 7.585,15.093 C7.887,15.272 8.278,15.172 8.457,14.87 L9.911,12.415 C10.028,12.218 10.03,11.974 9.916,11.775 L8.462,9.23 Z";
 const markCursor =
 	"M22.106,5.68 L12.5,0.135 C12.191,-0.043 11.811,-0.043 11.502,0.135 L1.893,5.68 C1.634,5.83 1.474,6.107 1.474,6.406 L1.474,17.592 C1.474,17.892 1.634,18.169 1.894,18.319 L11.501,23.866 C11.81,24.044 12.19,24.044 12.499,23.866 L22.107,18.319 C22.367,18.169 22.527,17.892 22.527,17.592 L22.527,6.407 C22.526,6.107 22.366,5.831 22.107,5.681 L22.106,5.68 Z M21.503,6.856 L12.228,22.92 C12.165,23.028 12,22.984 12,22.859 L12,12.34 C12,12.13 11.887,11.935 11.705,11.83 L2.595,6.57 C2.488,6.508 2.532,6.342 2.657,6.342 L21.207,6.342 C21.471,6.342 21.635,6.628 21.503,6.856 L21.503,6.856 Z";
+// The official Grok mark, from Grok Bot's own app.asar artwork.
+const markGrok =
+	"M12.3587 20.3785L22.9972 12.481C23.5187 12.0938 24.2642 12.2448 24.5127 12.8462C25.8206 16.0178 25.2363 19.8293 22.634 22.4463C20.0317 25.0633 16.411 25.6372 13.1015 24.3301L9.48614 26.0134C14.6716 29.5777 20.9683 28.6963 24.9032 24.7365C28.0242 21.5978 28.9909 17.3195 28.087 13.4613L28.0952 13.4695C26.7845 7.80173 28.4174 5.53625 31.7624 0.903699C31.8416 0.793857 31.9208 0.684016 32 0.571429L27.5983 4.99803V4.9843L12.356 20.3813Z M10.1633 22.298C6.4415 18.7227 7.0832 13.1894 10.2589 9.99855C12.6072 7.63696 16.4547 6.67311 19.8133 8.09006L23.4204 6.41498C22.7705 5.94266 21.9377 5.43465 20.982 5.07766C16.6622 3.29 11.4904 4.17971 7.97884 7.70836C4.60108 11.1052 3.53887 16.3282 5.36292 20.785C6.72549 24.1159 4.49185 26.472 2.24183 28.85C1.44449 29.6931 0.644424 30.5361 0 31.4286L10.1606 22.3008Z";
 
 const NAMES: Record<string, string> = {
 	claude: "Claude",
@@ -28,8 +33,15 @@ const NAMES: Record<string, string> = {
 	cursor: "Cursor",
 	copilot: "Copilot",
 	devin: "Devin",
-	antigravity: "Antigravity"
+	antigravity: "Antigravity",
+	grokbot: "Grok Bot",
+	commandcode: "Command Code",
+	qoder: "Qoder"
 };
+
+// Every agent the notch can name, in presentation order. The quota settings
+// list reads this, so a new mark here also gets a visibility toggle.
+export const QUOTA_AGENT_IDS: string[] = Object.keys(NAMES);
 
 // quota.ItemShort: the name beside a quota on the notch.
 export function agentName(id: string): string {
@@ -55,7 +67,10 @@ const SPECS: Record<string, MarkSpec> = {
 	cursor: { tile: "#18181C", edge: true, pad: 0.2 },
 	copilot: { tile: "#1F2328", pad: 0.16 },
 	devin: { tile: "#001423", pad: 0.16 },
-	antigravity: { tile: "#1F2328", pad: 0.08 }
+	antigravity: { tile: "#1F2328", pad: 0.08 },
+	grokbot: { tile: "#0A0A0A", edge: true, pad: 0.16 },
+	commandcode: { tile: "#000000", pad: 0.02 },
+	qoder: { tile: "#F3F3F3", pad: 0.14 }
 };
 
 // Copilot and Devin ship dark artwork; the Go painter recolours them white.
@@ -153,6 +168,26 @@ const glyph = (id: string, box: number): JSX.Element => {
 						width="32"
 						height="32"
 					/>
+				</svg>
+			);
+		case "grokbot":
+			return (
+				<svg x={at} y={at} width={box} height={box} viewBox="0 0 32 32">
+					<path d={markGrok} fill="#F2F4F7" />
+				</svg>
+			);
+		case "commandcode":
+			// Official Command Code app icon; its tile is baked into the art.
+			return (
+				<svg x={at} y={at} width={box} height={box} viewBox="0 0 192 192">
+					<image href={commandCodeUrl} x="0" y="0" width="192" height="192" />
+				</svg>
+			);
+		case "qoder":
+			// Official mark from qoder.com/favIcon.svg, background tile removed.
+			return (
+				<svg x={at} y={at} width={box} height={box} viewBox="0 0 206 206">
+					<image href={qoderUrl} x="0" y="0" width="206" height="206" />
 				</svg>
 			);
 		default:

@@ -6,7 +6,8 @@ import {
 	defaultSelection,
 	detailLines,
 	failedCount,
-	formatReset
+	formatReset,
+	nextAgent
 } from "./quotaView";
 
 // Mirrors widget/seam.go seamBasis, widget/seam_test.go and
@@ -64,7 +65,9 @@ describe("basis", () => {
 	test("per-agent fallbacks", () => {
 		expect(basis(agent({ id: "kiro" }))).toBe("Credits");
 		expect(basis(agent({ id: "cursor" }))).toBe("Plan");
+		expect(basis(agent({ id: "grokbot" }))).toBe("Week");
 		expect(basis(agent({ id: "copilot" }))).toBe("Premium");
+		expect(basis(agent({ id: "qoder" }))).toBe("Credits");
 		expect(basis(agent({ id: "devin" }))).toBe("Usage");
 		expect(basis(agent({ id: "claude" }))).toBe("Usage");
 	});
@@ -83,8 +86,8 @@ describe("detailLines", () => {
 
 	test("countdown rows join label, value and reset", () => {
 		expect(detailLines(devin, NOW, false)).toEqual([
-			"Day · 56% used · resets in 6h 18m",
-			"Week · 28% used · resets in 2d 6h 18m"
+			"Day · 56% · resets in 6h 18m",
+			"Week · 28% · resets in 2d 6h"
 		]);
 	});
 
@@ -94,28 +97,24 @@ describe("detailLines", () => {
 			minute: "2-digit"
 		});
 		expect(detailLines(devin, NOW, true)[0]).toBe(
-			`Day · 56% used · resets ${clock}`
+			`Day · 56% · resets ${clock}`
 		);
 	});
 
-	test("a past reset reads as a wall-clock time", () => {
+	test("a past reset reads resets now, never negative", () => {
 		const a = agent({
 			details: [
 				{ label: "5h", value: "19% used", resetAt: "2026-10-22T23:00:00Z" }
 			]
 		});
-		expect(detailLines(a, NOW, false)[0]).toMatch(
-			/^5h · 19% used · resets at \d{1,2} \w{3} \d{2}:\d{2}$/
-		);
+		expect(detailLines(a, NOW, false)).toEqual(["5h · 19% · resets now"]);
 	});
 
 	test("resetText stands in when there is no resetAt", () => {
 		const a = agent({
 			details: [{ label: "ACU", value: "0 used", resetText: "Nov 1" }]
 		});
-		expect(detailLines(a, NOW, false)).toEqual([
-			"ACU · 0 used · resets Nov 1"
-		]);
+		expect(detailLines(a, NOW, false)).toEqual(["ACU · 0 · resets Nov 1"]);
 	});
 
 	// Go only gives a 5h-window reset a display row when the state is OK
@@ -124,22 +123,20 @@ describe("detailLines", () => {
 	test("a stale agent keeps its resetLabel, not the 5h instant", () => {
 		const a = agent({
 			state: "stale",
-			summary: "Plan usage",
+			used: 71,
 			reset5h: "2026-10-23T01:30:00Z",
 			resetLabel: "28 Oct"
 		});
-		expect(detailLines(a, NOW, false)).toEqual([
-			"Plan usage  ·  resets 28 Oct"
-		]);
+		expect(detailLines(a, NOW, false)).toEqual(["Stale · 71% · resets 28 Oct"]);
 	});
 
-	test("a stale agent without resetLabel shows metrics only", () => {
+	test("a stale window row without resetLabel shows metrics only", () => {
 		const a = agent({
 			state: "stale",
 			windows: [{ label: "week", used: 38 }],
 			reset5h: "2026-10-23T01:30:00Z"
 		});
-		expect(detailLines(a, NOW, false)).toEqual(["Week 38%"]);
+		expect(detailLines(a, NOW, false)).toEqual(["Week · 38%"]);
 	});
 
 	test("waiting reads Checking usage", () => {
@@ -222,5 +219,23 @@ describe("defaultSelection", () => {
 	test("falls back to the first agent, then undefined for empty", () => {
 		expect(defaultSelection([agent({ id: "kiro" })])).toBe("kiro");
 		expect(defaultSelection([])).toBeUndefined();
+	});
+});
+
+describe("nextAgent", () => {
+	const row = (id: string, state: QuotaAgent["state"] = "ok"): QuotaAgent => ({
+		id,
+		state
+	});
+
+	test("wraps to the first after the last", () => {
+		const readings = [row("claude"), row("codex"), row("cursor", "failed")];
+		expect(nextAgent(readings, "claude")).toBe("codex");
+		expect(nextAgent(readings, "cursor")).toBe("claude");
+	});
+
+	test("a single agent stays put, and an empty list is undefined", () => {
+		expect(nextAgent([row("codex")], "codex")).toBe("codex");
+		expect(nextAgent([])).toBeUndefined();
 	});
 });

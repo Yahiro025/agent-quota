@@ -509,6 +509,80 @@ test.describe("seven-agent density", () => {
 	});
 });
 
+const TEN_IDS = [
+	"claude",
+	"kiro",
+	"codex",
+	"cursor",
+	"copilot",
+	"devin",
+	"antigravity",
+	"grokbot",
+	"commandcode",
+	"qoder"
+];
+
+const tenFixture = (): QuotaAgent[] => [
+	...sevenFixture(),
+	{
+		id: "grokbot",
+		state: "ok",
+		used: 24,
+		plan: "Pro",
+		windows: [{ label: "week", used: 24 }]
+	},
+	{
+		id: "commandcode",
+		state: "ok",
+		used: 32,
+		plan: "Go",
+		windows: [
+			{ label: "5h", used: 10 },
+			{ label: "week", used: 32 }
+		],
+		reset5h: later(1.5 * HOUR)
+	},
+	{
+		id: "qoder",
+		state: "ok",
+		used: 72,
+		plan: "Pro Trial",
+		details: [
+			{ label: "Plan credits", value: "72% used · 215 / 300 credits" },
+			{ label: "Add-on credits", value: "4% used · 12 / 300 credits" },
+			{ label: "Plan ends", value: "15 Nov" }
+		]
+	}
+];
+
+test.describe("ten-agent density", () => {
+	test("the ring row and compact strip stay inside the island with 10 agents", async ({ page }) => {
+		await emitReadings(page, tenFixture());
+		await settlePill(page);
+		const pill = await box(page, "div.bloom");
+		const qs = await box(page, "[data-testid=quota-space]");
+		expect(qs.x).toBeGreaterThanOrEqual(pill.x - 0.5);
+		expect(qs.x + qs.width).toBeLessThanOrEqual(pill.x + pill.width + 0.5);
+		for (const id of TEN_IDS) {
+			const cell = await box(page, `[data-testid=quota-cell-${id}]`);
+			expect(cell.x).toBeGreaterThanOrEqual(pill.x - 0.5);
+			expect(cell.x + cell.width).toBeLessThanOrEqual(pill.x + pill.width + 0.5);
+		}
+
+		// Also check compact strip with 10 agents
+		await page.getByTestId("quota-compact").click();
+		await expect(page.getByTestId("quota-space")).toHaveCount(0);
+		const strip = page.getByTestId("notch-quota-strip");
+		await expect(strip).toBeVisible();
+		await expect(strip.locator("[data-testid^='notch-quota-mark-']")).toHaveCount(10);
+		await settlePill(page);
+		const compactPill = await box(page, "div.bloom");
+		const stripBox = (await strip.boundingBox())!;
+		expect(stripBox.x).toBeGreaterThanOrEqual(compactPill.x - 0.5);
+		expect(stripBox.x + stripBox.width).toBeLessThanOrEqual(compactPill.x + compactPill.width + 0.5);
+	});
+});
+
 /* The island is bounded by the display, not by content alone: max-content
    measures every string unwrapped, so reader errors, hints, detail labels
    and group names can otherwise push cells offscreen (width) or drop the
@@ -785,5 +859,214 @@ test.describe("hover quota badge", () => {
 		expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(timeBox.x + 0.5);
 		expect(timeBox.x + timeBox.width).toBeLessThanOrEqual(artBox.x + 0.5);
 		expect(artBox.x + artBox.width).toBeLessThanOrEqual(pillBox.x + pillBox.width + 0.5);
+	});
+});
+
+test.describe("motion polish verification", () => {
+	test("panel pad glides to newly selected cell without snapping and matches settled bounds", async ({
+		page
+	}) => {
+		const pad = page.locator("[data-testid=quota-space] .qs-pad");
+		const devin = page.getByTestId("quota-cell-devin");
+
+		// Click a different agent cell
+		await devin.click();
+
+		// ~60ms after the click, glide is active: data-instant must NOT be "true"
+		await page.waitForTimeout(60);
+		const instantAttr = await pad.getAttribute("data-instant");
+		expect(instantAttr).not.toBe("true");
+
+		// Once settled, pad bounding box matches the selected cell within 1px
+		await expect.poll(async () => {
+			const pb = await pad.boundingBox();
+			const cb = await devin.boundingBox();
+			if (!pb || !cb) return 999;
+			return Math.max(
+				Math.abs(pb.x - cb.x),
+				Math.abs(pb.y - cb.y),
+				Math.abs(pb.width - cb.width),
+				Math.abs(pb.height - cb.height)
+			);
+		}, { timeout: 2000 }).toBeLessThanOrEqual(1);
+	});
+
+	test("detail card records slide direction next when index increases and prev when index decreases", async ({
+		page
+	}) => {
+		// Start at first agent
+		await page.getByTestId("quota-cell-claude").click();
+		await page.waitForTimeout(300);
+
+		// Record attribute changes / newly added detail elements
+		await page.evaluate(() => {
+			(window as any).__recordedDirections = [];
+			const target = document.querySelector('[data-testid="quota-space"]') || document.body;
+			const record = (el: Element | null) => {
+				if (!el) return;
+				const dir = el.getAttribute("data-direction");
+				if (dir && dir !== "none") (window as any).__recordedDirections.push(dir);
+			};
+			const observer = new MutationObserver((mutations) => {
+				for (const m of mutations) {
+					if (m.type === "childList") {
+						for (const node of m.addedNodes) {
+							if (node instanceof HTMLElement) {
+								if (node.matches('[data-testid="quota-detail"]')) {
+									record(node);
+								}
+								const child = node.querySelector('[data-testid="quota-detail"]');
+								if (child) record(child);
+							}
+						}
+					} else if (m.type === "attributes" && m.attributeName === "data-direction") {
+						record(m.target as HTMLElement);
+					}
+				}
+			});
+			observer.observe(target, {
+				childList: true,
+				subtree: true,
+				attributes: true,
+				attributeFilter: ["data-direction"]
+			});
+			(window as any).__dirObserver = observer;
+		});
+
+		// Higher index (devin)
+		await page.getByTestId("quota-cell-devin").click();
+		await expect.poll(async () => {
+			return await page.evaluate(() => (window as any).__recordedDirections);
+		}, { timeout: 1000 }).toContain("next");
+
+		// Clear recorded directions
+		await page.evaluate(() => {
+			(window as any).__recordedDirections = [];
+		});
+
+		// Lower index (codex)
+		await page.getByTestId("quota-cell-codex").click();
+		await expect.poll(async () => {
+			return await page.evaluate(() => (window as any).__recordedDirections);
+		}, { timeout: 1000 }).toContain("prev");
+
+		await page.evaluate(() => {
+			if ((window as any).__dirObserver) {
+				(window as any).__dirObserver.disconnect();
+			}
+		});
+	});
+
+	test("compact strip pad is visible on first open and moves to selected mark", async ({
+		page
+	}) => {
+		// Open compact strip
+		await page.getByTestId("quota-compact").click();
+		const strip = page.getByTestId("notch-quota-strip");
+		await expect(strip).toBeVisible();
+
+		const stripPad = strip.locator(".qs-pad");
+		await expect(stripPad).toBeVisible();
+
+		// Opacity is 1 and non-zero size
+		const opacity = await stripPad.evaluate((el) => getComputedStyle(el).opacity);
+		expect(opacity).toBe("1");
+
+		const padBox = (await stripPad.boundingBox())!;
+		expect(padBox.width).toBeGreaterThan(0);
+		expect(padBox.height).toBeGreaterThan(0);
+
+		// Box matches the .selected mark within 1px
+		const selectedMark = strip.locator(".notch-quota-mark.selected");
+		await expect(selectedMark).toBeVisible();
+		const markBox = (await selectedMark.boundingBox())!;
+		expect(Math.abs(padBox.x - markBox.x)).toBeLessThanOrEqual(1);
+		expect(Math.abs(padBox.y - markBox.y)).toBeLessThanOrEqual(1);
+		expect(Math.abs(padBox.width - markBox.width)).toBeLessThanOrEqual(1);
+		expect(Math.abs(padBox.height - markBox.height)).toBeLessThanOrEqual(1);
+
+		// Click another mark and verify pad moves to that mark
+		const nonSelected = strip.locator(".notch-quota-mark:not(.selected)").first();
+		const targetTestId = (await nonSelected.getAttribute("data-testid"))!;
+		const targetMark = page.getByTestId(targetTestId);
+		await targetMark.click();
+
+		await expect.poll(async () => {
+			const pb = await stripPad.boundingBox();
+			const mb = await targetMark.boundingBox();
+			if (!pb || !mb) return 999;
+			return Math.max(
+				Math.abs(pb.x - mb.x),
+				Math.abs(pb.y - mb.y),
+				Math.abs(pb.width - mb.width),
+				Math.abs(pb.height - mb.height)
+			);
+		}, { timeout: 2000 }).toBeLessThanOrEqual(1);
+	});
+
+	test("panel handoff wrapper computed filter is none after settling", async ({
+		page
+	}) => {
+		// Quota space is open in beforeEach; check its wrapper filter
+		const quotaWrapper = page.locator(".quota-viewport").locator("..");
+		await expect.poll(async () => {
+			return await quotaWrapper.evaluate((el) => getComputedStyle(el).filter);
+		}, { timeout: 2000 }).toBe("none");
+
+		// Cycle to Command Center panel
+		const time = page.locator(".time-flip-container");
+		// Quota space -> qp-body -> calendar-timer-content -> command-center-content-minimal
+		for (let i = 0; i < 5; i++) {
+			await time.click();
+			if ((await page.locator(".cc-pills-grid").count()) > 0) break;
+			await page.waitForTimeout(200);
+		}
+		const ccGrid = page.locator(".cc-pills-grid");
+		await expect(ccGrid).toBeVisible();
+		const ccWrapper = ccGrid.locator("..");
+		await expect.poll(async () => {
+			return await ccWrapper.evaluate((el) => getComputedStyle(el).filter);
+		}, { timeout: 2000 }).toBe("none");
+	});
+
+	test("compact quota strip keeps resting housing visuals and full panel keeps open rim", async ({
+		page
+	}) => {
+		const bloom = page.locator("div.bloom");
+
+		// Converse: with full quota panel open (not compact), div.bloom has class is-open
+		// and its computed border-bottom-left-radius settles to 24px.
+		await expect(bloom).toHaveClass(/is-open/);
+		await expect.poll(async () => {
+			const radius = await bloom.evaluate((el) => parseFloat(getComputedStyle(el).borderBottomLeftRadius));
+			return radius;
+		}, { timeout: 2000 }).toBeCloseTo(24, 0);
+
+		// Enter compact strip
+		await page.getByTestId("quota-compact").click();
+		const strip = page.getByTestId("notch-quota-strip");
+		await expect(strip).toBeVisible();
+
+		// (a) div.bloom does not have class is-open
+		await expect(bloom).not.toHaveClass(/is-open/);
+
+		// (b) getComputedStyle(div.bloom).boxShadow is none
+		await expect.poll(async () => {
+			return await bloom.evaluate((el) => getComputedStyle(el).boxShadow);
+		}, { timeout: 2000 }).toBe("none");
+
+		// (c) getComputedStyle(document.querySelector('.edge-surface'), '::before').boxShadow contains no inset
+		await expect.poll(async () => {
+			return await page.evaluate(() => {
+				const el = document.querySelector(".edge-surface");
+				return el ? getComputedStyle(el, "::before").boxShadow : "";
+			});
+		}, { timeout: 2000 }).not.toContain("inset");
+
+		// (d) computed border-bottom-left-radius of div.bloom is 18px (poll up to 2s, allow 17.5-18.5)
+		await expect.poll(async () => {
+			const radius = await bloom.evaluate((el) => parseFloat(getComputedStyle(el).borderBottomLeftRadius));
+			return radius >= 17.5 && radius <= 18.5;
+		}, { timeout: 2000 }).toBe(true);
 	});
 });

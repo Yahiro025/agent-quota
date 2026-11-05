@@ -1,5 +1,6 @@
 import {
 	PanelTop,
+	Activity,
 	Calendar,
 	BellRing,
 	Music,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 import { SettingRow } from "./SettingRow";
 import { StatusWidgetConfig } from "../components/StatusWidgetConfig";
+import { agentName, QUOTA_AGENT_IDS } from "../quota/marks";
 import type { WidgetConfig } from "./types";
 
 interface NotchTabProps {
@@ -27,6 +29,8 @@ interface NotchTabProps {
 	toggleNotchRememberPanel: () => void;
 	notchDefaultPanel: "calendar" | "command-center";
 	changeNotchDefaultPanel: (panel: "calendar" | "command-center") => void;
+	quotaHiddenAgents: string[];
+	toggleQuotaAgent: (id: string) => void;
 	timerSoundEnabled: boolean;
 	toggleTimerSound: () => void;
 	musicModeEnabled: boolean;
@@ -72,6 +76,8 @@ export function NotchTab({
 	toggleNotchRememberPanel,
 	notchDefaultPanel,
 	changeNotchDefaultPanel,
+	quotaHiddenAgents,
+	toggleQuotaAgent,
 	timerSoundEnabled,
 	toggleTimerSound,
 	musicModeEnabled,
@@ -253,6 +259,27 @@ export function NotchTab({
 						</SettingRow>
 					</>
 				)}
+			</div>
+
+			<div className="setting-group-label">Agent Quotas</div>
+			<div className="setting-group">
+				{QUOTA_AGENT_IDS.map((id, i) => (
+					<SettingRow
+						key={id}
+						icon={Activity}
+						label={agentName(id)}
+						divider={i < QUOTA_AGENT_IDS.length - 1}
+					>
+						<label className="toggle-switch">
+							<input
+								type="checkbox"
+								checked={!quotaHiddenAgents.includes(id)}
+								onChange={() => toggleQuotaAgent(id)}
+							/>
+							<span className="slider"></span>
+						</label>
+					</SettingRow>
+				))}
 			</div>
 
 			<div className="setting-group-label">Shelf</div>

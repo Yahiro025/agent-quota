@@ -41,9 +41,10 @@
 	inset: 0;
 	border-radius: inherit;
 	background: var(--surface-solid);
-	box-shadow: 0 0 0 1px var(--surface-solid);
+	box-shadow: 0 0 0 1px var(--surface-solid), var(--edge-surface-rim, inset 0 0 0 0 transparent);
 	/* The border box including its corner radii. */
 	clip-path: border-box;
+	transition: box-shadow 0.18s ease;
 }
 
 .edge-surface--top::before,
@@ -151,4 +152,10 @@
 .edge-surface--bottom .edge-surface-flare--end,
 .edge-surface--right .edge-surface-flare--end {
 	transform: scale(-1, -1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.edge-surface::before {
+		transition: none;
+	}
 }

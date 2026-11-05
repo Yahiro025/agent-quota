@@ -912,19 +912,6 @@ input:checked + .slider:before {
 	letter-spacing: -0.035em;
 }
 
-@supports ((-webkit-background-clip: text) or (background-clip: text)) {
-	.about-title {
-		background: linear-gradient(
-			180deg,
-			var(--bloom-text, #ffffff) 45%,
-			color-mix(in srgb, var(--bloom-text, #ffffff) 55%, transparent) 100%
-		);
-		-webkit-background-clip: text;
-		background-clip: text;
-		color: transparent;
-	}
-}
-
 .about-version {
 	margin: 12px 0 0;
 	padding: 3px 9px 2px;

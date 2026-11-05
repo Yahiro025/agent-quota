@@ -55,8 +55,15 @@
 			return Promise.resolve(undefined);
 		}
 		if (cmd === "plugin:app|version") return Promise.resolve("3.10.0");
+		// The multi-player stack reads this once on mount; tests preset
+		// window.__mediaList or emit "media-list" to change it.
+		if (cmd === "media_list_get")
+			return Promise.resolve(window.__mediaList ?? { cards: [], other_audio: false });
 		if (cmd === "load_settings") return Promise.resolve({});
 		if (cmd === "get_update_state") return Promise.resolve({ available: false });
+		if (cmd === "get_cpu_usage") return Promise.resolve(42);
+		if (cmd === "get_ram_usage") return Promise.resolve(55);
+		if (cmd === "get_network_speed") return Promise.resolve([1024, 2048]);
 		if (cmd === "plugin:autostart|is_enabled") return Promise.resolve(true);
 		if (/is_visible$/.test(cmd)) return Promise.resolve(true);
 		if (cmd === "plugin:window|scale_factor") return Promise.resolve(1);

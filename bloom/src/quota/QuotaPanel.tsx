@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Clock, Minimize2, Pin, RefreshCw, X } from "
 import { band, type QuotaAgent } from "./protocol";
 import { AgentMark, agentName } from "./marks";
 import { agentRings, anyBusy, basis, defaultSelection, detailRows } from "./quotaView";
+import { useSlidingPad } from "./useSlidingPad";
 import "./QuotaSpace.css";
 
 export interface QuotaPanelProps {
@@ -27,6 +28,14 @@ const BAND_COLOR = {
 	green: "#32D74B",
 	amber: "#FFD60A",
 	red: "#FF453A"
+} as const;
+
+// Text colors use CSS variables so light mode reaches >= 4.5:1 contrast
+// while dark mode stays byte-identical to the original paint.
+const BAND_TEXT_COLOR = {
+	green: "var(--usage-normal-text, #32D74B)",
+	amber: "var(--usage-warning-text, #FFD60A)",
+	red: "var(--usage-critical-text, #FF453A)"
 } as const;
 
 // The standalone formats observed/last-good instants as HH:mm local time.
@@ -73,6 +82,14 @@ function Ring({
 	stale?: boolean;
 }) {
 	const dim = stale ? 0.55 : undefined;
+	const [animated, setAnimated] = useState(false);
+	useEffect(() => {
+		const raf = requestAnimationFrame(() => {
+			setAnimated(true);
+		});
+		return () => cancelAnimationFrame(raf);
+	}, []);
+	const animClass = animated ? " qs-ring-animated" : "";
 	return (
 		<svg viewBox="0 0 28 28" className="qs-ring-svg" aria-hidden="true">
 			<circle cx="14" cy="14" r={12.25} className="qs-ring-track" />
@@ -82,7 +99,7 @@ function Ring({
 					cx="14"
 					cy="14"
 					r={12.25}
-					className="qs-ring-fill qs-ring-outer"
+					className={`qs-ring-fill qs-ring-outer${animClass}`}
 					stroke={RING_ARC(outer, 12.25).color}
 					strokeDasharray={`${RING_ARC(outer, 12.25).fill} ${RING_ARC(outer, 12.25).c}`}
 					opacity={dim}
@@ -94,7 +111,7 @@ function Ring({
 					cx="14"
 					cy="14"
 					r={9.5}
-					className="qs-ring-fill qs-ring-inner"
+					className={`qs-ring-fill qs-ring-inner${animClass}`}
 					stroke={RING_ARC(inner, 9.5).color}
 					strokeDasharray={`${RING_ARC(inner, 9.5).fill} ${RING_ARC(inner, 9.5).c}`}
 					opacity={dim}
@@ -213,6 +230,8 @@ export function QuotaPanel({
 	const [groupsOpen, setGroupsOpen] = useState(false);
 	const [checkedAt, setCheckedAt] = useState(() => Date.now());
 	const rootRef = useRef<HTMLDivElement>(null);
+	const ringsRef = useRef<HTMLDivElement>(null);
+	const reduceMotion = useReducedMotion();
 
 	useEffect(() => {
 		const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -255,6 +274,41 @@ export function QuotaPanel({
 		: defaultSelection(readings);
 	const sel = readings.find((a) => a.id === selectedId);
 	const busy = anyBusy(readings);
+
+	const pad = useSlidingPad(ringsRef, selectedId, [readings]);
+
+	const selectedIndex = readings.findIndex((a) => a.id === selectedId);
+	const selectionRef = useRef<{
+		id: string | undefined | null;
+		index: number;
+		dir: "next" | "prev" | "none";
+	}>({ id: selectedId, index: selectedIndex, dir: "none" });
+
+	let slideDirection: "next" | "prev" | "none" = "none";
+	if (reduceMotion) {
+		slideDirection = "none";
+		selectionRef.current = { id: selectedId, index: selectedIndex, dir: "none" };
+	} else if (selectedId !== selectionRef.current.id) {
+		const prev = selectionRef.current;
+		let dir: "next" | "prev" | "none" = "none";
+		if (
+			prev.id !== undefined &&
+			prev.id !== null &&
+			selectedId !== undefined &&
+			selectedId !== null &&
+			selectedIndex !== -1 &&
+			prev.index !== -1 &&
+			prev.index !== selectedIndex
+		) {
+			dir = selectedIndex > prev.index ? "next" : "prev";
+		}
+		selectionRef.current = { id: selectedId, index: selectedIndex, dir };
+		slideDirection = dir;
+	} else {
+		selectionRef.current.index = selectedIndex;
+		slideDirection = selectionRef.current.dir;
+	}
+
 	const minutesAgo = Math.floor((now.getTime() - checkedAt) / 60000);
 	const checkedText = busy
 		? "Checking…"
@@ -338,7 +392,8 @@ export function QuotaPanel({
 				</div>
 			) : (
 				<>
-					<div className="qs-rings">
+					<div className="qs-rings" ref={ringsRef}>
+						<div className="qs-pad" {...pad.padProps} />
 						{readings.map((a) => {
 							const pct = typeof a.used === "number" ? Math.round(a.used) : undefined;
 							return (
@@ -346,6 +401,8 @@ export function QuotaPanel({
 									key={a.id}
 									type="button"
 									className={`qs-cell${a.id === selectedId ? " selected" : ""}`}
+									data-selected={a.id === selectedId ? "true" : undefined}
+									data-key={a.id}
 									tabIndex={-1}
 									onMouseDown={(e) => e.preventDefault()}
 									onClick={() => onSelect(a.id)}
@@ -357,7 +414,8 @@ export function QuotaPanel({
 										<QuotaRingMark a={a} />
 										<span
 											className={`qs-pct${pct === undefined ? " empty" : ""}`}
-											style={pct === undefined ? undefined : { color: BAND_COLOR[band(pct)] }}
+											data-band={pct === undefined ? undefined : band(pct)}
+											style={pct === undefined ? undefined : { color: BAND_TEXT_COLOR[band(pct)] }}
 										>
 											{pct === undefined ? "—" : `${pct}%`}
 										</span>
@@ -370,7 +428,12 @@ export function QuotaPanel({
 					</div>
 
 					{sel !== undefined && (
-						<div className="qs-detail" data-testid="quota-detail">
+						<div
+							key={sel.id}
+							className="qs-detail"
+							data-direction={slideDirection}
+							data-testid="quota-detail"
+						>
 							<div className="qs-detail-head">
 								<div className="qs-detail-title">
 									{agentName(sel.id)}

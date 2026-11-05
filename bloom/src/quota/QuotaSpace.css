@@ -2,6 +2,19 @@
    Bloom's notch. Inks, sizes and section heights mirror widget/widget.go
    (whiteInk/dimInk/mutedInk/errorInk/staleInk). */
 
+:root {
+	--usage-normal-text: #32D74B;
+	--usage-warning-text: #FFD60A;
+	--usage-critical-text: #FF453A;
+}
+
+:root.light-mode,
+.light-mode {
+	--usage-normal-text: #15803d;
+	--usage-warning-text: #a15c00;
+	--usage-critical-text: #c62828;
+}
+
 /* The notch window may be shorter than the content when the panel would
    exceed the monitor; this wrapper caps and scrolls so `.qs` itself stays
    unconstrained and always reports its true height to Rust. */
@@ -28,7 +41,7 @@
 	max-width: var(--qs-max-w, calc(100vw - 24px));
 	padding-bottom: 8px;
 	box-sizing: border-box;
-	color: #f4f2f6;
+	color: var(--bloom-text, #f4f2f6);
 	user-select: none;
 	-webkit-user-select: none;
 }
@@ -46,7 +59,7 @@
 .qs-caption {
 	font-size: 10px;
 	font-weight: 400;
-	color: #b9b3c1;
+	color: var(--bloom-text-muted, #b9b3c1);
 }
 
 .qs-header-actions {
@@ -65,19 +78,19 @@
 	border: none;
 	border-radius: 5px;
 	background: transparent;
-	color: #b9b3c1;
+	color: var(--bloom-text-muted, #b9b3c1);
 	cursor: pointer;
 }
 
 .qs-icon-btn:hover:not(:disabled),
 .qs-icon-btn.active {
-	background: #141414;
-	color: #f4f2f6;
+	background: color-mix(in srgb, var(--bloom-text, white) 10%, transparent);
+	color: var(--bloom-text, #f4f2f6);
 }
 
 .qs-icon-btn:disabled {
 	cursor: default;
-	color: #6e6878;
+	color: color-mix(in srgb, var(--bloom-text, white) 35%, transparent);
 }
 
 /* --- ring row: one tile per agent (72 px) --- */
@@ -86,6 +99,7 @@
    grid tracks keep the cells identical while max-content still measures
    n times the widest cell's need. */
 .qs-rings {
+	position: relative;
 	display: grid;
 	grid-auto-flow: column;
 	grid-auto-columns: 1fr;
@@ -95,7 +109,44 @@
 	box-sizing: border-box;
 }
 
+/* Sliding selection pad: glides under the selected cell without jumping. */
+.qs-pad {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: var(--pad-w, 0px);
+	height: var(--pad-h, 0px);
+	transform: translate(var(--pad-x, 0px), var(--pad-y, 0px));
+	border-radius: 8px;
+	pointer-events: none;
+	background: color-mix(in srgb, var(--bloom-text, #fff) 11%, var(--bloom-bg-expanded, #000));
+	box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bloom-text, white) 7%, transparent);
+	z-index: 0;
+	opacity: 0;
+}
+
+.qs-pad[data-ready="true"] {
+	opacity: 1;
+	transition:
+		transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+		width 240ms cubic-bezier(0.22, 1, 0.36, 1),
+		height 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.qs-pad[data-instant="true"],
+.qs-pad[data-reduced-motion="true"] {
+	transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.qs-pad {
+		transition: none !important;
+	}
+}
+
 .qs-cell {
+	position: relative;
+	z-index: 1;
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
@@ -110,17 +161,17 @@
 }
 
 .qs-cell:hover {
-	background: #101010;
+	background: color-mix(in srgb, var(--bloom-text, white) 6%, transparent);
 }
 
-/* The selected cell is a raised tile, distinct from the transient hover
-   wash; it keeps that paint while hovered too. */
-.qs-cell.selected,
+/* The selected cell keeps hover styling and the .selected class for e2e,
+   while its selection tone is now rendered by the sliding .qs-pad underneath. */
+.qs-cell.selected {
+	background: transparent;
+}
+
 .qs-cell.selected:hover {
-	background: #1c1c20;
-	box-shadow:
-		inset 0 0 0 1px rgba(255, 255, 255, 0.09),
-		0 1px 3px rgba(0, 0, 0, 0.4);
+	background: transparent;
 }
 
 .qs-cell-top {
@@ -146,7 +197,7 @@
 
 .qs-ring-track {
 	fill: none;
-	stroke: rgba(255, 255, 255, 0.14);
+	stroke: color-mix(in srgb, var(--bloom-text, white) 14%, transparent);
 	stroke-width: 2;
 }
 
@@ -154,6 +205,19 @@
 	fill: none;
 	stroke-width: 2;
 	stroke-linecap: round;
+}
+
+.qs-ring-fill.qs-ring-animated {
+	transition:
+		stroke-dasharray 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+		stroke 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.qs-ring-fill,
+	.qs-ring-fill.qs-ring-animated {
+		transition: none !important;
+	}
 }
 
 .qs-mark {
@@ -179,7 +243,7 @@
 }
 
 .qs-pct.empty {
-	color: #a19aa9;
+	color: var(--bloom-text-muted, #a19aa9);
 	font-weight: 500;
 }
 
@@ -188,7 +252,7 @@
 	max-width: 100%;
 	font-size: 10.5px;
 	font-weight: 500;
-	color: #f4f2f6;
+	color: var(--bloom-text, #f4f2f6);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -199,7 +263,7 @@
 	max-width: 100%;
 	font-size: 10px;
 	font-weight: 400;
-	color: #a19aa9;
+	color: var(--bloom-text-muted, #a19aa9);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -207,11 +271,59 @@
 
 /* --- selected agent's detail card --- */
 
+@keyframes qs-detail-slide-next {
+	from {
+		opacity: 0;
+		transform: translateX(6px);
+		filter: blur(3px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+		filter: blur(0);
+	}
+}
+
+@keyframes qs-detail-slide-prev {
+	from {
+		opacity: 0;
+		transform: translateX(-6px);
+		filter: blur(3px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+		filter: blur(0);
+	}
+}
+
 .qs-detail {
 	margin: 8px 16px 0;
 	padding: 2px 8px 0;
 	box-sizing: border-box;
 	min-width: 0;
+}
+
+.qs-detail[data-direction="next"] {
+	animation: qs-detail-slide-next 160ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.qs-detail[data-direction="prev"] {
+	animation: qs-detail-slide-prev 160ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.qs-detail[data-direction="none"] {
+	animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.qs-detail,
+	.qs-detail[data-direction="next"],
+	.qs-detail[data-direction="prev"] {
+		animation: none !important;
+		filter: none !important;
+		transform: none !important;
+	}
 }
 
 .qs-detail-head {
@@ -225,7 +337,7 @@
 .qs-detail-title {
 	font-size: 12px;
 	font-weight: 600;
-	color: #f4f2f6;
+	color: var(--bloom-text, #f4f2f6);
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -256,7 +368,7 @@
 	max-width: 46%;
 	font-size: 11px;
 	font-weight: 500;
-	color: #f4f2f6;
+	color: var(--bloom-text, #f4f2f6);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -274,7 +386,7 @@
 	width: 44px;
 	height: 4px;
 	border-radius: 999px;
-	background: rgba(255, 255, 255, 0.1);
+	background: color-mix(in srgb, var(--bloom-text, white) 12%, transparent);
 	overflow: hidden;
 	flex: none;
 }
@@ -288,14 +400,14 @@
 .qs-metric-val {
 	font-size: 11px;
 	font-weight: 600;
-	color: #f4f2f6;
+	color: var(--bloom-text, #f4f2f6);
 	font-variant-numeric: tabular-nums;
 }
 
 .qs-metric-reset {
 	margin-left: auto;
 	font-size: 10.5px;
-	color: #a19aa9;
+	color: var(--bloom-text-muted, #a19aa9);
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 }
@@ -304,7 +416,7 @@
 	font-size: 11px;
 	font-weight: 400;
 	line-height: 15px;
-	color: #b9b3c1;
+	color: var(--bloom-text-muted, #b9b3c1);
 	overflow-wrap: anywhere;
 }
 
@@ -313,8 +425,16 @@
 	color: #edc28b;
 }
 
+:root.light-mode .qs-line.qs-stale {
+	color: #9a5b00;
+}
+
 .qs-line.qs-error {
 	color: #f4b2ab;
+}
+
+:root.light-mode .qs-line.qs-error {
+	color: #c82c2c;
 }
 
 /* model-group table, matching drawGroups in widget/paint.go */
@@ -330,11 +450,11 @@
 	align-items: center;
 	font-size: 10px;
 	font-weight: 400;
-	color: #b9b3c1;
+	color: var(--bloom-text-muted, #b9b3c1);
 }
 
 .qs-group-head {
-	color: #a19aa9;
+	color: var(--bloom-text-muted, #a19aa9);
 }
 
 .qs-group-name {
@@ -369,13 +489,13 @@
 	background: transparent;
 	font-size: 10px;
 	font-weight: 400;
-	color: #a19aa9;
+	color: var(--bloom-text-muted, #a19aa9);
 	cursor: pointer;
 }
 
 .qs-ctl:hover {
-	background: #141414;
-	color: #f4f2f6;
+	background: color-mix(in srgb, var(--bloom-text, white) 10%, transparent);
+	color: var(--bloom-text, #f4f2f6);
 }
 
 /* --- empty state --- */
@@ -391,14 +511,14 @@
 .qs-empty-title {
 	font-size: 12.5px;
 	font-weight: 500;
-	color: #f4f2f6;
+	color: var(--bloom-text, #f4f2f6);
 }
 
 .qs-empty-sub {
 	margin-top: 6px;
 	font-size: 11px;
 	font-weight: 400;
-	color: #b9b3c1;
+	color: var(--bloom-text-muted, #b9b3c1);
 }
 
 .qs-footer {
@@ -407,7 +527,7 @@
 	gap: 8px;
 	margin: 10px 16px 0;
 	padding: 8px 8px 2px;
-	border-top: 1px solid #181818;
+	border-top: 1px solid var(--bloom-border, #181818);
 }
 
 .qs-footer-refresh {
@@ -420,7 +540,7 @@
 	border: none;
 	border-radius: 5px;
 	background: transparent;
-	color: #a19aa9;
+	color: var(--bloom-text-muted, #a19aa9);
 	font: inherit;
 	font-size: 10.5px;
 	font-weight: 500;
@@ -428,8 +548,8 @@
 }
 
 .qs-footer-refresh:hover:not(:disabled) {
-	background: #101010;
-	color: #f4f2f6;
+	background: color-mix(in srgb, var(--bloom-text, white) 10%, transparent);
+	color: var(--bloom-text, #f4f2f6);
 }
 
 .qs-footer-refresh:disabled {

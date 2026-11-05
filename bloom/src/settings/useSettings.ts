@@ -15,6 +15,11 @@ import {
 	DEFAULT_ENABLED_FOLDERS
 } from "../dockExtras";
 import type { WidgetConfig } from "./types";
+import {
+	parseHiddenAgents,
+	toggleHiddenAgent,
+	QUOTA_HIDDEN_AGENTS_KEY
+} from "../quota/agentVisibility";
 
 function readBool(val: string | null): boolean {
 	return val === "true";
@@ -40,6 +45,9 @@ export function useSettings() {
 	const [notchDefaultPanel, setNotchDefaultPanel] = useState<"calendar" | "command-center">(
 		() => localStorage.getItem("bloom-notch-default-panel") === "command-center"
 			? "command-center" : "calendar"
+	);
+	const [quotaHiddenAgents, setQuotaHiddenAgents] = useState<string[]>(() =>
+		parseHiddenAgents(localStorage.getItem(QUOTA_HIDDEN_AGENTS_KEY))
 	);
 	const [musicCompactNotch, setMusicCompactNotch] = useState(true);
 	const [shelfPersist, setShelfPersist] = useState(
@@ -197,6 +205,7 @@ export function useSettings() {
 				setNotchRememberPanel, readBool);
 			apply(getVal("bloom-notch-default-panel"), setNotchDefaultPanel,
 				(v) => v === "command-center" ? "command-center" : "calendar");
+			apply(getVal(QUOTA_HIDDEN_AGENTS_KEY), setQuotaHiddenAgents, parseHiddenAgents);
 			apply(getVal("bloom-music-compact-notch"), setMusicCompactNotch, readBool);
 			apply(getVal("bloom-shelf-persist"), setShelfPersist, readBool);
 			apply(getVal("bloom-volume-overlay-enabled"), setVolumeOverlayEnabled, readBool);
@@ -363,6 +372,7 @@ export function useSettings() {
 		"bloom-notch-remember-panel": setNotchRememberPanel,
 		"bloom-notch-default-panel": (v: unknown) =>
 			setNotchDefaultPanel(v === "command-center" ? "command-center" : "calendar"),
+		[QUOTA_HIDDEN_AGENTS_KEY]: (v) => setQuotaHiddenAgents(parseHiddenAgents(v)),
 		"bloom-music-compact-notch": setMusicCompactNotch,
 		"bloom-media-ambience-enabled": setMediaAmbienceEnabled,
 		"bloom-media-compact-glow-enabled": setMediaCompactGlowEnabled,
@@ -541,6 +551,12 @@ export function useSettings() {
 	const changeNotchDefaultPanel = (panel: "calendar" | "command-center") => {
 		setNotchDefaultPanel(panel);
 		saveSetting("bloom-notch-default-panel", panel);
+	};
+
+	const toggleQuotaAgent = (id: string) => {
+		const next = toggleHiddenAgent(quotaHiddenAgents, id);
+		setQuotaHiddenAgents(next);
+		saveSetting(QUOTA_HIDDEN_AGENTS_KEY, JSON.stringify(next));
 	};
 
 	const toggleMusicCompactNotch = () => {
@@ -956,6 +972,8 @@ export function useSettings() {
 		toggleNotchRememberPanel,
 		notchDefaultPanel,
 		changeNotchDefaultPanel,
+		quotaHiddenAgents,
+		toggleQuotaAgent,
 		musicCompactNotch,
 		toggleMusicCompactNotch,
 		shelfPersist,

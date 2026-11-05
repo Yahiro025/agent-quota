@@ -44,6 +44,7 @@ import { EdgeSurface } from "./components/EdgeSurface";
 import { ShelfTypeIcon } from "./components/ShelfTypeIcon";
 import { WifiPanel } from "./components/WifiPanel";
 import { QuotaHoverCard, QuotaPanel, QuotaRingMark } from "./quota/QuotaPanel";
+import { useSlidingPad } from "./quota/useSlidingPad";
 import { QuotaAlert } from "./quota/QuotaAlert";
 import { parseSnapshot, urgent, type QuotaAgent } from "./quota/protocol";
 import { agentName } from "./quota/marks";
@@ -89,6 +90,32 @@ type NotchPanel = "calendar" | "command-center" | "quotas" | "overview";
 const NOTCH_PANELS: readonly NotchPanel[] = ["calendar", "command-center", "quotas", "overview"];
 const asNotchPanel = (value: unknown): NotchPanel | null =>
 	NOTCH_PANELS.includes(value as NotchPanel) ? (value as NotchPanel) : null;
+
+// Shared panel entrance/exit handoff animation across notch tool views.
+// NOTE: Only apply to panels whose content does not rely on .bloom as containing block.
+// A transform or filter on a wrapper makes it the containing block for absolutely
+// positioned descendants, collapsing quick panels (.qp) whose size resolves against .bloom.
+const PANEL_HANDOFF = {
+	initial: { opacity: 0, scale: 0.96, y: -4, filter: "blur(6px)" },
+	animate: { opacity: 1, scale: 1, y: 0, filter: "blur(0px)", transitionEnd: { filter: "none" } },
+	exit: { opacity: 0, scale: 0.97, filter: "blur(4px)", transition: { duration: 0.1 } },
+	transition: { type: "spring", stiffness: 420, damping: 32, mass: 0.85 }
+} as const;
+
+// Unscaled variant for panels (like quotas) whose children measure client rects on mount.
+const PANEL_HANDOFF_UNSCALED = {
+	initial: { opacity: 0, filter: "blur(6px)" },
+	animate: { opacity: 1, filter: "blur(0px)", transitionEnd: { filter: "none" } },
+	exit: { opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } },
+	transition: { type: "spring", stiffness: 420, damping: 32, mass: 0.85 }
+} as const;
+
+const PANEL_HANDOFF_REDUCED = {
+	initial: { opacity: 0 },
+	animate: { opacity: 1 },
+	exit: { opacity: 0, transition: { duration: 0 } },
+	transition: { duration: 0 }
+} as const;
 
 // Pomodoro timer limit.
 const MAX_TIMER_SECONDS = 180 * 60;
@@ -542,6 +569,8 @@ const TitleMarquee = ({ title }: { title: string }) => {
 
 function App() {
 	const reduceMotion = useReducedMotion();
+	const panelHandoff = reduceMotion ? PANEL_HANDOFF_REDUCED : PANEL_HANDOFF;
+	const panelHandoffUnscaled = reduceMotion ? PANEL_HANDOFF_REDUCED : PANEL_HANDOFF_UNSCALED;
 	useEffect(() => {
 		return initTheme();
 	}, []);
@@ -2353,17 +2382,22 @@ function App() {
 		[setNotchPinned]
 	);
 
-	const handleQuotaCompact = useCallback((compact: boolean) => {
-		// Collapsing shrinks the island out from under the pointer; that
-		// hover-end is not the person leaving, so it must not close the strip.
-		if (compact) suppressNextHoverRelease();
-		setQuotaCompact(compact);
-		localStorage.setItem("bloom-quota-compact", String(compact));
-		invoke("save_setting", {
-			key: "bloom-quota-compact",
-			value: String(compact)
-		}).catch(console.error);
-	}, []);
+	const handleQuotaCompact = useCallback(
+		(compact: boolean) => {
+			// Already there: no write, no hover-release suppression.
+			if (compact === quotaCompact) return;
+			// Collapsing shrinks the island out from under the pointer; that
+			// hover-end is not the person leaving, so it must not close the strip.
+			if (compact) suppressNextHoverRelease();
+			setQuotaCompact(compact);
+			localStorage.setItem("bloom-quota-compact", String(compact));
+			invoke("save_setting", {
+				key: "bloom-quota-compact",
+				value: String(compact)
+			}).catch(console.error);
+		},
+		[quotaCompact]
+	);
 
 	// The pin is in memory only and belongs to the quota panel; leaving the
 	// panel unpins so a stale pin cannot hold the notch open elsewhere.
@@ -2868,7 +2902,10 @@ function App() {
 		// offsetWidth ignores absolutely positioned tooltip cards.
 		const content = kids.reduce((w, k) => w + k.offsetWidth, 0) + Math.max(0, kids.length - 1) * 10;
 		const needed = Math.ceil(content + 24);
-		if (needed > 0 && needed !== clusterWidth) setClusterWidth(needed);
+		// The pill must always cover the row it draws, so the width follows the
+		// measured content in both directions. Freezing or zeroing it here
+		// clips the clock off the resting notch.
+		setClusterWidth((prev) => (prev === needed ? prev : needed));
 	});
 
 	const refreshBatteryDetails = useCallback(() => {
@@ -3099,7 +3136,8 @@ function App() {
 					<>
 						<ArrowUpDown size={12} strokeWidth={2} />
 						<span className="label">
-							↑{formatBytes(netUpSpeed)} ↓{formatBytes(netDownSpeed)}
+							↑<span className="net-speed">{formatBytes(netUpSpeed)}</span>{" "}
+							↓<span className="net-speed">{formatBytes(netDownSpeed)}</span>
 						</span>
 					</>
 				);
@@ -3193,8 +3231,14 @@ function App() {
 	// The strip and the collapsed badge share hoverQuotaAgent, which also
 	// drops a selection that is no longer shown, so both highlight one agent.
 	const stripSelectedId = hoverAgent?.id;
+	const stripRef = useRef<HTMLDivElement>(null);
+	const stripPad = useSlidingPad(stripRef, stripSelectedId, [
+		shownQuotaReadings.length,
+		quotaStripActive
+	]);
 	const quotaStripMarks = quotaStripActive ? (
-		<div className="notch-quota-strip" data-testid="notch-quota-strip">
+		<div className="notch-quota-strip" data-testid="notch-quota-strip" ref={stripRef}>
+			<div className="qs-pad" {...stripPad.padProps} />
 			{shownQuotaReadings.map((a) => (
 				<button
 					key={a.id}
@@ -3474,7 +3518,7 @@ function App() {
 			>
 				<motion.div
 					ref={bloomRef}
-					className={`bloom ${isHovered ? "expanded" : ""} ${isImpacted ? "is-impacted" : ""} ${isDragHovering ? "drag-hover" : ""}`}
+					className={`bloom ${isHovered ? "expanded" : ""} ${isImpacted ? "is-impacted" : ""} ${isDragHovering ? "drag-hover" : ""} ${isOpen && !quotaStripActive ? "is-open" : ""}`}
 					onMouseEnter={() => setIsNotchHovered(true)}
 					onPointerDown={compactQueueExpanded ? suppressNextHoverRelease : undefined}
 					onMouseLeave={() => {
@@ -3493,8 +3537,6 @@ function App() {
 						borderTopRightRadius: 18,
 						borderBottomLeftRadius: 18,
 						borderBottomRightRadius: 18,
-						scaleX: 1,
-						scaleY: 1,
 						opacity: 0
 					}}
 					animate={{
@@ -3502,12 +3544,10 @@ function App() {
 						width: pillTargetWidth,
 						height: pillTargetHeight,
 						opacity: isVisible ? 1 : 0,
-						scaleX: 1,
-						scaleY: 1,
 						borderTopLeftRadius: isImpacted ? 0 : 18,
 						borderTopRightRadius: isImpacted ? 0 : 18,
-						borderBottomLeftRadius: isCalendarMode ? 28 : 18,
-						borderBottomRightRadius: isCalendarMode ? 28 : 18,
+						borderBottomLeftRadius: isCalendarMode ? 28 : (isOpen && !quotaStripActive ? 24 : 18),
+						borderBottomRightRadius: isCalendarMode ? 28 : (isOpen && !quotaStripActive ? 24 : 18),
 						filter: isVisible ? "blur(0px)" : "blur(8px)",
 						pointerEvents: isVisible ? "auto" : "none"
 					}}
@@ -3527,7 +3567,7 @@ function App() {
 						width: { type: "spring", stiffness: 400, damping: 31 },
 						height:
 							isMusicMode && mediaLayout === "compact"
-								? { type: "tween", duration: reduceMotion ? 0 : 0.18, ease: "easeOut" }
+								? (reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 360, damping: 28 })
 								: { type: "spring", stiffness: 450, damping: 29 },
 						y: { type: "spring", stiffness: 550, damping: 45, mass: 0.8, restDelta: 0.001 },
 						opacity: { duration: 0.2 },
@@ -3598,10 +3638,8 @@ function App() {
 										<motion.div
 											key="expanded-music"
 											className="expanded-music-container"
-											initial={{ opacity: 0, scale: 0.98 }}
-											animate={{ opacity: 1, scale: 1 }}
-											exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.1 } }}
-											transition={{ type: "spring", stiffness: 500, damping: 30 }}
+											style={{ transformOrigin: "50% 0%" }}
+											{...panelHandoff}
 										>
 											{mediaLayout === "compact" ? (
 												mediaCards.length >= 2 ? (
@@ -4132,14 +4170,11 @@ function App() {
 									{bloomMode === "quotas" && !quotaStripActive && (
 										<motion.div
 											key="quotas-view"
-											initial={{ opacity: 0 }}
-											animate={{ opacity: 1 }}
-											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
-											transition={{ type: "spring", stiffness: 400, damping: 30 }}
 											// The island is the width contract: `.qs` reports its
 											// ring-row need through scrollWidth while this wrapper
 											// and the viewport stay clamped to the pill.
-											style={{ width: "100%", minWidth: 0 }}
+											style={{ transformOrigin: "50% 0%", width: "100%", minWidth: 0 }}
+											{...panelHandoffUnscaled}
 										>
 											<div ref={quotaSpaceMeasureRef} className="quota-viewport">
 												<QuotaPanel
@@ -4200,10 +4235,8 @@ function App() {
 										<motion.div
 											className="command-center-content-minimal"
 											onClick={(e) => e.stopPropagation()}
-											initial={{ opacity: 0 }}
-											animate={{ opacity: 1 }}
-											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
-											transition={{ type: "spring", stiffness: 400, damping: 30 }}
+											style={{ transformOrigin: "50% 0%" }}
+											{...panelHandoff}
 										>
 											{/* Pills Grid */}
 											<div className="cc-pills-grid">
@@ -4456,14 +4489,8 @@ function App() {
 										<motion.div
 											className={`announcement-content severity-${announcement.severity}`}
 											onClick={(e) => e.stopPropagation()}
-											initial={{ opacity: 0 }}
-											animate={{ opacity: 1 }}
-											exit={{
-												opacity: 0,
-												filter: "blur(4px)",
-												transition: { duration: 0.1 }
-											}}
-											transition={{ type: "spring", stiffness: 400, damping: 30 }}
+											style={{ transformOrigin: "50% 0%" }}
+											{...panelHandoff}
 										>
 											<div className="announcement-header">
 												<div className="announcement-heading">
@@ -4501,10 +4528,8 @@ function App() {
 											onClick={(e) =>
 												e.stopPropagation()
 											} /* Block mode switches when clicking inside */
-											initial={{ opacity: 0 }}
-											animate={{ opacity: 1 }}
-											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
-											transition={{ type: "spring", stiffness: 400, damping: 30 }}
+											style={{ transformOrigin: "50% 0%" }}
+											{...panelHandoff}
 										>
 											<div className="calendar-column">
 												<Calendar />

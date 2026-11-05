@@ -1,4 +1,39 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
+@font-face {
+	font-family: "Inter";
+	font-style: normal;
+	font-weight: 400;
+	font-display: block;
+	src: url("./assets/fonts/Inter-Regular.ttf") format("truetype");
+}
+
+@font-face {
+	font-family: "Inter";
+	font-style: normal;
+	font-weight: 500;
+	font-display: block;
+	src: url("./assets/fonts/Inter-Medium.ttf") format("truetype");
+}
+
+@font-face {
+	font-family: "Inter";
+	font-style: normal;
+	font-weight: 600;
+	font-display: block;
+	src: url("./assets/fonts/Inter-SemiBold.ttf") format("truetype");
+}
+
+:root {
+	--usage-normal-text: #32D74B;
+	--usage-warning-text: #FFD60A;
+	--usage-critical-text: #FF453A;
+}
+
+:root.light-mode,
+.light-mode {
+	--usage-normal-text: #15803d;
+	--usage-warning-text: #a15c00;
+	--usage-critical-text: #c62828;
+}
 
 html,
 body {
@@ -42,6 +77,7 @@ img {
 	--notch-bg: var(--bloom-bg, rgba(0, 0, 0, 0.8));
 	/* Painted by the .edge-surface child (see components/EdgeSurface.css). */
 	--surface-bg: var(--notch-bg);
+	--edge-surface-rim: 0 0 0 0 transparent;
 	isolation: isolate;
 	border-radius: 0 0 18px 18px;
 	border: none;
@@ -63,7 +99,16 @@ img {
 		"Segoe UI",
 		sans-serif;
 
-	transition: --notch-bg 0.3s ease;
+	transition:
+		--notch-bg 0.3s ease,
+		box-shadow 0.18s ease;
+}
+
+.bloom.is-open {
+	--edge-surface-rim: inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+		inset 1px 0 0 rgba(255, 255, 255, 0.06),
+		inset -1px 0 0 rgba(255, 255, 255, 0.06);
+	box-shadow: 0 6px 14px -6px rgba(0, 0, 0, 0.55);
 }
 
 .bloom.expanded {
@@ -124,6 +169,7 @@ img {
 	font-size: 13px;
 	font-weight: 600;
 	color: white;
+	font-variant-numeric: tabular-nums;
 }
 
 .bottom-row {
@@ -301,12 +347,14 @@ img {
 	backface-visibility: hidden;
 	position: absolute;
 	transition: color 0.2s ease;
+	font-variant-numeric: tabular-nums;
 }
 
 .compact-timer {
 	display: inline-flex;
 	align-items: center;
 	gap: 5px;
+	font-variant-numeric: tabular-nums;
 }
 
 .timer-finished {
@@ -449,6 +497,7 @@ img {
    where the CPU/network widgets sit, and the clock with its two controls
    beside them. Nothing renders below it. */
 .notch-quota-strip {
+	position: relative;
 	display: flex;
 	align-items: center;
 	gap: 2px;
@@ -456,6 +505,7 @@ img {
 
 .notch-quota-strip button {
 	position: relative;
+	z-index: 1;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -464,14 +514,14 @@ img {
 	padding: 0;
 	border: 0;
 	background: transparent;
-	color: #b9b3c1;
+	color: var(--bloom-text-muted, #b9b3c1);
 	cursor: pointer;
 	flex-shrink: 0;
 }
 
 .notch-quota-strip button:hover,
 .notch-quota-strip button.active {
-	color: #f4f2f6;
+	color: var(--bloom-text, #f4f2f6);
 }
 
 /* Each mark carries its own hover card, so a bare mark still answers with
@@ -488,8 +538,7 @@ img {
    hover wash to carry selection. */
 .notch-quota-strip button.selected,
 .notch-quota-strip button.selected:hover {
-	background: #1c1c20;
-	border-radius: 8px;
+	color: var(--bloom-text, #f4f2f6);
 }
 
 /* Expand and pin sit past the clock, at the header's 24px target size. */
@@ -510,15 +559,15 @@ img {
 	border: 0;
 	border-radius: 5px;
 	background: transparent;
-	color: #b9b3c1;
+	color: var(--bloom-text-muted, #b9b3c1);
 	cursor: pointer;
 	flex-shrink: 0;
 }
 
 .notch-quota-ctl:hover,
 .notch-quota-ctl.active {
-	background: #141414;
-	color: #f4f2f6;
+	background: color-mix(in srgb, var(--bloom-text, white) 10%, transparent);
+	color: var(--bloom-text, #f4f2f6);
 }
 
 .status-tooltip {
@@ -550,8 +599,9 @@ img {
 	font-weight: 500;
 	opacity: 0.85;
 	line-height: 1;
-	margin-bottom: -0.5px;
 	/* Optical adjustment for Inter font baseline */
+	margin-bottom: -0.5px;
+	font-variant-numeric: tabular-nums;
 }
 
 .live-dot {
@@ -1454,7 +1504,7 @@ img {
 	overflow: hidden;
 	pointer-events: none;
 	z-index: 0;
-	border-radius: 0 0 18px 18px;
+	border-radius: inherit;
 }
 
 .notch-ambient-glow img {
@@ -1869,23 +1919,23 @@ img {
 .cc-pills-grid {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
-	gap: 10px;
+	gap: 8px;
 	width: 100%;
-	height: 78px;
+	height: 80px;
 }
 
 .cc-pill-tile {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	padding: 5px 8px;
+	padding: 4px 8px;
 	border-radius: 10px;
 	background: var(--bloom-group-bg, rgba(255, 255, 255, 0.04));
 	border: 1px solid var(--bloom-border, rgba(255, 255, 255, 0.02));
 	cursor: pointer;
 	transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 	user-select: none;
-	height: 34px;
+	height: 36px;
 	box-sizing: border-box;
 }
 
@@ -1923,14 +1973,14 @@ img {
 }
 
 .cc-pill-title {
-	font-size: 9px;
+	font-size: 11px;
 	font-weight: 600;
 	color: var(--bloom-text, rgba(255, 255, 255, 0.9));
 }
 
 .cc-pill-status {
-	font-size: 7.5px;
-	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.4));
+	font-size: 9.5px;
+	color: color-mix(in srgb, var(--bloom-text, #fff) 62%, transparent);
 	font-weight: 500;
 	/* The connected network's name can be long. */
 	white-space: nowrap;
@@ -1949,11 +1999,11 @@ img {
 }
 
 .cc-pill-tile.active .cc-pill-status {
-	color: var(--bloom-bg-expanded, rgba(0, 0, 0, 0.5));
+	color: color-mix(in srgb, var(--bloom-bg-expanded, #000) 75%, transparent);
 }
 
 .cc-pill-tile.active .cc-pill-icon-wrapper {
-	background: var(--bloom-group-bg, rgba(0, 0, 0, 0.08));
+	background: color-mix(in srgb, var(--bloom-bg-expanded, #000) 12%, transparent);
 	color: var(--bloom-bg-expanded, #000);
 }
 
@@ -2077,15 +2127,21 @@ img {
 	position: relative;
 	display: flex;
 	align-items: center;
-	transition: background 0.15s ease;
+	transform-origin: center;
+	transition:
+		background 0.15s ease,
+		transform 0.15s ease;
 }
 
-.cc-classic-slider-row:hover .cc-classic-slider-track {
-	background: var(--bloom-border, rgba(255, 255, 255, 0.12));
+.cc-classic-slider-row:hover .cc-classic-slider-track,
+.cc-classic-slider-row:has(.cc-classic-input:active) .cc-classic-slider-track {
+	background: var(--bloom-border, rgba(255, 255, 255, 0.14));
+	transform: scaleY(1.333333);
 }
 
 .cc-classic-fill {
-	background: var(--bloom-text, rgba(255, 255, 255, 0.9));
+	background: var(--bloom-text, white);
+	opacity: 0.85;
 	border-radius: 3px;
 	height: 100%;
 	position: absolute;
@@ -2094,12 +2150,12 @@ img {
 	pointer-events: none;
 	transition:
 		width 0.05s linear,
-		background 0.15s ease;
+		opacity 0.15s ease;
 }
 
-.cc-classic-slider-row:hover .cc-classic-fill {
-	background: var(--bloom-text, #ffffff);
-	box-shadow: 0 0 4px var(--bloom-border, rgba(255, 255, 255, 0.15));
+.cc-classic-slider-row:hover .cc-classic-fill,
+.cc-classic-slider-row:has(.cc-classic-input:active) .cc-classic-fill {
+	opacity: 1;
 }
 
 .cc-classic-percentage {
@@ -2210,6 +2266,9 @@ img {
 .cmp-queue-toggle.is-active {
 	opacity: 1;
 	background: color-mix(in srgb, var(--bloom-text, white) 8%, transparent);
+}
+.cmp-queue-toggle:active {
+	transform: scale(0.97);
 }
 
 /* Album art */
@@ -2376,19 +2435,21 @@ img {
 .cmp-track-bar {
 	flex: 1;
 	height: 3px;
-	background: rgba(255, 255, 255, 0.15);
+	background: color-mix(in srgb, var(--bloom-text, white) 15%, transparent);
 	border-radius: 2px;
 	position: relative;
 	overflow: visible;
+	transform-origin: center;
 	transition:
-		height 0.15s ease,
-		margin 0.15s ease;
+		transform 0.15s ease,
+		background 0.15s ease;
 	margin: 0;
 }
 
-.cmp-track-bar:hover {
-	height: 6px;
-	margin: -1.5px 0;
+.cmp-track-bar:hover,
+.cmp-track-bar:has(.cmp-seek:active) {
+	background: color-mix(in srgb, var(--bloom-text, white) 22%, transparent);
+	transform: scaleY(2);
 }
 
 .cmp-track-fill {
@@ -2397,9 +2458,17 @@ img {
 	top: 0;
 	height: 100%;
 	background: var(--bloom-text, white);
+	opacity: 0.85;
 	border-radius: 2px;
 	pointer-events: none;
-	transition: width 0.1s linear;
+	transition:
+		width 0.1s linear,
+		opacity 0.15s ease;
+}
+
+.cmp-track-bar:hover .cmp-track-fill,
+.cmp-track-bar:has(.cmp-seek:active) .cmp-track-fill {
+	opacity: 1;
 }
 
 .cmp-seek {
@@ -2445,7 +2514,7 @@ img {
 	position: relative;
 	flex: 1;
 	height: 4px;
-	background: rgba(255, 255, 255, 0.15);
+	background: color-mix(in srgb, var(--bloom-text, white) 15%, transparent);
 	border-radius: 2px;
 	overflow: hidden;
 }
@@ -2525,4 +2594,22 @@ img {
 .cmp-output-check {
 	font-size: 11px;
 	opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.bloom {
+		transition: none !important;
+	}
+	.cmp-track-bar,
+	.cmp-track-bar:hover,
+	.cmp-track-bar:has(.cmp-seek:active),
+	.cc-classic-slider-track,
+	.cc-classic-slider-row:hover .cc-classic-slider-track,
+	.cc-classic-slider-row:has(.cc-classic-input:active) .cc-classic-slider-track {
+		transform: none !important;
+		transition: none !important;
+	}
+	.cmp-queue-toggle:active {
+		transform: none !important;
+	}
 }
