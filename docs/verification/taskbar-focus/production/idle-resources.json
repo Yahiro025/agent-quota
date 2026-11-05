@@ -1,0 +1,20 @@
+[
+    {
+        "label":  "Focus docked steady state",
+        "seconds":  15,
+        "cpu_ms":  0,
+        "working_set_bytes":  45568000,
+        "private_bytes":  75063296,
+        "pid":  49948,
+        "path":  "C:\\Users\\Bennett\\AppData\\Local\\Programs\\AgentQuota\\agentquota.exe"
+    },
+    {
+        "label":  "Previous compact tab",
+        "seconds":  15,
+        "cpu_ms":  203.125,
+        "working_set_bytes":  39456768,
+        "private_bytes":  70033408,
+        "pid":  54796,
+        "path":  "C:\\Users\\Bennett\\Documents\\PROJECT\\agent-quota\\.debug-launch\\focus-rollback-20261017-030251\\agentquota.exe"
+    }
+]

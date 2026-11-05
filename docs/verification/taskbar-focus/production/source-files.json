@@ -1,0 +1,94 @@
+﻿[
+    {
+        "path":  "main.go",
+        "sha256":  "E1D27E666CBF972B65E93394C7DFA2BC36DF0163D63280C85F42ECDAEECECBFA"
+    },
+    {
+        "path":  "taskbar.go",
+        "sha256":  "29AE9E79B13BBB5DF697FFDB4D829487FB663602119217A09922F1411D6BDBD6"
+    },
+    {
+        "path":  "taskbar_test.go",
+        "sha256":  "3E4549EF562028C184D202B3915DDF78C3DCFF2948AB80211BF1A28FA63A8B7E"
+    },
+    {
+        "path":  "internal/win/win.go",
+        "sha256":  "027371E76E6761BF821C5347B5601748E73AE869F872B492DBA4DFC33253D6B9"
+    },
+    {
+        "path":  "internal/win/taskbar_windows.go",
+        "sha256":  "6184F7DE904D84F11CECFFB213C155048F29D6935DB90D4F562F913C54FDF616"
+    },
+    {
+        "path":  "internal/win/taskbar_test.go",
+        "sha256":  "17D053DB952B03B934A74C5F42AEE47DD888F8229D5492DC2C559D334444A565"
+    },
+    {
+        "path":  "widget/widget.go",
+        "sha256":  "D44332A737DAB0903200017D6AAFC08E88267D5F51B3F9841A5789799AC25045"
+    },
+    {
+        "path":  "widget/paint.go",
+        "sha256":  "FF19EC5C20D774FB3EEBE5D60E445C1B503D28F26EBB8B1025587F28BEC64D2B"
+    },
+    {
+        "path":  "widget/focus.go",
+        "sha256":  "3B5E911ABFB8921203243825322DECBF36BE605786C809B901DAAA4267713896"
+    },
+    {
+        "path":  "widget/focus_test.go",
+        "sha256":  "C4B96FE53ED3296410126E0B5C6E9F82BDC77C2EDD5631223A0650768E1D3E10"
+    },
+    {
+        "path":  "native/taskbar/build.ps1",
+        "sha256":  "95C946CCB9932383141F3B64B58081DB761A9657D2066522F68452D5879B8CCC"
+    },
+    {
+        "path":  "native/taskbar/host.cpp",
+        "sha256":  "086E2CAED0D576360619DB508A21540986A1D53F40A5AE544D0C51934DCEE734"
+    },
+    {
+        "path":  "native/taskbar/host.def",
+        "sha256":  "5EA22D5968A8D1B8E9BC3F1F1DC2320B34B2E8D9ACC8E7B45D20CD365AA1A3EC"
+    },
+    {
+        "path":  "native/taskbar/host_test.cpp",
+        "sha256":  "3FCA1C3C6438B115B51283DD07908CAFFA6C3451139E907E296BE518A554BB8E"
+    },
+    {
+        "path":  "native/taskbar/protocol.h",
+        "sha256":  "E04C78AC7CEC379375DEB8F579E8C3140D202F2A67E44BE606DBE1E153F05466"
+    },
+    {
+        "path":  "native/taskbar/protocol_test.cpp",
+        "sha256":  "B23D7A090A7F86E6F1512DDDF608025A8CE8DEE6AACFF4FF8447D41614FDA65D"
+    },
+    {
+        "path":  "taskbar_live_test.go",
+        "sha256":  "207C77FA7B56B1B994F9AF120A4E7463C735828030F4A880081BFBDDCD1D1916"
+    },
+    {
+        "path":  "taskbar_drag_live_test.go",
+        "sha256":  "39AA95CD45DFE778E101C99F99FBB17558C7726163A220EFD6531568A64E1C1B"
+    },
+    {
+        "path":  "navigation.go",
+        "sha256":  "54D3253C0667090A9FC5DDBB722FCEE1CACE41FC069C1D8E6CB3B28E9FFD8BDF"
+    },
+    {
+        "path":  "navigation_test.go",
+        "sha256":  "224DD99B0C753202FDBDC24DEABEEAD773658678811C703CEEA2E02AFCEF9E74"
+    },
+    {
+        "path":  "internal/win/keyboard_windows.go",
+        "sha256":  "1B012ECAD8CC53FDC8FB950254CA4593B34CC2056C9862F75FE865F6ADB07F5C"
+    },
+    {
+        "path":  "internal/win/keyboard_test.go",
+        "sha256":  "001FC955C1F1FDEA715F81DF79891C4986627063A22D95535447ED148165319B"
+    },
+    {
+        "path":  "internal/win/keyboard_live_test.go",
+        "sha256":  "6FDA362540FC5A3F1AFA18D174AA358B7C8441D67C04B71AA9DFC32303B3CA1C"
+    }
+]

@@ -1,0 +1,44 @@
+# Taskbar Focus implementation verification
+
+Latest drag-backlog correction (2026-10-17): the user clarified that removing the readout from the taskbar feels laggy. Go now coalesces adjacent forwarded movement messages without consuming release, cancellation, geometry or another generation's events. The deterministic regression failed before the fix (129 callbacks rather than nine latest-position/control events) and passes after it. An actual-window/Explorer integration reproduces 120 queued moves taking 388.8 ms before and 3.5 ms after, with the latest pointer anchor preserved. Formatting, vet, all nine uncached Go packages and the existing 12-change Explorer ownership integration pass. The installed and root executables match; host 68843005 and Explorer PID10872 remain. [Details and evidence](production/drag-latency/RESULT.md). This test exercises the production message queue and layered window without injecting physical mouse input; direct pointer feel remains unobserved because the native automation helper is disconnected.
+
+Latest duplicate-readout correction (2026-10-17): installed host 68843005 acknowledges completed frame negotiation even when Explorer retains its allocation. The retained-rectangle regression failed before the change and passes after it. Formatting, vet, all nine uncached Go packages, 27 native host checks and nine parser checks pass. An opt-in integration test against the real Explorer host passes 12 alternating one/two-pool frame sizes plus floating/docked ownership handoffs. The user accepted the Host3 toolbar confirmation; Explorer PID10872 was preserved. Original floating settings were restored after testing, with only the floating window visible and zero native width. See [production/duplicate-readout/RESULT.md](production/duplicate-readout/RESULT.md). Physical pointer drag remains unobserved by automation.
+
+Earlier pool-indicator update: the installed Go renderer now paints independent horizontal usage bars beneath the five-hour and weekly percentages. Visual fixtures were inspected at 125 percent, and regression tests cover 100/125/150/200 percent scaling, independent fill/colors, zero and missing pools, unknown values and stale dimming. Formatting, vet and the full uncached nine-package Go suite pass. The updated executable hash and running path are recorded in production/final-install.json; production/pool-bars/ contains previews and the live reopened popup state. The native host remains protocol 2; native fit and parent-background painting were confirmed in that update's docked state.
+
+2026-10-17 background correction: the user rejected the black docked tile. The installed protocol-2 host now draws Windows' parent background and alpha-blends widget.RenderTaskbar; popup/floating surfaces keep their black material. The opaque legacy COM identity was hidden/unregistered and the new native identity enabled through Windows' confirmation, with Explorer PID10872 preserved. The running host reports native_protocol=2, native_fits=true and parent_background=true; taskbar geometry is unchanged. See production/background-fix/ for current native checks and installed state, and production/final-install.json for current hashes. The nine-package Go suite, vet and formatting pass; native tests now include 25 lifecycle/paint checks plus nine parser checks. Tests verify nonblack parent pixels survive transparent margins, antialias pixels blend, and opaque mark colors stay unchanged. This follows [Microsoft's deskband painting pattern](https://learn.microsoft.com/en-us/windows/win32/shell/band-objects) and [parent background API](https://learn.microsoft.com/en-us/windows/win32/api/uxtheme/nf-uxtheme-drawthemeparentbackground). Earlier implementation measurements below remain historical.
+
+2026-10-17. The user authorized completing the native implementation and installation after the disposable deskband probe. This supersedes the earlier probe-only restriction and conditional product stop. The native host is a real Explorer-allocated deskband, not an overlay over task buttons.
+
+## Implemented
+
+- Pure CPU Focus renderer: 468 logical pixels wide, 58-pixel agent rail, authentic marks, independent quota rings, provider details, scrolling, reset countdown/clock, refresh, pin and explicit close. All seven selection states and missing/zero/unlimited/stale/failure states have render tests.
+- Pixel-only C++ host, bounded synchronous transport, deferred shell negotiation, process-scoped destruction/location hooks, connection generations, exact protocol validation and native build identity checks. Go owns the existing readers and schedule.
+- Drag preview/dock/undock state, saved docking preference separate from floating anchor, click-to-toggle Focus, no activation, auto-hide suppression, unavailable-host fallback and reconnection notifications.
+- Versioned per-user installation and a credential-free `--taskbar-status` diagnostic. Windows' initial toolbar confirmation was read through accessibility and accepted through its Yes accelerator.
+
+## Verification performed
+
+`gofmt -l .`, `go vet ./...`, and the uncached nine-package `go test ./...` suite pass. The native build uses `/W4 /WX`, `/MT`, control flow guard, ASLR and NX. Nine parser checks and 21 COM/host lifecycle checks pass, including rejected stale generations, collapse/expand, owner destruction and re-siting the same COM object after teardown. No Go dependency was added. A final read-once check succeeds for all seven live readers (exit 0); output is recorded in production/read-once.txt.
+
+Rendered fixtures cover 100%, 125%, 150% and 200% scales. The Codex, Antigravity, stale Claude and failed Devin fixtures were visually inspected. Representative proof PNGs are under `production/proofs/`; these are renderer outputs, not live screenshots.
+
+Live production evidence is under `production/`:
+
+- `installed.json`, `reconnected-ready.json`: native fit confirmed at 125% DPI. Taskbar stays `[0,1150,1920,1200]`. Allocated child `[1333,1151,1485,1199]` contains the complete 148x48 frame. Task buttons end at x1327, before the readout; tray starts at x1485.
+- `owner-exited.json`: forcibly stopping Go clears the session and releases readout width to zero; task buttons regain space. Relaunch binds the same enabled native host with a new generation and no new enabling prompt.
+- `revealed.json`: launching a second instance opens the 625x433 Focus popup at `[1097,709,1722,1142]`, above the taskbar and within the work area. Foreground HWND is unchanged; the popup retains layered/topmost/toolwindow/noactivate styles.
+- `autohide-hidden-confirmed.json`, `autohide-samples.json`: the host follows the taskbar to y1199 and the popup becomes hidden after the location notification. Restoration returns the taskbar and popup to their normal positions. Shell settings are restored by the diagnostic driver.
+- `idle-resources.json`: equal 15-second process samples, excluding CLI child memory. Focus: 0 ms process CPU and 43.5 MiB working set; previous compact app: 203 ms and 37.6 MiB. These short samples are observations, not a performance benchmark. The 30-second local/API and five-minute CLI schedule remains unchanged; docking adds no reader loop.
+
+## Limits retained explicitly
+
+Physical pointer drag/click behavior, live monitor DPI transitions, crowded-taskbar stress and an actual Explorer restart were not observed through the available native automation surface. The Focus toolwindow and taskbar child are absent from its targetable window inventory; native screenshot capture timed out in the earlier probe. The corresponding renderer, capture handlers, geometry policy and COM lifecycle paths are tested, but those tests do not constitute physical-pointer or Explorer-restart evidence. Explorer was not restarted automatically, in accordance with the existing execution constraint.
+
+The native path supports only the tested primary bottom Windows 10 taskbar and sufficient existing taskbar height. Other layouts float. `IDeskBand2` is a legacy compatibility mechanism, so success on this machine does not establish compatibility with every Windows release.
+
+## Installation and preservation
+
+The running executable is `%LOCALAPPDATA%\Programs\AgentQuota\agentquota.exe`; the current versioned host is `agentquota-taskbar-68843005.dll`. `final-install.json` records exact final hashes and paths. The immediately previous executable, manifest and UI settings are in `.debug-launch/recording-debug-20261017/rollback/`; the original production rollback is in `.debug-launch/focus-rollback-20261017-030251/`. Credentials were not changed or copied.
+
+Implementation ran in an isolated snapshot worktree. Only the 16 owned production files, new native README and task documentation/evidence were integrated into the original dirty checkout after baseline hash checks. Preexisting native changes were preserved. No broad staging, reset, clean, or commit was performed.

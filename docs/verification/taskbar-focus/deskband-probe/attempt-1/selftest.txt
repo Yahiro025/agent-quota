@@ -1,0 +1,17 @@
+﻿PASS reject invalid frame header
+PASS reject overflowing frame dimensions
+PASS embedded readout and popup decode
+PASS embedded readout and popup decode
+PASS embedded readout and popup decode
+PASS embedded readout and popup decode
+PASS native deskband loads outside Explorer
+PASS COM exports present
+PASS class factory activation
+PASS deskband activation
+PASS real child attaches to isolated host
+PASS child belongs to supplied host
+PASS reports real size and suppresses title
+PASS readout fits native child without resampling
+PASS mouse activation refused
+PASS shell activation and showing preserve foreground
+PASS COM objects and native child release cleanly

@@ -1,0 +1,24 @@
+{
+    "exe":  "C:\\Users\\Bennett\\AppData\\Local\\Programs\\AgentQuota\\agentquota.exe",
+    "sha256":  "E651DCE4C666186E53A4EFE690D9CE6BDAA3081AF0C8DD6FA20CD2BF721D2BAF",
+    "root_exe":  "C:\\Users\\Bennett\\Documents\\PROJECT\\agent-quota\\agentquota.exe",
+    "root_sha256":  "E651DCE4C666186E53A4EFE690D9CE6BDAA3081AF0C8DD6FA20CD2BF721D2BAF",
+    "dll":  "agentquota-taskbar-68843005.dll",
+    "dll_sha256":  "B5682B2C1CDB785131FA2748AE1B970E0CBFD0A4AB126F0B01D0B306CF906033",
+    "build":  1753493509,
+    "protocol":  2,
+    "agent_keys_ready":  true,
+    "processes":  [
+                      {
+                          "Id":  57944,
+                          "ProcessName":  "agentquota",
+                          "Path":  "C:\\Users\\Bennett\\AppData\\Local\\Programs\\AgentQuota\\agentquota.exe"
+                      },
+                      {
+                          "Id":  10872,
+                          "ProcessName":  "explorer",
+                          "Path":  "C:\\Windows\\Explorer.EXE"
+                      }
+                  ],
+    "time":  "2026-10-17T19:20:05.7742646+08:00"
+}

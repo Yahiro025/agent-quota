@@ -1,0 +1,182 @@
+[
+  {
+    "floating_visible": false,
+    "native_fits": true,
+    "pools": 2,
+    "slot": {
+      "Min": {
+        "X": 1333,
+        "Y": 1151
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1199
+      }
+    }
+  },
+  {
+    "floating_visible": false,
+    "native_fits": true,
+    "pools": 1,
+    "slot": {
+      "Min": {
+        "X": 1341,
+        "Y": 1151
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1199
+      }
+    }
+  },
+  {
+    "floating_visible": false,
+    "native_fits": true,
+    "pools": 2,
+    "slot": {
+      "Min": {
+        "X": 1333,
+        "Y": 1151
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1199
+      }
+    }
+  },
+  {
+    "floating_visible": false,
+    "native_fits": true,
+    "pools": 1,
+    "slot": {
+      "Min": {
+        "X": 1341,
+        "Y": 1151
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1199
+      }
+    }
+  },
+  {
+    "floating_visible": false,
+    "native_fits": true,
+    "pools": 2,
+    "slot": {
+      "Min": {
+        "X": 1333,
+        "Y": 1151
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1199
+      }
+    }
+  },
+  {
+    "floating_visible": false,
+    "native_fits": true,
+    "pools": 1,
+    "slot": {
+      "Min": {
+        "X": 1341,
+        "Y": 1151
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1199
+      }
+    }
+  },
+  {
+    "floating_visible": false,
+    "native_fits": true,
+    "pools": 2,
+    "slot": {
+      "Min": {
+        "X": 1333,
+        "Y": 1151
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1199
+      }
+    }
+  },
+  {
+    "floating_visible": false,
+    "native_fits": true,
+    "pools": 1,
+    "slot": {
+      "Min": {
+        "X": 1341,
+        "Y": 1151
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1199
+      }
+    }
+  },
+  {
+    "floating_visible": false,
+    "native_fits": true,
+    "pools": 2,
+    "slot": {
+      "Min": {
+        "X": 1333,
+        "Y": 1151
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1199
+      }
+    }
+  },
+  {
+    "floating_visible": false,
+    "native_fits": true,
+    "pools": 1,
+    "slot": {
+      "Min": {
+        "X": 1341,
+        "Y": 1151
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1199
+      }
+    }
+  },
+  {
+    "floating_visible": false,
+    "native_fits": true,
+    "pools": 2,
+    "slot": {
+      "Min": {
+        "X": 1333,
+        "Y": 1151
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1199
+      }
+    }
+  },
+  {
+    "floating_visible": false,
+    "native_fits": true,
+    "pools": 1,
+    "slot": {
+      "Min": {
+        "X": 1341,
+        "Y": 1151
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1199
+      }
+    }
+  }
+]
