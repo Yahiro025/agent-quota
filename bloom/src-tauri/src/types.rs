@@ -22,6 +22,11 @@ pub struct AudioVisualizationData {
 
 #[derive(Serialize, Clone)]
 pub struct MediaInfo {
+    #[serde(default)]
+    pub target_generation: String,
+    /// Display name of the player that owns this media, for its volume session.
+    #[serde(default)]
+    pub app: String,
     pub title: String,
     pub artist: String,
     pub is_playing: bool,
@@ -38,6 +43,7 @@ pub struct MediaInfo {
 }
 
 pub enum SystemCommand {
+    MediaTarget { generation: String, op: String, position_ms: Option<i64> },
     SetVolume(f32),
     MediaPlayPause,
     MediaNext,

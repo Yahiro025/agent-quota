@@ -531,6 +531,28 @@ pub fn set_quota_panel_height(app: AppHandle, height: u32) -> Result<(), String>
     Ok(())
 }
 
+#[tauri::command]
+pub fn media_panel_bounds(app: AppHandle, height: f64) -> Result<f64, String> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTOPRIMARY};
+    if !height.is_finite() || !(0.0..=2048.0).contains(&height) { return Err("Invalid media panel height.".into()); }
+    let window = app.get_webview_window("main").ok_or("Notch unavailable.")?;
+    let monitor = window.primary_monitor().map_err(|_|"Monitor unavailable.")?.ok_or("Monitor unavailable.")?;
+    let origin = monitor.position();
+    let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+    unsafe {
+        let native = MonitorFromPoint(POINT { x: origin.x, y: origin.y }, MONITOR_DEFAULTTOPRIMARY);
+        if !GetMonitorInfoW(native, &mut info).as_bool() { return Err("Work area unavailable.".into()); }
+    }
+    let factor = monitor.scale_factor() * crate::utils::get_bloom_scale(&app);
+    let available = (info.rcWork.bottom - info.rcWork.top).max(1) as f64;
+    let requested = if height == 0.0 { crate::quota_helper::NORMAL_HEIGHT as f64 } else { height.max(crate::quota_helper::NORMAL_HEIGHT as f64) };
+    let physical = (requested * factor).ceil().min(available) as u32;
+    window.set_size(tauri::PhysicalSize::new(monitor.size().width, physical)).map_err(|_|"Could not size media panel.")?;
+    crate::services::apply_main_appbar_mode(&app, false);
+    Ok(available / factor)
+}
+
 fn get_uwp_launch_cmd(exe_path: &str) -> Option<String> {
     // A packaged app can only be started through its AppUserModelID, and the
     // application part after `!` is whatever the package declares ("Claude",
@@ -2598,6 +2620,26 @@ pub fn media_play_pause() {
 }
 
 #[tauri::command]
+pub async fn media_action(generation:String,op:String,position_ms:Option<i64>)->Result<String,String>{
+    let tab_op=["mute","unmute","show"].contains(&op.as_str());
+    // Tab and player generations are disjoint address spaces: each op family
+    // only reaches its own kind, and a tab op never falls through to SMTC.
+    if crate::media_bridge::tab_for_generation(&generation).is_some(){
+        if !tab_op{return Err("Unsupported media action.".into());}
+        return crate::media_bridge::connector_action(&generation,&op,None).await;
+    }
+    if tab_op{return Err("Unsupported media action.".into());}
+    if !["playPause","next","previous","seek"].contains(&op.as_str()){return Err("Unsupported media action.".into());}
+    if crate::media_bridge::target_for_generation(&generation).is_some(){
+        return crate::media_bridge::connector_action(&generation,&op,position_ms).await;
+    }
+    if !crate::media_bridge::native_allowed(&generation){return Err("Media changed. Try again.".into());}
+    if op=="seek" && position_ms.is_none_or(|p|!(0..=31_536_000_000).contains(&p)){return Err("Seeking is unavailable.".into());}
+    COMMAND_SENDER.get().ok_or("Media worker unavailable.")?.send(crate::types::SystemCommand::MediaTarget{generation,op,position_ms}).map_err(|_|"Media worker unavailable.")?;
+    Ok("dispatched".into())
+}
+
+#[tauri::command]
 pub fn media_next() {
     if let Some(sender) = COMMAND_SENDER.get() {
         let _ = sender.send(crate::types::SystemCommand::MediaNext);
@@ -3186,6 +3228,14 @@ pub fn save_setting(app: AppHandle, key: String, value: serde_json::Value) -> Re
         "settings-changed",
         serde_json::json!({ "key": &key, "value": &settings[&key] }),
     );
+
+    // The helper owns the reads, so hiding an agent has to reach it too, not
+    // just the frontend's painting.
+    if key == crate::quota_helper::HIDDEN_AGENTS_KEY {
+        if let Some(value) = settings.get(&key) {
+            let _ = crate::quota_helper::write_agents(value);
+        }
+    }
 
     if key == "bloom-scale" {
         re_register_appbars(&app, &settings);

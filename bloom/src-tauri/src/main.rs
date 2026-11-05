@@ -8,6 +8,9 @@ mod dock_extras;
 mod dock_lifecycle;
 mod excluded;
 mod fullscreen;
+mod media_queue;
+mod media_artwork;
+mod media_bridge;
 mod quota_helper;
 mod services;
 mod shelf;
@@ -128,6 +131,10 @@ fn main() {
             set_splash_fullscreen,
             sync_overlay_position,
             media_play_pause,
+            media_action,
+            media_bridge::media_queue_get,
+            media_bridge::media_list_get,
+            media_bridge::media_queue_select,
             media_next,
             media_previous,
             media_seek,
@@ -138,6 +145,7 @@ fn main() {
             change_notch_mode,
             refresh_quota,
             set_quota_panel_height,
+            media_panel_bounds,
             sync_appbar,
             open_app,
             launch_new_instance,
@@ -399,6 +407,9 @@ fn main() {
             // Quota helper supervisor: returns at once on its own thread, so
             // setup never blocks on agentquota.exe being present.
             quota_helper::start(app.handle());
+            if media_bridge::start(app.handle()).is_err() {
+                eprintln!("Media connector bridge unavailable; native playback remains available.");
+            }
 
             // Listen for second-instance signal to open settings
             if let Some(&h_event) = SINGLE_INSTANCE_EVENT_HANDLE.get() {

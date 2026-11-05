@@ -1,4 +1,5 @@
 use std::path::Path;
+use windows::core::Interface;
 use std::sync::mpsc::{channel, sync_channel, Sender, SyncSender};
 use std::sync::{
     atomic::{
@@ -1084,6 +1085,15 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                 .ok();
             let mut last_processed_media = std::time::Instant::now();
             let mut last_device_check = std::time::Instant::now();
+            let mut displayed_session: Option<windows::Media::Control::GlobalSystemMediaTransportControlsSession> = None;
+            let mut displayed_identity=0usize;
+            let mut native_generation=uuid::Uuid::new_v4().simple().to_string();
+            // One stable generation per SMTC session, and the reverse map the
+            // action handler dispatches through; both are rebuilt by each poll.
+            let mut session_generations: std::collections::HashMap<usize,String> = std::collections::HashMap::new();
+            let mut action_sessions: std::collections::HashMap<String, windows::Media::Control::GlobalSystemMediaTransportControlsSession> = std::collections::HashMap::new();
+            let mut native_art_cache=crate::media_artwork::NativeArtworkCache::default();
+            let mut art_gate=crate::media_artwork::ArtworkGate::default();
             #[allow(clippy::type_complexity)]
             let mut last_emitted_info: Option<(
                 String,
@@ -1093,7 +1103,9 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                 Option<String>,
                 i64,
                 i64,
+                String,
             )> = None;
+            let mut last_emitted_list: Option<crate::media_bridge::MediaList> = None;
             let mut last_volume: f32 = -1.0;
             let mut last_muted: bool = false;
 
@@ -1144,6 +1156,23 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                     // Only the volume commands need the audio endpoint. Media, brightness and
                     // visibility commands must keep working when there is no output device.
                     match (cmd, audio_endpoint_volume.as_ref()) {
+                        (SystemCommand::MediaTarget{generation,op,position_ms},_)=>{
+                            if crate::media_bridge::native_allowed(&generation) {
+                                // A card names its own SMTC session; the primary
+                                // keeps falling back to the displayed one.
+                                let target=action_sessions.get(&generation).cloned()
+                                    .or_else(||(generation==native_generation).then(||displayed_session.clone()).flatten());
+                                if let Some(session)=target {
+                                    match op.as_str(){
+                                        "playPause"=>{let _=session.TryTogglePlayPauseAsync();},
+                                        "next"=>{let _=session.TrySkipNextAsync();},
+                                        "previous"=>{let _=session.TrySkipPreviousAsync();},
+                                        "seek"=>{if let Some(ms)=position_ms{let _=session.TryChangePlaybackPositionAsync(ms.saturating_mul(10_000));}},
+                                        _=>{}
+                                    }
+                                }
+                            }
+                        }
                         (SystemCommand::SetVolume(volume), Some(aev)) => {
                             let _ = aev.SetMasterVolumeLevelScalar(
                                 volume.clamp(0.0, 1.0),
@@ -1216,9 +1245,12 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                         }
                     }
                 }
-                if last_processed_media.elapsed().as_millis() >= 2000 {
+                if last_processed_media.elapsed().as_millis() >= 2000 || crate::media_bridge::take_refresh() {
                     last_processed_media = std::time::Instant::now();
-                    let mut best_info: Option<MediaInfo> = None;
+                    // Every titled session is kept so each playing player can get
+                    // a card; only the displayed one pays for artwork and timeline.
+                    #[allow(clippy::type_complexity)]
+                    let mut titled: Vec<(windows::Media::Control::GlobalSystemMediaTransportControlsSession, windows::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties, String, String, bool)> = Vec::new();
                     if let Some(ref mgr) = manager {
                         if let Ok(sessions) = mgr.GetSessions() {
                             for i in 0..sessions.Size().unwrap_or(0) {
@@ -1235,140 +1267,132 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                                         if !title.is_empty() {
                                             let artist =
                                                 props.Artist().unwrap_or_default().to_string();
-                                            let mut artwork = None;
-                                            let mut got_art_from_cache = false;
-                                            if let Some((
-                                                ref last_title,
-                                                ref last_artist,
-                                                _,
-                                                _,
-                                                ref last_art,
-                                                _,
-                                                _,
-                                            )) = last_emitted_info
-                                            {
-                                                if last_title == &title && last_artist == &artist {
-                                                    artwork = last_art
-                                                        .as_ref()
-                                                        .map(|art| vec![art.clone()]);
-                                                    got_art_from_cache = true;
-                                                }
-                                            }
-
-                                            if !got_art_from_cache {
-                                                artwork = (|| -> Option<Vec<String>> {
-                                                    let stream = props
-                                                        .Thumbnail()
-                                                        .ok()?
-                                                        .OpenReadAsync()
-                                                        .ok()?
-                                                        .get()
-                                                        .ok()?;
-                                                    let content_type = stream
-                                                        .ContentType()
-                                                        .ok()?
-                                                        .to_string()
-                                                        .split(',')
-                                                        .next()
-                                                        .unwrap_or("image/jpeg")
-                                                        .trim()
-                                                        .to_string();
-                                                    let reader =
-                                                        DataReader::CreateDataReader(&stream)
-                                                            .ok()?;
-                                                    let mut all_bytes = Vec::new();
-                                                    let chunk_size = 65536u32;
-                                                    loop {
-                                                        let loaded = reader
-                                                            .LoadAsync(chunk_size)
-                                                            .ok()?
-                                                            .get()
-                                                            .ok()?;
-                                                        if loaded == 0 {
-                                                            break;
-                                                        }
-                                                        let mut chunk = vec![0u8; loaded as usize];
-                                                        reader.ReadBytes(&mut chunk).ok()?;
-                                                        all_bytes.extend_from_slice(&chunk);
-                                                    }
-                                                    if all_bytes.is_empty() {
-                                                        return None;
-                                                    }
-                                                    Some(vec![format!(
-                                                        "data:{};base64,{}",
-                                                        content_type,
-                                                        general_purpose::STANDARD.encode(all_bytes)
-                                                    )])
-                                                })(
-                                                );
-                                            }
-
-                                            // Extract timeline properties for progress bar
-                                            let (position_ms, duration_ms, seek_enabled) = {
-                                                let defaults = (0i64, 0i64, false);
-                                                match session.GetTimelineProperties() {
-                                                    Ok(timeline) => {
-                                                        let start = timeline
-                                                            .StartTime()
-                                                            .map(|t| t.Duration / 10_000)
-                                                            .unwrap_or(0);
-                                                        let end = timeline
-                                                            .EndTime()
-                                                            .map(|t| t.Duration / 10_000)
-                                                            .unwrap_or(0);
-                                                        let pos = timeline
-                                                            .Position()
-                                                            .map(|t| t.Duration / 10_000)
-                                                            .unwrap_or(0);
-                                                        let dur = (end - start).max(0);
-                                                        // If duration is 0 but position > 0, some players don't report start/end
-                                                        // but still track position — use position as fallback duration indicator
-                                                        let effective_dur =
-                                                            if dur > 0 { dur } else { 0 };
-                                                        // Check if seeking is supported
-                                                        let seek = session
-                                                            .GetPlaybackInfo()
-                                                            .ok()
-                                                            .and_then(|pi| pi.Controls().ok())
-                                                            .map(|c| {
-                                                                c.IsPlaybackPositionEnabled()
-                                                                    .unwrap_or(false)
-                                                            })
-                                                            .unwrap_or(false);
-                                                        (pos, effective_dur, seek)
-                                                    }
-                                                    Err(_) => defaults,
-                                                }
-                                            };
-
-                                            let now_ms = std::time::SystemTime::now()
-                                                .duration_since(std::time::UNIX_EPOCH)
-                                                .map(|d| d.as_millis() as u64)
-                                                .unwrap_or(0);
-                                            let info = MediaInfo {
-                                                title,
-                                                artist,
-                                                is_playing,
-                                                has_media: true,
-                                                artwork,
-                                                position_ms,
-                                                duration_ms,
-                                                seek_enabled,
-                                                position_updated_at: now_ms,
-                                            };
-                                            if is_playing {
-                                                best_info = Some(info);
-                                                break;
-                                            } else if best_info.is_none() {
-                                                best_info = Some(info);
-                                            }
+                                            titled.push((session, props, title, artist, is_playing));
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                    let current = best_info.unwrap_or(MediaInfo {
+                    // First playing wins, else the first titled session, exactly
+                    // as the old break-at-first-playing loop chose it.
+                    let chosen=titled.iter().position(|s|s.4).unwrap_or(0);
+                    let best=titled.get(chosen);
+                    let mut best_info: Option<MediaInfo> = None;
+                    let mut best_session=None;
+                    let mut best_album=(String::new(),String::new());
+                    let timeline=|session:&windows::Media::Control::GlobalSystemMediaTransportControlsSession|{
+                        let defaults = (0i64, 0i64, false);
+                        match session.GetTimelineProperties() {
+                            Ok(timeline) => {
+                                let start = timeline
+                                    .StartTime()
+                                    .map(|t| t.Duration / 10_000)
+                                    .unwrap_or(0);
+                                let end = timeline
+                                    .EndTime()
+                                    .map(|t| t.Duration / 10_000)
+                                    .unwrap_or(0);
+                                let pos = timeline
+                                    .Position()
+                                    .map(|t| t.Duration / 10_000)
+                                    .unwrap_or(0);
+                                let dur = (end - start).max(0);
+                                // If duration is 0 but position > 0, some players don't report start/end
+                                // but still track position — use position as fallback duration indicator
+                                let effective_dur =
+                                    if dur > 0 { dur } else { 0 };
+                                // Check if seeking is supported
+                                let seek = session
+                                    .GetPlaybackInfo()
+                                    .ok()
+                                    .and_then(|pi| pi.Controls().ok())
+                                    .map(|c| {
+                                        c.IsPlaybackPositionEnabled()
+                                            .unwrap_or(false)
+                                    })
+                                    .unwrap_or(false);
+                                (pos, effective_dur, seek)
+                            }
+                            Err(_) => defaults,
+                        }
+                    };
+                    // One thumbnail read, shared by the displayed player and by
+                    // any playing player that needs its own card's cover.
+                    let thumbnail=|props:&windows::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties|->Option<Vec<String>>{
+                        let stream = props.Thumbnail().ok()?.OpenReadAsync().ok()?.get().ok()?;
+                        let content_type = stream.ContentType().ok()?.to_string().split(',').next().unwrap_or("image/jpeg").trim().to_string();
+                        let reader = DataReader::CreateDataReader(&stream).ok()?;
+                        let mut all_bytes = Vec::new();
+                        let chunk_size = 65536u32;
+                        loop {
+                            let loaded = reader.LoadAsync(chunk_size).ok()?.get().ok()?;
+                            if loaded == 0 {
+                                break;
+                            }
+                            let mut chunk = vec![0u8; loaded as usize];
+                            reader.ReadBytes(&mut chunk).ok()?;
+                            all_bytes.extend_from_slice(&chunk);
+                        }
+                        if all_bytes.is_empty() {
+                            return None;
+                        }
+                        Some(vec![format!(
+                            "data:{};base64,{}",
+                            content_type,
+                            general_purpose::STANDARD.encode(all_bytes)
+                        )])
+                    };
+                    if let Some((session,props,title,artist,is_playing))=best {
+                        let mut artwork = native_art_cache.get(title,artist);
+                        let got_art_from_cache = artwork.is_some();
+
+                        if !got_art_from_cache {
+                            artwork = thumbnail(props);
+                        }
+
+                        // Extract timeline properties for progress bar
+                        let (position_ms, duration_ms, seek_enabled) = timeline(session);
+
+                        let now_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0);
+                        let info = MediaInfo {
+                            target_generation:String::new(),
+                            app:String::new(),
+                            title:title.clone(),
+                            artist:artist.clone(),
+                            is_playing:*is_playing,
+                            has_media: true,
+                            artwork,
+                            position_ms,
+                            duration_ms,
+                            seek_enabled,
+                            position_updated_at: now_ms,
+                        };
+                        let album=(props.AlbumTitle().map(|s|s.to_string()).unwrap_or_default(),
+                            props.AlbumArtist().map(|s|s.to_string()).unwrap_or_default());
+                        best_session=Some(session.clone());
+                        best_info = Some(info);
+                        best_album=album;
+                    }
+                    let family_of=|app_id:&str|{
+                        let app_id=app_id.to_ascii_lowercase();
+                        if app_id=="spotify.exe" || app_id=="spotify" || app_id.starts_with("spotifyab.spotify") {Some(crate::media_queue::Source::Spotify)}
+                        else if app_id=="brave.exe" || app_id=="brave" || app_id.starts_with("brave."){Some(crate::media_queue::Source::Youtube)}else{None}
+                    };
+                    // One AUMID read per titled session; the cards reuse it for
+                    // their family and for their app name.
+                    let aumids: Vec<String>=titled.iter().map(|(session,..)|session.SourceAppUserModelId().ok().map(|s|s.to_string()).unwrap_or_default()).collect();
+                    let families: Vec<Option<crate::media_queue::Source>>=aumids.iter().map(|id|family_of(id)).collect();
+                    let identity=best_session.as_ref().and_then(|s:&windows::Media::Control::GlobalSystemMediaTransportControlsSession|s.cast::<windows::core::IUnknown>().ok()).map(|s|s.as_raw() as usize).unwrap_or(0);
+                    if identity!=displayed_identity {displayed_identity=identity;native_generation=uuid::Uuid::new_v4().simple().to_string();}
+                    let family=families.get(chosen).copied().flatten();
+                    displayed_session=best_session;
+                    let mut current = best_info.unwrap_or(MediaInfo {
+                        target_generation:String::new(),
+                        app:String::new(),
                         title: "".into(),
                         artist: "".into(),
                         is_playing: false,
@@ -1379,15 +1403,129 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                         seek_enabled: false,
                         position_updated_at: 0,
                     });
+                    // The native SMTC app stays the volume target even when a
+                    // connector owns the track (YouTube in Brave -> Brave).
+                    current.app = crate::media_bridge::app_display_name(
+                        aumids.get(chosen).map(String::as_str).unwrap_or(""),
+                    );
+                    crate::media_bridge::native_update(crate::media_queue::NativeHint{source:family,playing:current.is_playing,has_media:current.has_media},&native_generation);
+                    current.target_generation=native_generation.clone();
+                    let connector=crate::media_bridge::active();
+                    // Captured before the snapshot below moves the target.
+                    let connector_family=connector.as_ref().map(|target|target.source);
+                    // Only the connector target can own the list's primary card.
+                    let connector_primary=connector.is_some();
+                    // A connector names each queue entry, so a switch between duplicates is still
+                    // a track change; native-only playback has nothing finer than its text.
+                    let track=match &connector{
+                        Some(target)=>format!("connector\n{}\n{}",target.generation,target.snapshot.current_id),
+                        None=>format!("native\n{}\n{}\n{}",native_generation,current.title,current.artist),
+                    };
+                    if let Some(target)=&connector{
+                        // Artwork may be reused for identical content; routing never uses text.
+                        if current.title!=target.snapshot.title || current.artist!=target.snapshot.artist{current.artwork=None;}
+                    }
+                    let art_context=crate::media_artwork::ArtContext{title:current.title.clone(),artist:current.artist.clone(),album:best_album.0,album_artist:best_album.1};
+                    current.artwork=art_gate.filter(&track,&art_context,current.artwork.take(),crate::media_bridge::now());
+                    // The displayed player's own cover, as the gate accepted it. A
+                    // connector snapshot that disagrees with the native text has
+                    // already blanked it, so a stale SMTC cover never lands on a
+                    // card.
+                    let displayed_art=current.artwork.clone();
+                    if !art_gate.is_provisional(){native_art_cache.remember(&current.title,&current.artist,current.artwork.as_deref());}
+                    if let Some(target)=connector{
+                        current.title=target.snapshot.title;current.artist=target.snapshot.artist;
+                        current.target_generation=target.generation;current.is_playing=target.snapshot.is_playing;current.has_media=true;
+                        current.position_ms=target.snapshot.position_ms;current.duration_ms=target.snapshot.duration_ms;
+                        current.seek_enabled=target.snapshot.seek_enabled;current.position_updated_at=crate::media_bridge::now();
+                    }
+                    // Windows-only players get a card each; publish them before the
+                    // list so the emitted media-list carries them. The generation
+                    // map is rebuilt here and pruned so a card keeps its identity
+                    // between polls and stale sessions cannot be addressed.
+                    // Every card carries its own cover. A thumbnail is read only
+                    // on a cache miss, so a repeat poll with nothing new costs
+                    // nothing, and a paused player is never read at all.
+                    let session_art: Vec<Option<Vec<String>>> = titled.iter().enumerate().map(|(index,(_,props,title,artist,is_playing))|{
+                        if index==chosen {displayed_art.clone()}
+                        else if *is_playing {
+                            native_art_cache.get(title,artist).or_else(||{
+                                let art=thumbnail(props);
+                                native_art_cache.remember(title,artist,art.as_deref());
+                                art
+                            })
+                        } else {None}
+                    }).collect();
+                    let identities: Vec<usize> = titled.iter().map(|(session,..)|session.cast::<windows::core::IUnknown>().ok().map(|s|s.as_raw() as usize).unwrap_or(0)).collect();
+                    session_generations.retain(|id,_|identities.contains(id));
+                    action_sessions.clear();
+                    let playing=crate::media_bridge::playing_sources_now(crate::media_bridge::now());
+                    let mut native_cards=Vec::new();
+                    for (index,identity) in identities.iter().enumerate() {
+                        let (session,_,title,artist,is_playing)=&titled[index];
+                        if !is_playing {continue;}
+                        let generation=if index==chosen {native_generation.clone()} else {
+                            session_generations.entry(*identity).or_insert_with(||uuid::Uuid::new_v4().simple().to_string()).clone()
+                        };
+                        action_sessions.insert(generation.clone(),session.clone());
+                        if crate::media_bridge::connector_represented(families[index],&playing) {continue;}
+                        let (position_ms,duration_ms,seek_enabled)=timeline(session);
+                        native_cards.push(crate::media_bridge::MediaCard{
+                            generation,
+                            source:"Windows".into(),
+                            app:crate::media_bridge::app_display_name(&aumids[index]),
+                            title:title.clone(),
+                            artist:artist.clone(),
+                            is_playing:true,
+                            artwork:session_art[index].clone(),
+                            position_ms,
+                            duration_ms,
+                            seek_enabled,
+                            position_updated_at:crate::media_bridge::now(),
+                            queue:false,
+                            primary:index==chosen && !connector_primary,
+                            kind:"player".into(),
+                            muted:false,
+                            family:families[index],
+                        });
+                    }
+                    crate::media_bridge::set_native_cards(native_cards);
+                    let mut list=crate::media_bridge::media_list(crate::media_bridge::now());
+                    // The Spotify card borrows the cover of the one Spotify
+                    // player; YouTube cards keep none. The family chose it.
+                    if let Some(index)=crate::media_bridge::spotify_art_session(&families) {
+                        if let Some(art)=session_art.get(index).cloned().flatten() {
+                            if let Some(card)=list.cards.iter_mut().find(|c|c.source=="Spotify") {
+                                if card.artwork.is_none(){card.artwork=Some(art);}
+                            }
+                        }
+                    }
+                    // WHY: the displayed player's cover may fill a connector card
+                    // only when that card is the same player's own card, i.e. the
+                    // primary target's source is the displayed session's family.
+                    // Text is not identity, and every other card already carries
+                    // its own cover, so nothing else is filled here.
+                    let displayed_player_card=matches!((connector_family,families.get(chosen).copied().flatten()),(Some(connector_family),Some(family)) if connector_family==family);
+                    if displayed_player_card {
+                        if let Some(card)=list.cards.iter_mut().find(|c|c.primary){
+                            if card.artwork.is_none(){card.artwork=current.artwork.clone();}
+                        }
+                    }
+                    // Same debounce as media-update: positions drift every poll.
+                    if last_emitted_list.as_ref().is_none_or(|last|!crate::media_bridge::same_list(last,&list)){
+                        let _=handle_system.emit("media-list",list.clone());
+                        last_emitted_list=Some(list);
+                    }
                     let art_str = current.artwork.as_ref().and_then(|a| a.first()).cloned();
-                    if last_emitted_info.as_ref().is_none_or(|(t, a, p, h, art, pos, _dur)| {
+                    if last_emitted_info.as_ref().is_none_or(|(t, a, p, h, art, pos, dur, generation)| {
                         t != &current.title || a != &current.artist || p != &current.is_playing || h != &current.has_media || art != &art_str ||
+                        generation!=&current.target_generation || dur!=&current.duration_ms ||
                         // For position: emit if >1s difference (avoid spamming on every poll)
                         (*pos - current.position_ms).abs() > 1000
                     }) {
                         let _ = handle_system.emit("media-update", current.clone());
                         ANY_MEDIA_PLAYING.store(current.is_playing, Ordering::Relaxed);
-                        last_emitted_info = Some((current.title, current.artist, current.is_playing, current.has_media, art_str, current.position_ms, current.duration_ms));
+                        last_emitted_info = Some((current.title, current.artist, current.is_playing, current.has_media, art_str, current.position_ms, current.duration_ms,current.target_generation));
                     }
                 }
                 std::thread::sleep(std::time::Duration::from_millis(64));
@@ -1813,9 +1951,9 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                     last_visible = true;
                 }
 
-                // Hide the main notch itself while the foreground window owns
-                // the primary monitor (fullscreen, presentation, or a
-                // borderless app). The probe re-reads this tick's hwnd; a
+                // Hide the main notch window outright only over exclusive D3D
+                // fullscreen; other fullscreen apps just retract it via
+                // visibility-change. The probe re-reads this tick's hwnd; a
                 // missing window means keep the notch. hide()/show() never
                 // move focus, and the dock is not touched.
                 let notch_hidden = if hwnd.is_invalid() {
@@ -2707,31 +2845,6 @@ fn update_main_interaction(
     now: i64,
     fg_fs: bool,
 ) {
-    if fg_fs {
-        // Fullscreen foreground app or capture overlay: Bloom steps aside and
-        // any pending top-edge dwell is dropped.
-        MH_TOP_EDGE_ENTER_MS.store(0, Ordering::Relaxed);
-        MH_TOP_EDGE_ARMED.store(false, Ordering::Relaxed);
-        if let Some(main_win) = app_handle.get_webview_window("main") {
-            if let Ok(hwnd) = main_win.hwnd() {
-                if MH_LAST_MAIN_IGNORE.load(Ordering::Relaxed) != 1 {
-                    re_assert_topmost(frame_hwnd(hwnd));
-                }
-                set_click_through(frame_hwnd(hwnd), true);
-            }
-            MH_LAST_MAIN_IGNORE.store(1, Ordering::Relaxed);
-        }
-        if MH_LAST_TOP_EDGE_HOVER.swap(0, Ordering::Relaxed) != 0 {
-            let _ = app_handle.emit("notch-edge-hover", false);
-        }
-        // Bloom is fully click-through here, so the webview cannot clear its
-        // own hover state; do it for it.
-        if NOTCH_IS_HOVERED.swap(false, Ordering::Relaxed) {
-            let _ = app_handle.emit("notch-pointer-left", ());
-        }
-        return;
-    }
-
     let Some(main_win) = app_handle.get_webview_window("main") else {
         return;
     };
@@ -2744,10 +2857,11 @@ fn update_main_interaction(
     // The top-edge reveal exists only to bring a hidden notch on screen: it is
     // dwell-gated, and fixed mode (always visible) skips it entirely. This is
     // about showing the notch — the hit-testing continuity below is separate
-    // and must stay immediate.
-    let edge_armed = if notch_mode_is_fixed(
-        get_setting_str(app_handle, "bloom-notch-mode").as_deref(),
-    ) {
+    // and must stay immediate. Fullscreen retracts even a fixed notch, so the
+    // dwell is the only way back to it there.
+    let edge_armed = if !fg_fs
+        && notch_mode_is_fixed(get_setting_str(app_handle, "bloom-notch-mode").as_deref())
+    {
         MH_TOP_EDGE_ENTER_MS.store(0, Ordering::Relaxed);
         MH_TOP_EDGE_ARMED.store(false, Ordering::Relaxed);
         false
