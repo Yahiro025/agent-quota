@@ -475,8 +475,8 @@ img {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 28px;
-	height: 28px;
+	width: 32px;
+	height: 32px;
 	padding: 0;
 	border: 0;
 	background: transparent;
@@ -485,8 +485,8 @@ img {
 }
 
 .notch-quota-badge .qs-ring {
-	width: 28px;
-	height: 28px;
+	width: 32px;
+	height: 32px;
 }
 
 .notch-quota-mark {
@@ -509,8 +509,8 @@ img {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 28px;
-	height: 28px;
+	width: 32px;
+	height: 32px;
 	padding: 0;
 	border: 0;
 	background: transparent;

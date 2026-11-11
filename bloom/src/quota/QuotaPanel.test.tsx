@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { QuotaAgent } from "./protocol";
-import { QuotaHoverCard, QuotaPanel } from "./QuotaPanel";
+import { QuotaHoverCard, QuotaPanel, QuotaRingMark } from "./QuotaPanel";
 
 // Server markup keeps these tests DOM-free: effects (and therefore the
 // ResizeObserver / invoke calls) never run, so nothing needs Tauri.
@@ -138,5 +138,46 @@ describe("QuotaHoverCard", () => {
 		expect(html).not.toContain("1 failed");
 		expect(html).not.toContain("Source observed");
 		expect(html).not.toContain("% used");
+	});
+});
+
+describe("QuotaRingMark", () => {
+	const dual: QuotaAgent = {
+		id: "codex",
+		state: "ok",
+		used: 30,
+		windows: [
+			{ label: "5h", used: 30 },
+			{ label: "week", used: 60 }
+		]
+	};
+	const count = (html: string, cls: string) => (html.match(new RegExp(`class="${cls}[ "]`, "g")) ?? []).length;
+
+	test("the notch keeps both concentric rings", () => {
+		const html = renderToStaticMarkup(<QuotaRingMark a={dual} />);
+		expect(count(html, "qs-ring-track")).toBe(2);
+		expect(count(html, "qs-ring-fill")).toBe(2);
+	});
+
+	test("the single ring draws the headline value, the one the % beside it shows", () => {
+		const html = renderToStaticMarkup(<QuotaRingMark a={dual} single />);
+		expect(count(html, "qs-ring-track")).toBe(1);
+		expect(count(html, "qs-ring-fill")).toBe(1);
+		// 30% reads green; the week window (60%) is not what the bar's number says.
+		expect(html).toContain('data-band="green"');
+		expect(html).not.toContain("qs-ring-inner");
+	});
+
+	test("a single-metric agent still shows its arc in the single ring", () => {
+		// agentRings puts a lone value on the inner ring; hiding that ring blanked the bar.
+		const html = renderToStaticMarkup(<QuotaRingMark a={{ id: "qoder", state: "ok", used: 100 }} single />);
+		expect(count(html, "qs-ring-fill")).toBe(1);
+		expect(html).toContain('data-band="red"');
+	});
+
+	test("a waiting agent shows an empty single ring, no arc", () => {
+		const html = renderToStaticMarkup(<QuotaRingMark a={{ id: "claude", state: "waiting" }} single />);
+		expect(count(html, "qs-ring-track")).toBe(1);
+		expect(count(html, "qs-ring-fill")).toBe(0);
 	});
 });

@@ -69,17 +69,20 @@ const groupLabelName = (label: string): string =>
 const RING_ARC = (used: number, r: number) => {
 	const pct = Math.min(Math.max(Math.round(used), 0), 100);
 	const c = 2 * Math.PI * r;
-	return { c, fill: (pct / 100) * c, color: BAND_COLOR[band(pct)] };
+	return { c, fill: (pct / 100) * c, color: BAND_COLOR[band(pct)], band: band(pct) };
 };
 
 function Ring({
 	inner,
 	outer,
-	stale
+	stale,
+	single = false
 }: {
 	inner: number | undefined;
 	outer: number | undefined;
 	stale?: boolean;
+	/** One ring only: the inner track is not drawn, `outer` carries the value. */
+	single?: boolean;
 }) {
 	const dim = stale ? 0.55 : undefined;
 	const [animated, setAnimated] = useState(false);
@@ -90,30 +93,34 @@ function Ring({
 		return () => cancelAnimationFrame(raf);
 	}, []);
 	const animClass = animated ? " qs-ring-animated" : "";
+	const outerArc = outer === undefined ? undefined : RING_ARC(outer, 12.25);
+	const innerArc = inner === undefined ? undefined : RING_ARC(inner, 9.5);
 	return (
 		<svg viewBox="0 0 28 28" className="qs-ring-svg" aria-hidden="true">
 			<circle cx="14" cy="14" r={12.25} className="qs-ring-track" />
-			<circle cx="14" cy="14" r={9.5} className="qs-ring-track" />
-			{outer !== undefined && (
+			{!single && <circle cx="14" cy="14" r={9.5} className="qs-ring-track" />}
+			{outerArc && (
 				<circle
 					cx="14"
 					cy="14"
 					r={12.25}
 					className={`qs-ring-fill qs-ring-outer${animClass}`}
-					stroke={RING_ARC(outer, 12.25).color}
-					strokeDasharray={`${RING_ARC(outer, 12.25).fill} ${RING_ARC(outer, 12.25).c}`}
+					data-band={outerArc.band}
+					stroke={outerArc.color}
+					strokeDasharray={`${outerArc.fill} ${outerArc.c}`}
 					opacity={dim}
 					transform="rotate(-90 14 14)"
 				/>
 			)}
-			{inner !== undefined && (
+			{innerArc && (
 				<circle
 					cx="14"
 					cy="14"
 					r={9.5}
 					className={`qs-ring-fill qs-ring-inner${animClass}`}
-					stroke={RING_ARC(inner, 9.5).color}
-					strokeDasharray={`${RING_ARC(inner, 9.5).fill} ${RING_ARC(inner, 9.5).c}`}
+					data-band={innerArc.band}
+					stroke={innerArc.color}
+					strokeDasharray={`${innerArc.fill} ${innerArc.c}`}
 					opacity={dim}
 					transform="rotate(-90 14 14)"
 				/>
@@ -124,11 +131,26 @@ function Ring({
 
 // The ring pair with the agent's brand mark centred inside: the same tile
 // the quota space draws per agent, reused by the collapsed hover badge.
-export function QuotaRingMark({ a }: { a: QuotaAgent }) {
+// `single` is for MyFinder's 24px bar, where two tracks would cap the logo at
+// about half the ring: one ring carries the headline value, the number the
+// bar prints beside it. (agentRings puts a lone value on the inner ring, so
+// the single ring cannot simply hide the inner one.)
+export function QuotaRingMark({ a, single = false }: { a: QuotaAgent; single?: boolean }) {
 	const { inner, outer } = agentRings(a);
+	const headline =
+		inner === undefined && outer === undefined
+			? undefined
+			: typeof a.used === "number"
+				? a.used
+				: (inner ?? outer);
 	return (
 		<span className="qs-ring">
-			<Ring inner={inner} outer={outer} stale={a.state === "stale"} />
+			<Ring
+				inner={single ? undefined : inner}
+				outer={single ? headline : outer}
+				stale={a.state === "stale"}
+				single={single}
+			/>
 			<span className="qs-mark">
 				<AgentMark id={a.id} />
 			</span>
