@@ -21,6 +21,9 @@ jobs:
     permissions:
       contents: write
 
+    defaults:
+      run:
+        working-directory: bloom
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,6 +34,11 @@ jobs:
         with:
           bun-version: 1.4.0
 
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
@@ -39,7 +47,7 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          workspaces: src-tauri
+          workspaces: bloom/src-tauri
 
       - name: Verify version matches tag
         shell: bash
@@ -98,7 +106,7 @@ jobs:
             APP=0
             for FILE in $FILES; do
               case "$FILE" in
-                website/*|.github/*|*.md) ;;
+                bloom/website/*|.github/*|bloom/.github/*|*.md) ;;
                 *) APP=1 ;;
               esac
             done
@@ -136,9 +144,6 @@ jobs:
           echo "$NOTES" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - name: Install frontend dependencies
-        run: bun install
-
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
@@ -146,6 +151,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PASSWORD: ${{ secrets.TAURI_SIGNING_PASSWORD }}
         with:
+          projectPath: bloom
           tagName: ${{ github.ref_name }}
           releaseName: "Bloom ${{ github.ref_name }}"
           releaseBody: ${{ steps.notes.outputs.body }}
