@@ -1,0 +1,240 @@
+/* Type roles follow the compact player: 13px titles beside its 15px track title,
+   11px secondary text like its time labels. */
+.mq {
+	white-space: normal;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	flex: 1;
+	margin-top: 8px;
+	/* Keeps the last line clear of the island's rounded bottom corners. */
+	padding-bottom: 6px;
+	border-top: 1px solid color-mix(in srgb, var(--bloom-text, white) 12%, transparent);
+	text-align: left;
+}
+.mq-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 34px;
+	padding-left: 4px;
+	flex-shrink: 0;
+}
+.mq-header h2 {
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: -0.1px;
+	margin: 0;
+}
+.mq-source {
+	margin-left: auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.6));
+	font-size: 11px;
+}
+.mq-check {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: 26px;
+	height: 26px;
+	margin-left: auto;
+	padding: 0;
+	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.6));
+	background: none;
+	border: none;
+	border-radius: 50%;
+	cursor: pointer;
+	transition:
+		color 0.15s ease,
+		background-color 0.15s ease;
+}
+.mq-source + .mq-check {
+	margin-left: 0;
+}
+.mq-check:hover:not(:disabled) {
+	color: var(--bloom-text, white);
+	background: color-mix(in srgb, var(--bloom-text, white) 10%, transparent);
+}
+.mq-check:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+.mq-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	min-height: 0;
+	/* Three and a half rows: the half row shows the list scrolls. */
+	max-height: 154px;
+	flex: 1;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+/* Same thin themed scrollbar as the quick panel. Setting the standard
+   scrollbar-width would make Chromium ignore these. */
+.mq-list::-webkit-scrollbar {
+	width: 4px;
+}
+.mq-list::-webkit-scrollbar-track {
+	background: transparent;
+}
+.mq-list::-webkit-scrollbar-thumb {
+	background: var(--bloom-scrollbar-thumb, rgba(255, 255, 255, 0.1));
+	border-radius: 2px;
+}
+.mq-list::-webkit-scrollbar-button {
+	display: none;
+}
+/* A cut-off row reads as a clipping bug; a fade reads as "more below". */
+.mq-list.has-more {
+	-webkit-mask-image: linear-gradient(to bottom, black calc(100% - 18px), transparent);
+	mask-image: linear-gradient(to bottom, black calc(100% - 18px), transparent);
+}
+.mq-row {
+	display: grid;
+	grid-template-columns: 20px minmax(0, 1fr) auto;
+	align-items: center;
+	width: 100%;
+	min-height: 44px;
+	gap: 8px;
+	padding: 5px 6px 5px 4px;
+	color: var(--bloom-text, white);
+	border: none;
+	border-radius: 8px;
+	background: none;
+	text-align: left;
+	cursor: pointer;
+	transition:
+		background-color 0.15s ease,
+		opacity 0.2s ease;
+}
+.mq-row:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--bloom-text, white) 9%, transparent);
+}
+.mq-row:active:not(:disabled) {
+	background: color-mix(in srgb, var(--bloom-text, white) 14%, transparent);
+}
+.mq-row:disabled {
+	cursor: default;
+}
+/* While a choice is in flight or must be re-checked, only the busy row stays lit. */
+.mq-list.is-blocked .mq-row:not([aria-busy="true"]) {
+	opacity: 0.45;
+}
+.mq-row[aria-busy="true"] {
+	background: color-mix(in srgb, var(--bloom-text, white) 7%, transparent);
+}
+.mq-order {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 16px;
+	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.6));
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+.mq-order svg {
+	display: none;
+	color: var(--bloom-text, white);
+}
+.mq-row:is(:hover, :focus-visible):not(:disabled) .mq-index {
+	display: none;
+}
+.mq-row:is(:hover, :focus-visible):not(:disabled) .mq-order svg {
+	display: block;
+}
+.mq-track {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	gap: 2px;
+}
+.mq-title,
+.mq-artist {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	line-height: 1.25;
+}
+.mq-title {
+	font-size: 13px;
+	font-weight: 500;
+	letter-spacing: -0.1px;
+}
+.mq-artist,
+.mq-duration {
+	font-size: 11px;
+	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.6));
+}
+.mq-duration {
+	font-variant-numeric: tabular-nums;
+}
+.mq-empty {
+	margin: 0;
+	padding: 4px 4px 8px;
+	font-size: 12px;
+	line-height: 1.4;
+	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.6));
+}
+.mq-note {
+	margin: 6px 4px 0;
+	font-size: 11px;
+	line-height: 1.35;
+	flex-shrink: 0;
+	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.6));
+}
+.mq-status {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+}
+.mq-recheck {
+	padding: 3px 10px;
+	font: inherit;
+	font-weight: 600;
+	color: var(--bloom-text, white);
+	background: color-mix(in srgb, var(--bloom-text, white) 12%, transparent);
+	border: none;
+	border-radius: 999px;
+	cursor: pointer;
+	transition: background-color 0.15s ease;
+}
+.mq-recheck:hover {
+	background: color-mix(in srgb, var(--bloom-text, white) 20%, transparent);
+}
+.mq-row:focus-visible,
+.mq-check:focus-visible,
+.mq-recheck:focus-visible {
+	outline: 2px solid var(--bloom-text, white);
+	outline-offset: -2px;
+}
+.mq-pending {
+	width: 11px;
+	height: 11px;
+	border: 1.5px solid currentColor;
+	border-right-color: transparent;
+	border-radius: 50%;
+	animation: mq-spin 0.8s linear infinite;
+}
+@keyframes mq-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.mq-pending {
+		animation: none;
+		border-style: dotted;
+	}
+	.mq-row,
+	.mq-check,
+	.mq-recheck {
+		transition: none;
+	}
+}

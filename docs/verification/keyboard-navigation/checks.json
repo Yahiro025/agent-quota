@@ -1,0 +1,12 @@
+{
+    "format":  "pass",
+    "vet":  "pass",
+    "go_packages":  9,
+    "native_hook_input":  "pass",
+    "native_scope_and_cleanup":  "pass",
+    "shadow_mutation":  "red then green",
+    "pin_and_selection":  "pass",
+    "settings_preserved":  true,
+    "installed_hook_ready":  true,
+    "time":  "2026-10-17T19:21:01.2512059+08:00"
+}

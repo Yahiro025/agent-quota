@@ -1,0 +1,32 @@
+{
+  "source": "Live YouTube page in T3 shared browser; not installed Brave or extension",
+  "after": {
+    "index": 2,
+    "playing": true,
+    "playlist": [
+      "jNQXAC9IVRw",
+      "M7lc1UVf-VE",
+      "jNQXAC9IVRw",
+      "dQw4w9WgXcQ"
+    ],
+    "playlistId": "TLGGoibmzMi0GNMyOTEwMjAyNg",
+    "videoId": "jNQXAC9IVRw"
+  },
+  "before": {
+    "index": 1,
+    "playlist": [
+      "jNQXAC9IVRw",
+      "M7lc1UVf-VE",
+      "jNQXAC9IVRw",
+      "dQw4w9WgXcQ"
+    ],
+    "playlistId": "TLGGoibmzMi0GNMyOTEwMjAyNg"
+  },
+  "status": "confirmed",
+  "limitations": [
+    "No browser-extension installation or native messaging proof",
+    "No installed Brave session association proof",
+    "No shuffle/loop mode coverage",
+    "Temporary test tab paused and closed"
+  ]
+}

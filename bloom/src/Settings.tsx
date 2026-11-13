@@ -3,19 +3,16 @@ import { createRoot } from "react-dom/client";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Effect } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { X, Settings, Palette, PanelTop, Monitor, Layers, Info, Megaphone } from "lucide-react";
+import { X, Settings, Palette, PanelTop, Layers, Info } from "lucide-react";
 import {
 	useSettings,
 	GeneralTab,
 	AppearanceTab,
 	NotchTab,
-	DockTab,
 	OverlaysTab,
 	AboutTab
 } from "./settings/index";
 import type { SettingsTab } from "./settings/index";
-import { useAnnouncement, showAnnouncements } from "./hooks/useAnnouncement";
 import { initTheme } from "./theme";
 import "./Settings.css";
 
@@ -25,7 +22,6 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Settings }[] = [
 	{ id: "general", label: "General", icon: Settings },
 	{ id: "appearance", label: "Appearance", icon: Palette },
 	{ id: "notch", label: "Notch", icon: PanelTop },
-	{ id: "dock", label: "Dock", icon: Monitor },
 	{ id: "overlays", label: "Overlays", icon: Layers },
 	{ id: "about", label: "About", icon: Info }
 ];
@@ -33,7 +29,6 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Settings }[] = [
 function SettingsApp() {
 	const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 	const settings = useSettings();
-	const { announcement, dismissed, dismiss } = useAnnouncement(showAnnouncements());
 
 	useEffect(() => {
 		return initTheme();
@@ -106,28 +101,6 @@ function SettingsApp() {
 							</button>
 						</div>
 					)}
-					{announcement && !dismissed && (
-						<div className={`announcement-banner severity-${announcement.severity}`}>
-							<Megaphone size={14} className="announcement-banner-icon" />
-							<div className="announcement-banner-text">
-								<span className="announcement-banner-title">{announcement.title}</span>
-								{announcement.body && (
-									<span className="announcement-banner-body">{announcement.body}</span>
-								)}
-							</div>
-							{announcement.url && (
-								<button
-									className="announcement-banner-link"
-									onClick={() => openUrl(announcement.url!)}
-								>
-									Learn more
-								</button>
-							)}
-							<button className="announcement-banner-close" onClick={dismiss} title="Dismiss">
-								<X size={12} strokeWidth={2.2} />
-							</button>
-						</div>
-					)}
 					{activeTab === "general" && (
 						<GeneralTab
 							autostart={settings.autostart}
@@ -173,6 +146,8 @@ function SettingsApp() {
 							toggleNotchRememberPanel={settings.toggleNotchRememberPanel}
 							notchDefaultPanel={settings.notchDefaultPanel}
 							changeNotchDefaultPanel={settings.changeNotchDefaultPanel}
+							quotaHiddenAgents={settings.quotaHiddenAgents}
+							toggleQuotaAgent={settings.toggleQuotaAgent}
 							timerSoundEnabled={settings.timerSoundEnabled}
 							toggleTimerSound={settings.toggleTimerSound}
 							musicModeEnabled={settings.musicModeEnabled}
@@ -200,43 +175,6 @@ function SettingsApp() {
 							handleCityClear={settings.handleCityClear}
 							statusWidgets={settings.statusWidgets}
 							handleWidgetsChange={settings.handleWidgetsChange}
-						/>
-					)}
-					{activeTab === "dock" && (
-						<DockTab
-							dockEnabled={settings.dockEnabled}
-							toggleDock={settings.toggleDock}
-							dockMode={settings.dockMode}
-							setDockModeValue={settings.setDockModeValue}
-							dockEdgeDelay={settings.dockEdgeDelay}
-							handleDockEdgeDelayChange={settings.handleDockEdgeDelayChange}
-							dockPreviewEnabled={settings.dockPreviewEnabled}
-							toggleDockPreview={settings.toggleDockPreview}
-							dockIconOnly={settings.dockIconOnly}
-							toggleDockIconOnly={settings.toggleDockIconOnly}
-							dockSeparatorEnabled={settings.dockSeparatorEnabled}
-							toggleDockSeparator={settings.toggleDockSeparator}
-							dockAdaptive={settings.dockAdaptive}
-							toggleDockAdaptive={settings.toggleDockAdaptive}
-							dockWinNumberEnabled={settings.dockWinNumberEnabled}
-							toggleDockWinNumber={settings.toggleDockWinNumber}
-							dockExtrasPosition={settings.dockExtrasPosition}
-							handleDockExtrasPositionChange={settings.handleDockExtrasPositionChange}
-							dockExtrasDrives={settings.dockExtrasDrives}
-							toggleDockExtrasDrives={settings.toggleDockExtrasDrives}
-							dockExtrasHiddenDrives={settings.dockExtrasHiddenDrives}
-							toggleDockExtrasDrive={settings.toggleDockExtrasDrive}
-							dockExtrasRecycleBin={settings.dockExtrasRecycleBin}
-							toggleDockExtrasRecycleBin={settings.toggleDockExtrasRecycleBin}
-							dockTaskView={settings.dockTaskView}
-							toggleDockTaskView={settings.toggleDockTaskView}
-							dockExtrasFolders={settings.dockExtrasFolders}
-							toggleDockExtraFolder={settings.toggleDockExtraFolder}
-							dockExtrasCustomFolders={settings.dockExtrasCustomFolders}
-							handleAddDockExtraFolder={settings.handleAddDockExtraFolder}
-							handleRemoveDockExtraFolder={settings.handleRemoveDockExtraFolder}
-							startIcon={settings.startIcon}
-							handleStartIconChange={settings.handleStartIconChange}
 						/>
 					)}
 					{activeTab === "overlays" && (

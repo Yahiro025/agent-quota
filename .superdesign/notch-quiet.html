@@ -1,0 +1,376 @@
+<!DOCTYPE html><html lang="en"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bloom Notch Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --surface: #000000;
+            --text: #f4f2f6;
+            --secondary: #b9b3c1;
+            --muted: #a19aa9;
+            --usage-green: #32d74b;
+            --usage-amber: #ffb340;
+            --usage-critical: #ff453a;
+            --radius-housing: 18px;
+            --radius-hover: 12px;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background: #e5e5e5;
+            overflow: hidden;
+        }
+
+        .wallpaper {
+            width: 1440px;
+            height: 900px;
+            background: linear-gradient(135deg, #f3f4f6 0%, #d1d5db 100%);
+            position: relative;
+        }
+
+        .notch-housing {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--surface);
+            color: var(--text);
+            height: 36px;
+            padding: 0 14px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            line-height: 1;
+            border-bottom-left-radius: var(--radius-housing);
+            border-bottom-right-radius: var(--radius-housing);
+            white-space: nowrap;
+            z-index: 100;
+        }
+
+        .waveform {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 12px;
+        }
+
+        .wave-bar {
+            width: 2px;
+            background: var(--secondary);
+            border-radius: 1px;
+        }
+
+        .agent-mark {
+            width: 28px;
+            height: 28px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .agent-ring {
+            position: absolute;
+            inset: 0;
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+        }
+
+        .agent-ring-inner {
+            position: absolute;
+            inset: 4px;
+            border: 2px solid var(--usage-green);
+            border-radius: 50%;
+        }
+
+        .status-text {
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: -0.01em;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+        }
+
+        .live-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--usage-green);
+        }
+
+        /* Quota Panel */
+        .quota-panel {
+            position: absolute;
+            top: 44px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 386px;
+            background: var(--surface);
+            border-radius: 12px;
+            padding-bottom: 8px;
+            color: var(--text);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            z-index: 90;
+        }
+
+        .qs-header {
+            height: 24px;
+            padding: 0 10px 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .qs-caption {
+            font-size: 10px;
+            color: var(--secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .qs-rings {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            height: 72px;
+            padding: 0 16px;
+            margin-top: 4px;
+        }
+
+        .qs-cell {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            transition: background 0.2s;
+            cursor: pointer;
+        }
+
+        .qs-cell.selected {
+            background: #1c1c20;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.09);
+        }
+
+        .qs-mini-ring {
+            width: 24px;
+            height: 24px;
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+            margin-bottom: 4px;
+        }
+
+        .qs-detail {
+            margin: 8px 16px 0;
+            padding: 8px 12px;
+        }
+
+        .qs-metric-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            height: 28px;
+        }
+
+        .qs-label {
+            font-size: 11px;
+            font-weight: 500;
+            width: 60px;
+        }
+
+        .qs-bar-bg {
+            flex-grow: 1;
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            position: relative;
+        }
+
+        .qs-bar-fill {
+            position: absolute;
+            height: 100%;
+            border-radius: 2px;
+        }
+
+        .qs-percent {
+            font-size: 11px;
+            font-weight: 600;
+            width: 30px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .qs-reset {
+            font-size: 10.5px;
+            color: var(--muted);
+            margin-left: auto;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .qs-footer {
+            margin: 10px 16px 0;
+            padding: 8px 8px 2px;
+            border-top: 1px solid #181818;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 10.5px;
+            color: var(--muted);
+        }
+
+        /* Hover Card */
+        .hover-card {
+            position: absolute;
+            top: 80px;
+            left: 280px;
+            width: 240px;
+            background: var(--surface);
+            border-radius: var(--radius-hover);
+            padding: 12px;
+            color: var(--text);
+            z-index: 110;
+        }
+    </style>
+</head>
+<body>
+    <div class="wallpaper" data-sd-id="1">
+        <!-- Notch Housing -->
+        <div class="notch-housing" id="notch-main" data-sd-id="2">
+            <div class="waveform" data-sd-id="3">
+                <div class="wave-bar" style="height: 8px" data-sd-id="4"></div>
+                <div class="wave-bar" style="height: 12px" data-sd-id="5"></div>
+                <div class="wave-bar" style="height: 6px" data-sd-id="6"></div>
+                <div class="wave-bar" style="height: 10px" data-sd-id="7"></div>
+            </div>
+
+            <div class="agent-mark" data-sd-id="8">
+                <div class="agent-ring" data-sd-id="9"></div>
+                <div class="agent-ring-inner" data-sd-id="10"></div>
+                <iconify-icon icon="lucide:sparkles" class="text-[14px]"></iconify-icon>
+            </div>
+
+            <div class="flex items-center gap-1 leading-none" data-sd-id="11">
+                <iconify-icon icon="lucide:cloud-sun" class="text-secondary text-lg leading-none"></iconify-icon>
+                <span class="status-text" data-sd-id="12">28\u00b0</span>
+            </div>
+
+            <span class="status-text" data-sd-id="13">12:45</span>
+
+            <div class="flex items-center gap-2 leading-none" data-sd-id="14">
+                <iconify-icon icon="lucide:battery" class="text-secondary text-lg rotate-90 leading-none"></iconify-icon>
+                <span class="status-text" data-sd-id="15">70%</span>
+            </div>
+
+            <div class="live-dot" data-sd-id="16"></div>
+        </div>
+
+        <!-- Quota Panel (Open) -->
+        <div class="quota-panel" id="quota-panel-view" data-sd-id="17">
+            <div class="qs-header" data-sd-id="18">
+                <span class="qs-caption" data-sd-id="19">Used</span>
+                <div class="flex gap-1" data-sd-id="20">
+                    <button class="p-1 hover:bg-[#141414] rounded" data-sd-id="21"><iconify-icon icon="lucide:pin" class="text-[#b9b3c1] text-[12px]"></iconify-icon></button>
+                    <button class="p-1 hover:bg-[#141414] rounded" data-sd-id="22"><iconify-icon icon="lucide:x" class="text-[#b9b3c1] text-[14px]"></iconify-icon></button>
+                </div>
+            </div>
+
+            <div class="qs-rings" data-sd-id="23">
+                <div class="qs-cell" data-sd-id="24">
+                    <div class="qs-mini-ring" data-sd-id="25"></div>
+                    <span class="text-[9px] text-muted" data-sd-id="26">GPT-4</span>
+                </div>
+                <div class="qs-cell selected" data-sd-id="27">
+                    <div class="qs-mini-ring" style="border-color: var(--usage-green)" data-sd-id="28"></div>
+                    <span class="text-[9px]" data-sd-id="29">Codex</span>
+                </div>
+                <div class="qs-cell" data-sd-id="30">
+                    <div class="qs-mini-ring" data-sd-id="31"></div>
+                    <span class="text-[9px] text-muted" data-sd-id="32">Claude</span>
+                </div>
+                <div class="qs-cell" data-sd-id="33">
+                    <div class="qs-mini-ring" data-sd-id="34"></div>
+                    <span class="text-[9px] text-muted" data-sd-id="35">Gemini</span>
+                </div>
+                <div class="qs-cell" data-sd-id="36">
+                    <div class="qs-mini-ring" data-sd-id="37"></div>
+                    <span class="text-[9px] text-muted" data-sd-id="38">Local</span>
+                </div>
+            </div>
+
+            <div class="qs-detail" data-sd-id="39">
+                <div class="flex items-center justify-between mb-3" data-sd-id="40">
+                    <h3 class="text-[12px] font-semibold" data-sd-id="41">Codex</h3>
+                    <iconify-icon icon="lucide:settings-2" class="text-muted text-[12px]"></iconify-icon>
+                </div>
+
+                <div class="space-y-1" data-sd-id="42">
+                    <!-- Row 1 -->
+                    <div class="qs-metric-row" data-sd-id="43">
+                        <span class="qs-label" data-sd-id="44">Tokens</span>
+                        <div class="qs-bar-bg" data-sd-id="45">
+                            <div class="qs-bar-fill bg-[#32d74b]" style="width: 45%" data-sd-id="46"></div>
+                        </div>
+                        <span class="qs-percent" data-sd-id="47">45%</span>
+                        <span class="qs-reset" data-sd-id="48">14h</span>
+                    </div>
+                    <!-- Row 2 -->
+                    <div class="qs-metric-row" data-sd-id="49">
+                        <span class="qs-label" data-sd-id="50">Requests</span>
+                        <div class="qs-bar-bg" data-sd-id="51">
+                            <div class="qs-bar-fill bg-[#ffb340]" style="width: 72%" data-sd-id="52"></div>
+                        </div>
+                        <span class="qs-percent" data-sd-id="53">72%</span>
+                        <span class="qs-reset" data-sd-id="54">2h</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="qs-footer" data-sd-id="55">
+                <span data-sd-id="56">Just checked</span>
+                <iconify-icon icon="lucide:refresh-cw" class="text-[10px]"></iconify-icon>
+            </div>
+        </div>
+
+        <!-- Hover Card Example -->
+        <div class="hover-card" id="agent-hover-card" data-sd-id="57">
+            <div class="flex items-baseline justify-between mb-2" data-sd-id="58">
+                <h4 class="text-[12px] font-semibold" data-sd-id="59">Codex Pro</h4>
+                <span class="text-[10px] text-muted font-medium tabular-nums" data-sd-id="60">2 of 7</span>
+            </div>
+            
+            <div class="space-y-2 mt-3" data-sd-id="61">
+                <div class="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2" data-sd-id="62">
+                    <span class="text-[11px] font-medium" data-sd-id="63">Monthly</span>
+                    <div class="w-9 h-[3px] bg-white/10 rounded-full overflow-hidden" data-sd-id="64">
+                        <div class="bg-[#32d74b] h-full" style="width: 30%" data-sd-id="65"></div>
+                    </div>
+                    <span class="text-[11px] font-semibold tabular-nums" data-sd-id="66">30%</span>
+                    <span class="text-[10.5px] text-muted font-normal tabular-nums ml-auto" data-sd-id="66b">18d</span>
+                </div>
+                <div class="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2" data-sd-id="67">
+                    <span class="text-[11px] font-medium" data-sd-id="68">Session</span>
+                    <div class="w-9 h-[3px] bg-white/10 rounded-full overflow-hidden" data-sd-id="69">
+                        <div class="bg-[#ff453a] h-full" style="width: 92%" data-sd-id="70"></div>
+                    </div>
+                    <span class="text-[11px] font-semibold tabular-nums" data-sd-id="71">92%</span>
+                    <span class="text-[10.5px] text-muted font-normal tabular-nums ml-auto" data-sd-id="71b">4h</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Desktop Content Simulator -->
+        <div class="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4" data-sd-id="72">
+            <div class="w-12 h-12 bg-white/20 backdrop-blur rounded-xl border border-white/30" data-sd-id="73"></div>
+            <div class="w-12 h-12 bg-white/20 backdrop-blur rounded-xl border border-white/30" data-sd-id="74"></div>
+            <div class="w-12 h-12 bg-white/20 backdrop-blur rounded-xl border border-white/30" data-sd-id="75"></div>
+            <div class="w-12 h-12 bg-white/20 backdrop-blur rounded-xl border border-white/30" data-sd-id="76"></div>
+        </div>
+    </div>
+
+</body></html>

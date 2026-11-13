@@ -8,11 +8,14 @@ const IDS = [
 	"cursor",
 	"copilot",
 	"devin",
-	"antigravity"
+	"antigravity",
+	"grokbot",
+	"commandcode",
+	"qoder"
 ];
 
 describe("agentName", () => {
-	test("gives the seven exact names", () => {
+	test("gives the ten exact names", () => {
 		expect(IDS.map(agentName)).toEqual([
 			"Claude",
 			"Kiro",
@@ -20,7 +23,10 @@ describe("agentName", () => {
 			"Cursor",
 			"Copilot",
 			"Devin",
-			"Antigravity"
+			"Antigravity",
+			"Grok Bot",
+			"Command Code",
+			"Qoder"
 		]);
 	});
 });

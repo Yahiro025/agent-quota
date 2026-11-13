@@ -4,6 +4,8 @@ Usage limits for the coding agents a person already uses and signs in to.
 
 ## Language
 
+### Quotas and Readings
+
 **Provider**:
 The coding agent whose subscription or account supplies a usage limit.
 
@@ -23,3 +25,24 @@ The last successful reading retained after a newer attempt fails, with its age a
 **Sign-in owner**:
 The coding client that manages its own credentials and renews them when possible.
 _Avoid_: widget-managed login
+
+### Surfaces and Placement
+
+**Seam**:
+The primary-display surface that fuses the resting rail and open overview into one continuous matte-black notch at the display's top edge, or detaches into a rounded floating pill and overview when dragged below that edge.
+_Avoid_: separate notch mode, detached inspector
+
+**Taskbar Focus**:
+The docked presentation that places a two-line readout inside the primary bottom taskbar beside the notification area and opens a detail popup above it.
+
+**Top bar**:
+An application bar or taskbar reserved along the top edge of the primary display (such as MyDockFinder) that shrinks the desktop work area below the physical top edge of the monitor.
+
+### Media
+
+**Lyrics**:
+The words of the currently playing track. Synced lyrics carry a time for each line; unsynced lyrics have none. Bloom has lyrics only for Spotify tracks.
+_Avoid_: captions, subtitles
+
+**Lyrics section**:
+The compact area in the notch that shows the playing track's lyrics. It exists only while the track has lyrics.

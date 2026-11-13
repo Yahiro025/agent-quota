@@ -1,0 +1,25 @@
+package brand
+
+import (
+	"image/color"
+	"image/png"
+	"os"
+	"testing"
+)
+
+func TestWritePreviews(t *testing.T) {
+	poses := map[string]Pose{"locked": {}}
+	poses["moving"], _ = Sample(WidgetProfile.Move/3, WidgetProfile)
+	for name, pose := range poses {
+		f, err := os.Create(".superpowers/sdd/2026-10-15-installer-brand-motion/scratch/" + name + ".png")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := png.Encode(f, Render(96, pose, color.RGBA{R: 139, G: 184, B: 255, A: 255}, color.RGBA{R: 19, G: 17, B: 22, A: 255})); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

@@ -1,7 +1,10 @@
 //! Supervisor for the headless agentquota helper.
 //!
-//! Bloom spawns `agentquota.exe --quota-service` beside its own executable
-//! and keeps it alive for the app's lifetime. The helper speaks one JSON
+//! Bloom is the only installed executable. It carries the quota worker inside
+//! itself and writes that worker to `%LOCALAPPDATA%\com.sehaz.bloom` before
+//! spawning `agentquota.exe --quota-service`. The worker stays a separate
+//! process so a reader crash cannot close the notch, and Bloom keeps it alive
+//! for the app's lifetime. The helper speaks one JSON
 //! object per line on stdout (see the Protocol section of
 //! `docs/superpowers/specs/2026-10-22-bloom-agent-quota-design.md`); stderr
 //! is logs only and never enters the protocol. When the helper dies, the
@@ -19,10 +22,17 @@ use tauri::{AppHandle, Emitter};
 
 /// `hello` opens every session: the helper answers `ready`, then one
 /// snapshot of its current book, then starts a refresh of every agent.
-const HELLO: &[u8] = b"{\"v\":1,\"op\":\"hello\"}\n";
+pub fn hello_line(hidden: &[String]) -> String {
+    let hidden = serde_json::json!(hidden);
+    format!("{{\"v\":1,\"op\":\"hello\",\"hidden\":{hidden}}}\n")
+}
 
 /// Tauri event carrying the readings array to the frontend.
 const EVENT_SNAPSHOT: &str = "quota-snapshot";
+
+/// Settings key holding the agents the frontend has switched off, as a JSON
+/// array string. The helper needs it too: it is what stops the reads.
+pub const HIDDEN_AGENTS_KEY: &str = "bloom-quota-hidden-agents";
 
 /// Breathing room between a helper exit and the next spawn, so a helper
 /// that dies on startup cannot tight-loop the supervisor thread.
@@ -133,6 +143,48 @@ pub fn refresh_line(id: Option<&str>) -> String {
     format!("{{\"v\":1,\"op\":\"refresh\",\"id\":{id}}}\n")
 }
 
+/// Ids a settings value hides. The frontend stores a JSON string; an array is
+/// accepted too, and anything unreadable hides nothing (the old behavior).
+pub fn hidden_ids(value: &Value) -> Vec<String> {
+    let raw = match value {
+        Value::String(raw) => raw.clone(),
+        other => other.to_string(),
+    };
+    serde_json::from_str::<Vec<String>>(&raw).unwrap_or_default()
+}
+
+fn current_hidden_ids() -> Vec<String> {
+    let value = crate::state::SETTINGS_CACHE.get()
+        .and_then(|cache| cache.lock().ok()?.get(HIDDEN_AGENTS_KEY).cloned())
+        .unwrap_or(Value::Null);
+    hidden_ids(&value)
+}
+
+/// One agents request line. It always carries the whole hidden set, so a
+/// toggle that turns an agent back on needs no separate message.
+pub fn agents_line(hidden: &[String]) -> String {
+    let hidden = serde_json::json!(hidden);
+    format!("{{\"v\":1,\"op\":\"agents\",\"hidden\":{hidden}}}\n")
+}
+
+/// Sends the current hidden list to the running helper. A dead or restarting
+/// helper is a no-op; the next spawn reads the same setting from disk.
+pub fn sync_hidden_agents() -> Result<(), String> {
+    let Ok(mut slot) = HELPER_STDIN.lock() else {
+        return Err("quota helper stdin lock poisoned".to_string());
+    };
+    let Some(stdin) = slot.as_mut() else {
+        return Ok(());
+    };
+    // Read after acquiring the pipe lock: a delayed settings event must not
+    // restore an older hidden list over a newer saved value.
+    let line = agents_line(&current_hidden_ids());
+    stdin
+        .write_all(line.as_bytes())
+        .and_then(|()| stdin.flush())
+        .map_err(|e| e.to_string())
+}
+
 /// Fits a requested quota-space height between the resting notch height and
 /// the monitor, so an over-tall panel scrolls instead of overflowing the
 /// screen and a collapsed one lands back at the normal height.
@@ -182,21 +234,57 @@ fn supervise(app: &AppHandle) {
     }
 }
 
-/// The default helper location: `agentquota.exe` beside the running
-/// executable. Falls back to a bare name so a PATH install still resolves.
+/// Bytes of the Go helper produced by `build.rs`. One installed program
+/// carries its own worker instead of shipping a second exe beside it.
+const EMBEDDED_HELPER: &[u8] = include_bytes!(env!("AGENTQUOTA_HELPER"));
+
+/// Writes `embedded` into `dir\agentquota.exe` when the copy there is missing
+/// or different, and returns the path to spawn. A running worker locks the
+/// destination on Windows; that launch keeps the copy already on disk and the
+/// next start replaces it.
+pub fn place_helper(dir: &Path, embedded: &[u8]) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let dest = dir.join("agentquota.exe");
+    if std::fs::read(&dest).ok().as_deref() == Some(embedded) {
+        return Ok(dest);
+    }
+    let tmp = dir.join("agentquota.exe.new");
+    std::fs::write(&tmp, embedded)?;
+    match std::fs::rename(&tmp, &dest) {
+        Ok(()) => Ok(dest),
+        Err(err) if dest.exists() => {
+            let _ = std::fs::remove_file(&tmp);
+            let _ = err;
+            Ok(dest)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+/// Private folder for the extracted worker. The install directory stays a
+/// single `bloom.exe`.
+fn helper_dir() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("com.sehaz.bloom")
+}
+
+/// The helper Bloom spawns: the embedded worker, materialized into the
+/// private app folder. A write failure falls back to a bare name so the
+/// supervisor records the miss instead of panicking the notch open.
 fn helper_exe() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("agentquota.exe")))
-        .unwrap_or_else(|| PathBuf::from("agentquota.exe"))
+    place_helper(&helper_dir(), EMBEDDED_HELPER).unwrap_or_else(|_| PathBuf::from("agentquota.exe"))
 }
 
 /// One helper lifetime: spawn, say hello, consume stdout until EOF or bye,
 /// then reap. A kill is only sent on abnormal ends — after `bye` the child
 /// is already on its way out and killing it could interrupt its cleanup.
 fn run_once(exe: &Path, app: &AppHandle, state: &mut HelperState) -> std::io::Result<()> {
+    let hidden = current_hidden_ids();
+    let agents = hello_line(&hidden);
     let mut child = helper_command(exe).spawn()?;
-    let result = pump(&mut child, app, state);
+    let result = pump(&mut child, app, state, &agents);
     if result.is_err() {
         let _ = child.kill();
     }
@@ -208,11 +296,12 @@ fn run_once(exe: &Path, app: &AppHandle, state: &mut HelperState) -> std::io::Re
 /// `write_refresh` can reach it. A poisoned lock cannot hold the pipe, so
 /// the handle comes back to the caller, which must keep it alive until
 /// the read loop ends — dropping it closes the pipe and the helper exits.
-fn open_pipe(child: &mut Child) -> std::io::Result<Option<ChildStdin>> {
+fn open_pipe(child: &mut Child, agents: &str) -> std::io::Result<Option<ChildStdin>> {
     let Some(mut stdin) = child.stdin.take() else {
         return Ok(None);
     };
-    stdin.write_all(HELLO)?;
+    // One hello installs visibility before starting any reads.
+    stdin.write_all(agents.as_bytes())?;
     stdin.flush()?;
     match HELPER_STDIN.lock() {
         Ok(mut slot) => {
@@ -227,11 +316,18 @@ fn open_pipe(child: &mut Child) -> std::io::Result<Option<ChildStdin>> {
 /// time. After HELLO the child's stdin moves into HELPER_STDIN — dropping
 /// it would close the pipe and make the helper exit — and stderr is left
 /// unread at NUL.
-fn pump(child: &mut Child, app: &AppHandle, state: &mut HelperState) -> std::io::Result<()> {
+fn pump(
+    child: &mut Child,
+    app: &AppHandle,
+    state: &mut HelperState,
+    agents: &str,
+) -> std::io::Result<()> {
     // Parked at pump scope: when HELPER_STDIN is poisoned the pipe comes
     // back in _keep_open, which must live until the read loop ends —
     // dropping it earlier would close the pipe and make the helper exit.
-    let _keep_open = open_pipe(child)?;
+    let _keep_open = open_pipe(child, agents)?;
+    // A save between spawn and parking stdin must reach this lifetime too.
+    let _ = sync_hidden_agents();
     let Some(stdout) = child.stdout.take() else {
         return Ok(());
     };
@@ -264,6 +360,33 @@ fn pump(child: &mut Child, app: &AppHandle, state: &mut HelperState) -> std::io:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn place_helper_writes_and_replaces_the_private_copy() {
+        let dir = std::env::temp_dir().join(format!("bloom-helper-place-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let first = place_helper(&dir, b"one").unwrap();
+        assert_eq!(std::fs::read(&first).unwrap(), b"one");
+
+        // Same bytes leave the file in place.
+        let again = place_helper(&dir, b"one").unwrap();
+        assert_eq!(again, first);
+        assert_eq!(std::fs::read(&first).unwrap(), b"one");
+
+        let replaced = place_helper(&dir, b"two").unwrap();
+        assert_eq!(std::fs::read(&replaced).unwrap(), b"two");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hello_installs_visibility_in_the_first_message() {
+        let line = hello_line(&["claude".into(), "quoted\"id".into()]);
+        let value: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(value["op"], "hello");
+        assert_eq!(value["hidden"], serde_json::json!(["claude", "quoted\"id"]));
+        assert_eq!(line.lines().count(), 1);
+    }
 
     #[test]
     fn helper_argv_is_quota_service() {
@@ -306,10 +429,7 @@ mod tests {
         assert_eq!(state.readings[0]["id"], "kiro");
 
         // Bye does not clear readings and does not set unavailable.
-        assert_eq!(
-            apply_line(&mut state, r#"{"v":1,"op":"bye"}"#),
-            Apply::Bye
-        );
+        assert_eq!(apply_line(&mut state, r#"{"v":1,"op":"bye"}"#), Apply::Bye);
         assert_eq!(state.readings.len(), 2);
         assert!(!state.unavailable);
     }
@@ -325,7 +445,10 @@ mod tests {
         // An error line and a non-JSON line keep the snapshot and leave
         // unavailable false.
         assert_eq!(
-            apply_line(&mut state, r#"{"v":1,"op":"error","message":"kiro timeout"}"#),
+            apply_line(
+                &mut state,
+                r#"{"v":1,"op":"error","message":"kiro timeout"}"#
+            ),
             Apply::Error
         );
         assert_eq!(state.readings.len(), 1);
@@ -376,7 +499,7 @@ mod tests {
 
         // Healthy lock: the pipe moves into HELPER_STDIN for refresh.
         let mut child = spawn();
-        assert!(open_pipe(&mut child).unwrap().is_none());
+        assert!(open_pipe(&mut child, &hello_line(&[])).unwrap().is_none());
         assert!(HELPER_STDIN.lock().unwrap().is_some());
         *HELPER_STDIN.lock().unwrap() = None;
         let _ = child.kill();
@@ -389,7 +512,7 @@ mod tests {
             panic!("poison the helper stdin lock");
         }));
         let mut child = spawn();
-        let mut stdin = open_pipe(&mut child)
+        let mut stdin = open_pipe(&mut child, &hello_line(&[]))
             .unwrap()
             .expect("poisoned lock returns the pipe to hold");
         stdin.write_all(b"echo alive\r\n").unwrap();

@@ -1,0 +1,67 @@
+{
+  "foreground": 262882,
+  "host": 12129830,
+  "native_fits": true,
+  "native_visible": true,
+  "owner": 5773444,
+  "owner_bounds": {
+    "Min": {
+      "X": 1097,
+      "Y": 709
+    },
+    "Max": {
+      "X": 1722,
+      "Y": 1142
+    }
+  },
+  "owner_exstyle": 134742152,
+  "owner_visible": false,
+  "session": 8732672001189826457,
+  "snapshot": {
+    "Available": true,
+    "Fits": false,
+    "Hidden": true,
+    "Bounds": {
+      "Min": {
+        "X": 0,
+        "Y": 1198
+      },
+      "Max": {
+        "X": 1920,
+        "Y": 1248
+      }
+    },
+    "Tray": {
+      "Min": {
+        "X": 1485,
+        "Y": 1198
+      },
+      "Max": {
+        "X": 1920,
+        "Y": 1248
+      }
+    },
+    "Readout": {
+      "Min": {
+        "X": 1333,
+        "Y": 1199
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1247
+      }
+    },
+    "DPI": 120,
+    "Build": 3044366288
+  },
+  "task_buttons": {
+    "Min": {
+      "X": 120,
+      "Y": 1198
+    },
+    "Max": {
+      "X": 1327,
+      "Y": 1248
+    }
+  }
+}

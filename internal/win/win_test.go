@@ -1,6 +1,7 @@
 package win
 
 import (
+	"image"
 	"runtime"
 	"testing"
 	"time"
@@ -99,5 +100,74 @@ func TestLoopRetainsWindowThread(t *testing.T) {
 	}
 	if after != owner {
 		t.Fatalf("UI moved from window owner thread %d to thread %d", owner, after)
+	}
+}
+
+// Probe windows must not run the app's message handler: the callback is nil in
+// a bare test process.
+var probeWindowProc = windows.NewCallback(func(h, msg, w, l uintptr) uintptr {
+	r, _, _ := pDefWindowProc.Call(h, msg, w, l)
+	return r
+})
+
+// probeWindow creates and shows a real top-level window exactly covering r.
+// WS_EX_LAYERED with zero alpha keeps the desktop visually untouched while the
+// window is still genuinely visible and covering the monitor.
+func probeWindow(t *testing.T, class string, style, exstyle uintptr, r image.Rectangle) uintptr {
+	t.Helper()
+	cls, _ := windows.UTF16PtrFromString(class)
+	var kc wndClassEx
+	kc.size = uint32(unsafe.Sizeof(kc))
+	kc.proc = probeWindowProc
+	kc.className = cls
+	pRegisterClass.Call(uintptr(unsafe.Pointer(&kc)))
+	h, _, err := pCreateWindowEx.Call(exstyle|wsExLayered, uintptr(unsafe.Pointer(cls)), 0, style,
+		uintptr(r.Min.X), uintptr(r.Min.Y), uintptr(r.Dx()), uintptr(r.Dy()), 0, 0, 0, 0)
+	runtime.KeepAlive(cls)
+	if h == 0 {
+		t.Fatalf("create %q window: %v", class, err)
+	}
+	user32.NewProc("SetLayeredWindowAttributes").Call(h, 0, 0, 2) // LWA_ALPHA
+	pShowWindow.Call(h, swShowNoactivate)
+	return h
+}
+
+// A captionless popup covering the primary monitor is fullscreen; a titled
+// window of the same size is an ordinary maximised app on an auto-hide
+// taskbar, and a tool window is a same-band appbar such as MyDockFinder.
+func TestFullscreenForDistinguishesBorderlessFullscreenFromTitledAndToolWindows(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	dpi := user32.NewProc("SetThreadDpiAwarenessContext")
+	previous, _, _ := dpi.Call(^uintptr(3))
+	defer dpi.Call(previous)
+	// A probe must not be excused as the app's own window.
+	own := hwnd
+	hwnd = 0
+	defer func() { hwnd = own }()
+	mon := MonitorBounds()
+	if mon.Empty() {
+		t.Fatal("no primary monitor bounds")
+	}
+	for _, tc := range []struct {
+		name    string
+		class   string
+		style   uintptr
+		exstyle uintptr
+		want    bool
+	}{
+		{"borderless fullscreen", "AgentQuotaFullscreenProbe", wsPopup, 0, true},
+		{"titled window", "AgentQuotaTitledProbe", 0x00CF0000, 0, false}, // WS_OVERLAPPEDWINDOW
+		{"tool window", "AgentQuotaToolProbe", wsPopup, wsExToolwindow | wsExNoactivate, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			probe := probeWindow(t, tc.class, tc.style, tc.exstyle, mon)
+			defer func() {
+				user32.NewProc("DestroyWindow").Call(probe)
+			}()
+			if got := FullscreenFor(probe); got != tc.want {
+				t.Fatalf("FullscreenFor(%s) = %v, want %v", tc.name, got, tc.want)
+			}
+		})
 	}
 }

@@ -6,18 +6,10 @@ pub fn run_update_check_on_startup() -> bool {
     false
 }
 
-// Website announcements are off; only the test reads this so far, and the
-// hook keeps the same flag on the frontend.
-#[allow(dead_code)]
-pub fn show_announcements() -> bool {
-    false
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
     fn excluded_features_stay_off() {
         assert!(!super::run_update_check_on_startup());
-        assert!(!super::show_announcements());
     }
 }

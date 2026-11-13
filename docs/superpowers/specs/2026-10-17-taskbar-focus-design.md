@@ -2,6 +2,10 @@
 
 Status: Focus selected and written specification approved by the user on 2026-10-17.
 
+Probe exception, 2026-10-17: the user subsequently authorized the recommended disposable native deskband feasibility investigation ("do that yourself"). An Explorer-loaded C++ probe is permitted for that investigation. The product's final native architecture and any changed interaction remain conditional on the findings; the existing app is not replaced by the probe.
+
+Implementation authorization, 2026-10-17: the user subsequently instructed the agent to finish all remaining work autonomously, including the native implementation and installation. The pixel-only C++ deskband is now authorized for production; this supersedes the earlier probe-only and pure-Go/out-of-process constraints. The initial Windows enabling confirmation is retained. See [revision-specific verification](../../verification/taskbar-focus/verification.md) for implemented behavior and limits.
+
 ## Intent and selected reference
 
 Dragging Agent Quota onto the taskbar should turn it into a compact status readout beside the system indicators. Usage must remain readable without opening a popup. Clicking the readout opens Focus: a vertical agent rail beside one selected agent's details.

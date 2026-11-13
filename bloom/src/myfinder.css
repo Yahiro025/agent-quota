@@ -1,0 +1,995 @@
+/* MyFinder owns the bar's material; Bloom paints only its centre controls
+   and the menu underneath. These variables never change saved themes. */
+.myfinder-status {
+	position: absolute;
+	top: 0;
+	left: 50%;
+	z-index: 4;
+	padding: 0 12px;
+	box-sizing: border-box;
+	color: var(--myfinder-strip-ink);
+	--bloom-text: var(--myfinder-strip-ink);
+	font:
+		12px/1.4 Inter,
+		sans-serif;
+	font-variant-numeric: tabular-nums;
+}
+.myfinder-status .main-row {
+	height: var(--myfinder-bar-height);
+}
+.myfinder-status::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: var(--myfinder-native-height);
+	height: max(0px, calc(var(--myfinder-bar-height) - var(--myfinder-native-height)));
+	background: var(--bloom-bg-expanded);
+	pointer-events: none;
+}
+.myfinder-status .main-row-inner {
+	max-width: 100%;
+}
+/* One voice across the strip: MyFinder's own readouts are a single weight in
+   the bar's ink, so Bloom's follow, with each unit dimmed behind its number. */
+.myfinder-status .pill-cluster,
+.myfinder-status .passive-features-group {
+	gap: 14px;
+	color: inherit;
+}
+.myfinder-status .time,
+.myfinder-status .passive-feature .label {
+	font-size: 12.5px;
+	font-weight: 500;
+	letter-spacing: 0;
+	opacity: 1;
+	margin-bottom: 0;
+}
+.myfinder-status .unit {
+	opacity: 0.7;
+}
+.myfinder-status .passive-feature > svg {
+	width: 13px;
+	height: 13px;
+	stroke-width: 1.75;
+}
+/* Two short lines, as MyFinder draws its own paired readouts. The fixed width
+   keeps the strip from twitching as the speeds change. */
+.net-stack {
+	display: grid;
+	min-width: 44px;
+	grid-template-columns: auto auto;
+	justify-content: start;
+	align-items: center;
+	column-gap: 3px;
+	row-gap: 1px;
+	font-size: 9.5px;
+	font-weight: 600;
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+}
+
+/* The quota chip is Bloom's black housing at bar scale. A ring around the logo
+   caps the logo at half the bar's height, so here the housing itself is the
+   gauge: its outline and tint are clipped left to right to --quota-fill, and
+   the logo keeps the full inner height. Nothing leaves the bar. */
+.quota-chip {
+	position: relative;
+	isolation: isolate;
+	display: flex;
+	align-items: center;
+	height: 22px;
+	padding-right: 9px;
+	border-radius: 11px;
+	background: #000;
+	color: #f4f2f6;
+	--quota-fill: 0%;
+	--quota-color: transparent;
+}
+.quota-chip::before,
+.quota-chip::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	border: 2px solid #ffffff24;
+	border-radius: inherit;
+	pointer-events: none;
+	transition: border-color 0.2s ease;
+}
+.quota-chip::after {
+	border-color: var(--quota-color);
+	background: color-mix(in srgb, var(--quota-color) 22%, transparent);
+	clip-path: inset(0 calc(100% - var(--quota-fill)) 0 0);
+	transition:
+		clip-path 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+		border-color 0.3s ease,
+		background-color 0.3s ease;
+}
+.quota-chip[data-state="stale"]::after {
+	opacity: 0.55;
+}
+.quota-chip-value {
+	margin-left: 1px;
+	font-size: 12.5px;
+	font-weight: 600;
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+}
+.quota-chip .unit {
+	opacity: 0.72;
+}
+/* The mark is the one control that cycles agents; the rest of the chip opens
+   the panel. Its button fills the chip's left end so the target is 26 by 22. */
+.quota-chip .notch-quota-badge {
+	width: 26px;
+	height: 22px;
+}
+.quota-chip .notch-quota-mark {
+	display: block;
+}
+.quota-chip-mark {
+	display: block;
+	width: 16px;
+	height: 16px;
+	transition: transform 0.12s ease;
+}
+.quota-chip .notch-quota-badge:active .quota-chip-mark {
+	transform: scale(0.92);
+}
+@media (hover: hover) {
+	.quota-chip:hover::before {
+		border-color: #ffffff3d;
+	}
+	.quota-chip .notch-quota-badge:hover .quota-chip-mark {
+		transform: scale(1.08);
+	}
+}
+
+/* The compact quota strip in MyFinder's bar is one black housing. Each agent
+   is a segment: its logo inside the ring pair (inner 5h, outer week), then its
+   percent while there is room. stripFit.ts decides how much each segment
+   shows; its width constants mirror the sizes below. */
+.myfinder-status .pill-cluster.has-quota-strip {
+	gap: 10px;
+}
+.myfinder-status .quota-housing {
+	gap: 0;
+	height: 22px;
+	padding: 0 3px;
+	border-radius: 11px;
+	background: #000;
+	box-shadow: inset 0 0 0 1px #ffffff1f;
+	color: #f4f2f6;
+	cursor: pointer;
+	/* The ring track mixes from --bloom-text, which is dark ink on a light bar. */
+	--bloom-text: #f4f2f6;
+}
+.myfinder-status .quota-housing .quota-seg {
+	width: auto;
+	height: 22px;
+	padding: 0 5px;
+	gap: 4px;
+	border-radius: 11px;
+	color: #f4f2f6;
+	transition: background-color 0.15s ease;
+}
+.myfinder-status .quota-housing .quota-seg.selected {
+	background: #ffffff1a;
+}
+.quota-housing .qs-ring,
+.quota-housing .qs-ring-svg {
+	width: 20px;
+	height: 20px;
+}
+.quota-housing .qs-mark {
+	inset: 5px;
+}
+.quota-housing .qs-mark svg,
+.quota-housing .qs-mark img {
+	border-radius: 3px;
+}
+.quota-housing .quota-seg[data-state="failed"] .qs-ring-track {
+	stroke: #ff453a66;
+}
+.quota-housing .quota-seg[data-state="waiting"] .qs-mark {
+	opacity: 0.5;
+}
+.quota-seg-value {
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+}
+.quota-seg-value[data-band="amber"] {
+	color: #ffd60a;
+}
+.quota-seg-value[data-band="red"] {
+	color: #ff6961;
+}
+.quota-seg-value .unit {
+	margin-left: 0.5px;
+	font-size: 10px;
+	opacity: 0.6;
+}
+.quota-seg-second {
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+	color: #f4f2f68c;
+}
+.myfinder-status .quota-housing .quota-seg-more {
+	width: 30px;
+	padding: 0;
+	font-size: 11px;
+	font-weight: 600;
+	color: #f4f2f6b3;
+}
+/* The narrowest state: one dot in the band of the fullest agent. */
+.myfinder-status .quota-housing[data-stage="dot"] {
+	padding: 0;
+}
+.myfinder-status .quota-housing .quota-dot {
+	width: 22px;
+	height: 22px;
+	border-radius: 11px;
+}
+.quota-dot::before {
+	content: "";
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #9898a0;
+}
+.quota-dot[data-band="green"]::before {
+	background: #32d74b;
+}
+.quota-dot[data-band="amber"]::before {
+	background: #ffd60a;
+}
+.quota-dot[data-band="red"]::before {
+	background: #ff453a;
+}
+/* Expand and Pin wait at the housing's left end until the pointer is on the
+   row. The strip's right edge is fixed, so opening them moves no agent. */
+.myfinder-status .quota-housing .notch-quota-controls {
+	gap: 2px;
+	margin: 0;
+	max-width: 0;
+	overflow: hidden;
+	opacity: 0;
+	transition:
+		max-width 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+		opacity 0.15s ease;
+}
+.myfinder-status .quota-housing .notch-quota-ctl {
+	width: 22px;
+	height: 22px;
+	border-radius: 11px;
+	color: #f4f2f6b3;
+}
+.myfinder-status .quota-housing .notch-quota-ctl.active {
+	color: #f4f2f6;
+	background: #ffffff24;
+}
+@media (hover: hover) {
+	.myfinder-status .pill-cluster:hover .quota-housing .notch-quota-controls {
+		max-width: 48px;
+		opacity: 1;
+	}
+	.myfinder-status .quota-housing .quota-seg:hover,
+	.myfinder-status .quota-housing .quota-dot:hover,
+	.myfinder-status .quota-housing .notch-quota-ctl:hover {
+		background: #ffffff24;
+		color: #f4f2f6;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.myfinder-status .quota-housing .notch-quota-controls,
+	.myfinder-status .quota-housing .quota-seg {
+		transition: none;
+	}
+}
+
+/* Light mode overrides to ensure translucent light MyFinder material has crisp dark ink
+   even if the user's settings.json has bloom-theme-mode: dark. */
+.myfinder-integrated.myfinder-light {
+	--bloom-text: #202428 !important;
+	--bloom-text-muted: #50565e !important;
+	--bloom-border: #aeb2bc !important;
+	--bloom-accent: #365d70 !important;
+	--myfinder-strip-ink: #171b20 !important;
+	--usage-normal-text: #47725a !important;
+	--usage-warning-text: #80662e !important;
+	--usage-critical-text: #91524d !important;
+}
+
+.myfinder-light .myfinder-status {
+	color: #171b20 !important;
+	--bloom-text: #171b20 !important;
+}
+.myfinder-light .myfinder-status .main-row {
+	color: #171b20 !important;
+}
+.myfinder-light .myfinder-status .pill-activity-button:hover,
+.myfinder-light .myfinder-status .time-flip-container:hover {
+	background: #ffffff24;
+	border-radius: 4px;
+}
+
+.myfinder-panel.bloom {
+	background: var(--bloom-bg-expanded);
+	border-radius: 16px !important;
+	border: 1px solid color-mix(in srgb, var(--bloom-text) 18%, transparent);
+	/* The native region is exactly this box, so a shadow would be cut off hard. */
+	box-shadow: none;
+	--notch-bg: var(--bloom-bg-expanded);
+	--surface-bg: transparent;
+	/* No scrollbar chrome: each panel is sized to its content, and the rare
+	   over-screen case still scrolls by wheel/trackpad. */
+	scrollbar-width: none;
+	overscroll-behavior: contain;
+	backdrop-filter: blur(24px);
+	-webkit-backdrop-filter: blur(24px);
+}
+.myfinder-panel.bloom::-webkit-scrollbar {
+	display: none;
+}
+
+.myfinder-light .myfinder-panel.bloom {
+	background: rgb(222 222 228) !important;
+	backdrop-filter: blur(24px) !important;
+	-webkit-backdrop-filter: blur(24px) !important;
+	border: 1px solid #0000002e !important;
+	border-radius: 16px !important;
+	box-shadow: none !important;
+	color: #202428 !important;
+}
+
+/* These panels were laid out for a pill whose first 36px is the status row. Inside
+   MyFinder that row is the bar itself, so reserving it left a blank band above the
+   content and 36px too little room below. */
+.myfinder-panel .calendar-timer-content,
+.myfinder-panel .calendar-timer-content.split-view,
+.myfinder-panel .shelf-content {
+	top: 0;
+	height: 100%;
+	margin-top: 0;
+}
+.myfinder-integrated .qs-menu .qs-error { color: var(--usage-critical-text); }
+/* Fill the pill: a shrink-wrapped viewport centred by .bloom overflows both
+   sides when the pill is narrower than its content, clipping the left edge. */
+.myfinder-panel .quota-viewport {
+	overflow: visible;
+	max-height: none;
+	width: 100%;
+}
+.myfinder-panel .qs-menu {
+	width: 100%;
+	min-width: 0;
+	max-width: 100%;
+	padding: 8px 0;
+}
+.qs-menu .qs-header,
+.myfinder-panel-body .qs-header {
+	height: auto;
+	min-height: 36px;
+	padding: 10px 8px 6px;
+	gap: 8px;
+	box-sizing: border-box;
+}
+.qs-menu-title {
+	font-size: 14px;
+	font-weight: 600;
+	letter-spacing: -0.015em;
+	color: var(--bloom-text);
+}
+.qs-menu .qs-caption {
+	font-size: 12px;
+	color: var(--bloom-text-muted);
+}
+.qs-menu .qs-icon-btn,
+.myfinder-panel-body .qs-icon-btn {
+	width: 28px;
+	height: 28px;
+	border-radius: 7px;
+	color: var(--bloom-text-muted);
+	background: transparent;
+	border: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	padding: 0;
+	transition:
+		background-color 120ms ease,
+		color 120ms ease;
+}
+@media (hover: hover) {
+	.qs-menu .qs-icon-btn:hover,
+	.myfinder-panel-body .qs-icon-btn:hover {
+		background: color-mix(in srgb, var(--bloom-text) 9%, transparent);
+		color: var(--bloom-text);
+	}
+	.myfinder-light .qs-menu .qs-icon-btn:hover,
+	.myfinder-light .myfinder-panel-body .qs-icon-btn:hover {
+		background: rgba(0, 0, 0, 0.08);
+		color: #202428;
+	}
+}
+.qs-menu .qs-icon-btn[aria-pressed="true"],
+.qs-menu .qs-icon-btn.active,
+.myfinder-panel-body .qs-icon-btn[aria-pressed="true"],
+.myfinder-panel-body .qs-icon-btn.active {
+	background: color-mix(in srgb, var(--bloom-accent) 22%, transparent);
+	color: var(--bloom-text);
+}
+.myfinder-light .qs-menu .qs-icon-btn,
+.myfinder-light .myfinder-panel-body .qs-icon-btn {
+	color: #50565e;
+}
+.myfinder-light .qs-menu .qs-icon-btn[aria-pressed="true"],
+.myfinder-light .qs-menu .qs-icon-btn.active,
+.myfinder-light .myfinder-panel-body .qs-icon-btn[aria-pressed="true"],
+.myfinder-light .myfinder-panel-body .qs-icon-btn.active {
+	background: #bec9d1 !important;
+	color: #244e63 !important;
+}
+
+/* Navigation tabs in integrated menu mode */
+.qs-menu-nav {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 0 8px;
+	margin-bottom: 8px;
+	border-bottom: 1px solid color-mix(in srgb, var(--bloom-border) 55%, transparent);
+	box-sizing: border-box;
+}
+.qs-menu-nav-tab {
+	background: none;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	margin-bottom: -1px;
+	padding: 6px 2px 8px;
+	color: var(--bloom-text-muted);
+	font-size: 12px;
+	font-weight: 500;
+	font-family: inherit;
+	cursor: pointer;
+	transition:
+		color 120ms ease,
+		border-color 120ms ease;
+}
+.qs-menu-nav-tab[aria-pressed="true"] {
+	color: var(--bloom-text);
+	border-bottom-color: var(--bloom-accent);
+	font-weight: 600;
+}
+.qs-menu-nav-tab:disabled {
+	opacity: 0.38;
+	cursor: default;
+}
+.myfinder-light .qs-menu-nav-tab {
+	color: #50565e;
+}
+.myfinder-light .qs-menu-nav-tab[aria-pressed="true"] {
+	color: #202428 !important;
+	border-bottom-color: #426578 !important;
+	font-weight: 600;
+}
+@media (hover: hover) {
+	.qs-menu-nav-tab:hover:not(:disabled) {
+		color: var(--bloom-text);
+	}
+	.myfinder-light .qs-menu-nav-tab:hover:not(:disabled) {
+		color: #202428;
+	}
+}
+
+/* Integrated Music & Controls panel wrapper so header + nav sit cleanly above content */
+.myfinder-panel-body {
+	width: 100%;
+	/* Content-sized: App measures this box and gives the dropdown exactly
+	   this height, so the Music and Controls panels never scroll. Shrink 0
+	   keeps the box at its content height while the pill animates to it. */
+	height: auto;
+	flex: 0 0 auto;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	padding: 8px 0 0;
+	box-sizing: border-box;
+}
+.myfinder-panel .command-center-content-minimal,
+.myfinder-panel .myfinder-panel-body .command-center-content-minimal {
+	position: relative;
+	top: auto;
+	left: auto;
+	height: auto;
+	flex: 0 0 auto;
+	padding: 6px 4px 12px;
+	border-radius: 0;
+}
+.myfinder-panel .expanded-music-container,
+.myfinder-panel .myfinder-panel-body .expanded-music-container {
+	position: relative;
+	width: 100%;
+	flex: 0 0 auto;
+	min-height: 0;
+	height: auto;
+	padding: 4px 4px 12px;
+}
+.myfinder-light .slider-track-premium,
+.myfinder-light .cc-classic-slider-track {
+	background: rgba(0, 0, 0, 0.12);
+}
+.myfinder-light .slider-track-premium:hover,
+.myfinder-light .cc-classic-slider-row:hover .cc-classic-slider-track {
+	background: rgba(0, 0, 0, 0.18);
+}
+.myfinder-light .cmp-art-placeholder {
+	background: rgba(0, 0, 0, 0.08);
+	color: rgba(0, 0, 0, 0.45);
+}
+.myfinder-light .cc-circular-btn.active:hover {
+	background: rgba(32, 36, 40, 0.88);
+	color: #ffffff;
+}
+
+/* One grid for the list, subgrid per row: the bar, percent and reset columns
+   are sized once for all rows, so bars start and end at the same x. */
+.qs-menu-rows {
+	display: grid;
+	grid-template-columns: 128px minmax(64px, 1fr) 38px auto;
+	column-gap: 10px;
+	row-gap: 2px;
+	padding: 0;
+	box-sizing: border-box;
+}
+.qs-menu-row {
+	position: relative;
+	isolation: isolate;
+	display: grid;
+	grid-column: 1 / -1;
+	grid-template-columns: subgrid;
+	align-items: center;
+	min-height: 32px;
+	padding: 6px 8px;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--bloom-text);
+	font:
+		500 12.5px/1.35 Inter,
+		sans-serif;
+	text-align: left;
+	cursor: pointer;
+	box-sizing: border-box;
+	transition:
+		background-color 120ms ease,
+		box-shadow 120ms ease;
+}
+.qs-row-hover {
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	z-index: 0;
+	pointer-events: none;
+	background: rgba(255, 255, 255, 0.065);
+}
+.myfinder-light .qs-row-hover {
+	background: rgba(0, 0, 0, 0.055);
+}
+.qs-menu-row[data-selected="true"],
+.qs-menu-row[aria-pressed="true"] {
+	background: rgba(255, 255, 255, 0.11);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.myfinder-light .qs-menu-row {
+	color: #202428;
+}
+.myfinder-light .qs-menu-row[data-selected="true"],
+.myfinder-light .qs-menu-row[aria-pressed="true"] {
+	background: rgba(0, 0, 0, 0.085) !important;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+	color: #202428 !important;
+}
+.qs-menu-identity,
+.qs-menu-reading > span,
+.qs-menu-reset {
+	position: relative;
+	z-index: 1;
+}
+.qs-menu-identity {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.qs-menu-row[data-selected="true"] .qs-menu-identity {
+	font-weight: 600;
+}
+.qs-menu-mark {
+	width: 16px;
+	height: 16px;
+	flex-shrink: 0;
+}
+.qs-menu-reading {
+	display: contents;
+}
+.qs-menu-reading > span {
+	font-variant-numeric: tabular-nums;
+	font-size: 12px;
+}
+/* "Checking…" and "Unavailable" have no bar: they span the bar and percent. */
+.qs-menu-reading > span:first-child:last-child {
+	grid-column: 2 / 4;
+	text-align: left;
+	color: var(--bloom-text-muted);
+	font-weight: 400;
+}
+.qs-menu-bar {
+	grid-column: 2;
+}
+.myfinder-light .qs-menu-bar,
+.myfinder-light .qs-menu-rows .qs-menu-bar {
+	background: rgba(0, 0, 0, 0.14);
+}
+.myfinder-light .qs-menu-rows .qs-meter[data-band="green"] > span {
+	background: #1f9d45;
+}
+.myfinder-light .qs-menu-rows .qs-meter[data-band="amber"] > span {
+	background: #c98800;
+}
+.myfinder-light .qs-menu-rows .qs-meter[data-band="red"] > span {
+	background: #d9382e;
+}
+.qs-menu-row[data-state="stale"] .qs-menu-bar {
+	opacity: 0.58;
+}
+.qs-menu-reading > span:last-child {
+	grid-column: 3;
+	color: var(--bloom-text);
+	font-size: 12px;
+	font-weight: 600;
+	text-align: right;
+	white-space: nowrap;
+}
+.myfinder-light .qs-menu-reading > span:last-child {
+	color: #202428;
+}
+.qs-menu-reset {
+	grid-column: 4;
+	text-align: right;
+	color: var(--bloom-text-muted);
+	font-size: 11.5px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.myfinder-light .qs-menu-reset {
+	color: #50565e;
+}
+.qs-menu .qs-display.spotlight-card,
+.myfinder-light .qs-menu .qs-display.spotlight-card {
+	margin: 10px 0 0;
+	padding: 14px 16px;
+	border-radius: 12px;
+	background: linear-gradient(180deg, #16171c 0%, #0e0f13 100%) !important;
+	color: #f4f2f6 !important;
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 2px 10px rgba(0, 0, 0, 0.24);
+	--spotlight-card-surface: transparent;
+	--spotlight-card-border: rgba(255, 255, 255, 0.1);
+	--bloom-text: #f4f2f6;
+	--bloom-text-muted: #9898a0;
+	--bloom-border: rgba(255, 255, 255, 0.1);
+	--usage-normal-text: #32D74B;
+	--usage-warning-text: #FFD60A;
+	--usage-critical-text: #FF453A;
+}
+.qs-menu .qs-display .qs-line.qs-error,
+.myfinder-light .qs-menu .qs-display .qs-line.qs-error {
+	color: #ff6961 !important;
+}
+.qs-menu .qs-display .qs-line.qs-stale,
+.myfinder-light .qs-menu .qs-display .qs-line.qs-stale {
+	color: #ffd60a !important;
+}
+
+/* Compact MyFinder view: all enabled agents rendered as QuotaChip capsules
+   in a 4-column grid, plus a single-line inspected readout strip below. */
+.qs-menu-chips {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 8px;
+	padding: 4px 8px 8px;
+	box-sizing: border-box;
+}
+.qs-chip-btn {
+	width: 100%;
+	min-width: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 14px;
+	background: transparent;
+	cursor: pointer;
+	display: block;
+}
+.qs-chip-btn .quota-chip {
+	width: 100%;
+	height: 28px;
+	padding: 0 9px 0 6px;
+	border-radius: 14px;
+	justify-content: space-between;
+	box-sizing: border-box;
+	transition:
+		box-shadow 140ms ease,
+		transform 140ms ease;
+}
+.qs-chip-mark {
+	width: 16px;
+	height: 16px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.qs-chip-mark svg,
+.qs-chip-mark img {
+	width: 100%;
+	height: 100%;
+	display: block;
+	border-radius: 4px;
+}
+@media (hover: hover) {
+	.qs-chip-btn:hover .quota-chip {
+		transform: translateY(-1px);
+		box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
+	}
+	.qs-chip-btn:hover .quota-chip::before {
+		border-color: #ffffff4d;
+	}
+}
+.qs-chip-btn[aria-pressed="true"] .quota-chip,
+.qs-chip-btn[aria-pressed="true"]:hover .quota-chip {
+	box-shadow:
+		0 0 0 1.5px var(--bloom-bg-expanded),
+		0 0 0 3px var(--bloom-accent);
+}
+.myfinder-light .qs-chip-btn[aria-pressed="true"] .quota-chip,
+.myfinder-light .qs-chip-btn[aria-pressed="true"]:hover .quota-chip {
+	box-shadow:
+		0 0 0 1.5px rgb(222 222 228),
+		0 0 0 3px var(--bloom-accent);
+}
+.qs-chip-btn[data-state="failed"] .quota-chip::before {
+	border-color: rgba(255, 69, 58, 0.45);
+}
+.qs-chip-btn[data-state="failed"] .quota-chip-value {
+	color: #ff6961;
+}
+.qs-chip-btn[data-state="waiting"] .quota-chip-value {
+	color: #9898a0;
+}
+.qs-compact-detail {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	min-height: 28px;
+	margin: 2px 8px 0;
+	padding: 5px 10px;
+	border-radius: 8px;
+	background: rgba(255, 255, 255, 0.055);
+	border: 1px solid rgba(255, 255, 255, 0.07);
+	color: var(--bloom-text);
+	font-size: 11.5px;
+	line-height: 1.3;
+	box-sizing: border-box;
+}
+.myfinder-light .qs-compact-detail {
+	background: rgba(0, 0, 0, 0.055);
+	border-color: rgba(0, 0, 0, 0.08);
+	color: #202428;
+}
+.qs-compact-identity {
+	min-width: 0;
+	flex: 1 1 auto;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.qs-compact-name {
+	font-weight: 600;
+	color: inherit;
+}
+.qs-compact-plan {
+	color: var(--bloom-text-muted);
+	font-weight: 400;
+}
+.qs-compact-meta {
+	min-width: 0;
+	flex: 0 1 auto;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	overflow: hidden;
+}
+.qs-compact-summary,
+.qs-compact-status {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--bloom-text);
+}
+.qs-compact-status {
+	color: var(--bloom-text-muted);
+}
+.qs-compact-reset {
+	flex-shrink: 0;
+	color: var(--bloom-text-muted);
+}
+.qs-compact-error {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--usage-critical-text);
+}
+.qs-compact-stale {
+	flex-shrink: 0;
+	color: var(--usage-warning-text);
+	font-weight: 500;
+}
+.qs-compact-retry {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 7px;
+	border-radius: 5px;
+	border: 1px solid rgba(255, 255, 255, 0.14);
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--bloom-text);
+	font-size: 10.5px;
+	font-weight: 500;
+	font-family: inherit;
+	cursor: pointer;
+	transition: background-color 120ms ease;
+}
+.myfinder-light .qs-compact-retry {
+	border-color: rgba(0, 0, 0, 0.14);
+	background: rgba(0, 0, 0, 0.06);
+	color: #202428;
+}
+@media (hover: hover) {
+	.qs-compact-retry:hover {
+		background: rgba(255, 255, 255, 0.14);
+	}
+	.myfinder-light .qs-compact-retry:hover {
+		background: rgba(0, 0, 0, 0.12);
+	}
+}
+.myfinder-light .qs-compact-plan,
+.myfinder-light .qs-compact-status,
+.myfinder-light .qs-compact-reset {
+	color: #50565e;
+}
+
+.qs-menu .qs-footer {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin: 6px 0 0;
+	padding: 6px 8px 2px;
+	border-top: 0;
+	min-height: 30px;
+	color: var(--bloom-text-muted);
+	font-size: 11.5px;
+	gap: 16px;
+	box-sizing: border-box;
+}
+.qs-menu .qs-footer-refresh {
+	margin-left: auto;
+}
+.qs-menu .qs-footer button {
+	border: 0;
+	background: none;
+	color: var(--bloom-text-muted);
+	font-size: 11.5px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 26px;
+	padding: 4px 8px;
+	border-radius: 6px;
+	cursor: pointer;
+	transition:
+		background-color 120ms ease,
+		color 120ms ease;
+}
+@media (hover: hover) {
+	.qs-menu .qs-footer button:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--bloom-text) 8%, transparent);
+		color: var(--bloom-text);
+	}
+	.myfinder-light .qs-menu .qs-footer button:hover:not(:disabled) {
+		background: rgba(0, 0, 0, 0.06);
+		color: #202428;
+	}
+}
+.myfinder-light .qs-menu .qs-footer {
+	color: #50565e;
+}
+.myfinder-light .qs-menu .qs-footer button {
+	color: #50565e;
+}
+/* A mark's hover card is a tooltip, not a panel: it keeps the standalone
+   card's black surface so its ink reads on either MyFinder material. The
+   housing sets --bloom-text light for its own black fill, so a card that took
+   the bar's variables turned white-on-lavender in light mode. */
+.myfinder-integrated .qh {
+	background: #000;
+	color: #f4f2f6;
+	box-shadow:
+		0 10px 24px -10px #000a,
+		inset 0 0 0 1px #ffffff14;
+	border: 0;
+}
+.myfinder-integrated .qh-place,
+.myfinder-integrated .qh-plan,
+.myfinder-integrated .qh-reset,
+.myfinder-integrated .qh-line {
+	color: #a19aa9;
+}
+.myfinder-integrated .qh-reset-at {
+	color: #f4f2f6;
+}
+/* The bar keeps its band colours: they are the card's whole point. */
+.myfinder-integrated .qh-bar {
+	background: #ffffff1a;
+}
+.myfinder-integrated .qh-error {
+	color: #f4b2ab;
+}
+.myfinder-integrated .qh-stale {
+	color: #edc28b;
+}
+.myfinder-integrated .notch-ambient-glow {
+	display: none;
+}
+.pill-activity-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	height: 24px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+.pill-activity-button img {
+	width: 16px;
+	height: 16px;
+	border-radius: 4px;
+	object-fit: cover;
+}
+.myfinder-integrated :focus-visible {
+	outline: 2px solid var(--bloom-accent);
+	outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+	.myfinder-integrated *,
+	.myfinder-integrated *::before,
+	.myfinder-integrated *::after {
+		animation: none !important;
+		transition: none !important;
+	}
+}

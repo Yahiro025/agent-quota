@@ -1,0 +1,21 @@
+PASS factory
+PASS band instance
+PASS site attach
+PASS accept bounded frame
+PASS fit after deferred layout
+PASS reject stale generation
+PASS reject unknown flags
+PASS collapse without hide
+PASS collapse releases width
+PASS expand same session
+PASS expanded frame fits
+PASS disconnect
+PASS disconnect clears owner
+PASS reconnect generation
+PASS owner destruction clears connection
+PASS owner destruction collapses width
+PASS hooks keep module loaded
+PASS reuse same band object after teardown
+PASS replacement attachment
+PASS replacement deferred layout works
+PASS all hooks and objects released

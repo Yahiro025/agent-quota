@@ -26,10 +26,13 @@ function convertSettingValue(value: any): any {
  */
 export function useSettingsSync(
 	handlers: Record<string, (value: any) => void>,
-	deps?: React.DependencyList
+	deps?: React.DependencyList,
+	onRemoved?: (key: string) => void
 ) {
 	const handlersRef = useRef(handlers);
 	handlersRef.current = handlers;
+	const removedRef = useRef(onRemoved);
+	removedRef.current = onRemoved;
 
 	useEffect(() => {
 		const unlistenSC = listen<{ key: string; value: any }>("settings-changed", (event) => {
@@ -51,6 +54,9 @@ export function useSettingsSync(
 					localStorage.setItem(key, String(value));
 				} else {
 					localStorage.removeItem(key);
+					// Callers own defaults; resetting a preference must not reload
+					// the notch and discard its session-only shelf or timer state.
+					removedRef.current?.(key);
 				}
 
 				const handler = handlersRef.current[key];

@@ -5,7 +5,7 @@ use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
 
 use crate::services::{
-    disable_dock_appbar, enum_windows_proc, register_dock_appbar, sync_overlays,
+    enum_windows_proc, sync_overlays,
     unregister_appbar_native,
 };
 use crate::state::*;
@@ -14,19 +14,6 @@ use crate::types::{
 };
 use crate::utils::*;
 use std::collections::HashMap;
-
-#[tauri::command]
-pub async fn set_menu_open(open: bool, rect: Option<IntRect>) {
-    MENU_IS_OPEN.store(open, Ordering::Relaxed);
-    if let Ok(mut r) = MENU_RECT.lock() {
-        *r = rect;
-    }
-}
-
-#[tauri::command]
-pub async fn set_dock_hovered(hovered: bool) {
-    DOCK_IS_HOVERED.store(hovered, Ordering::Relaxed);
-}
 
 #[tauri::command]
 pub async fn set_notch_hovered(app: AppHandle, hovered: bool) {
@@ -122,13 +109,6 @@ pub fn shelf_drag_icon() -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn update_dock_rect(rect: IntRect) {
-    if let Ok(mut r) = DOCK_RECT.lock() {
-        *r = Some(rect);
-    }
-}
-
-#[tauri::command]
 pub async fn update_notch_rect(rect: IntRect) {
     if let Ok(mut r) = NOTCH_RECT.lock() {
         *r = Some(rect);
@@ -158,302 +138,12 @@ pub fn set_ignore_cursor_events(window: Window, ignore: bool) {
 }
 
 #[tauri::command]
-pub async fn init_dock(app: AppHandle, mode: String) {
-    if !crate::dock_lifecycle::notch_startup_plan().open_dock_window {
-        return;
-    }
-    // Backend guard: bail if dock is disabled in settings.
-    // The frontend already checks this, but settings.json may have a stale
-    // value if the write didn't complete before restart. Reading here too
-    // makes the dock reliably stay hidden regardless of frontend timing.
-    if !dock_enabled() {
-        disable_dock(&app);
-        return;
-    }
-
-    if let Some(dock_win) = app.get_webview_window("dock") {
-        // 1. Always show first — idempotent, required before any positioning
-        if dock_win.show().is_err() {
-            return;
-        }
-        if let Ok(hwnd) = dock_win.hwnd() {
-            re_assert_topmost(hwnd);
-        }
-
-        // 2. Register as appbar (fixed) or manually position (auto-hide)
-        if mode == "fixed" {
-            // register_dock_appbar calls show() internally too, and handles retries
-            register_dock_appbar(dock_win.clone());
-        } else {
-            // Auto-hide mode: position at bottom of screen.
-            // Retry until primary_monitor() is available (can fail on autostart before shell).
-            let dock_clone = dock_win.clone();
-            tauri::async_runtime::spawn(async move {
-                for attempt in 0..20 {
-                    if !dock_enabled() {
-                        return;
-                    }
-                    // Wait for monitor and window dimensions to be available.
-                    // Never use a hardcoded fallback — wrong values produce off-screen placement.
-                    // Extract HWND as isize before any await (raw pointer is not Send).
-                    let hwnd_val = dock_clone.hwnd().map(|h| h.0 as isize).unwrap_or(0);
-                    let ph = dock_clone
-                        .outer_size()
-                        .map(|s| s.height as i32)
-                        .unwrap_or(0);
-                    let monitor_info = dock_clone.primary_monitor().ok().flatten().map(|m| {
-                        let s = m.size();
-                        let p = m.position();
-                        (
-                            tauri::PhysicalSize::new(s.width, s.height),
-                            tauri::PhysicalPosition::new(p.x, p.y),
-                        )
-                    });
-
-                    if hwnd_val != 0 {
-                        if let Some((m_size, m_pos)) = monitor_info {
-                            if ph <= 10 {
-                                // outer_size() not ready yet — retry next tick
-                                if attempt < 19 {
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(200))
-                                        .await;
-                                }
-                                continue;
-                            }
-                            let final_y = m_pos.y + m_size.height as i32 - ph;
-                            let positioned = unsafe {
-                                use windows::Win32::Foundation::HWND;
-                                use windows::Win32::UI::WindowsAndMessaging::{
-                                    GetWindowRect, SetWindowPos, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-                                    SWP_NOZORDER,
-                                };
-                                let hwnd = HWND(hwnd_val as *mut _);
-                                let moved = SetWindowPos(
-                                    hwnd,
-                                    None,
-                                    m_pos.x,
-                                    final_y,
-                                    m_size.width as i32,
-                                    ph,
-                                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                                )
-                                .is_ok();
-                                let mut rect = windows::Win32::Foundation::RECT::default();
-                                moved
-                                    && GetWindowRect(hwnd, &mut rect).is_ok()
-                                    && rect.left == m_pos.x
-                                    && rect.top == final_y
-                                    && rect.right - rect.left == m_size.width as i32
-                                    && rect.bottom - rect.top == ph
-                            };
-                            if !positioned {
-                                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-                                continue;
-                            }
-                            // Re-assert topmost after repositioning
-                            if let Ok(hwnd) = dock_clone.hwnd() {
-                                re_assert_topmost(hwnd);
-                            }
-                            // Ensure visible after positioning
-                            if dock_enabled()
-                                && dock_clone.show().is_ok()
-                                && dock_clone.is_visible().unwrap_or(false)
-                                && set_taskbar_visibility(false, false)
-                            {
-                                NATIVE_TASKBAR_HIDDEN.store(true, Ordering::Relaxed);
-                            }
-                            break;
-                        }
-                    }
-                    if attempt < 19 {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-                    }
-                }
-            });
-        }
-
-        // Fixed mode completes the taskbar handoff in register_dock_appbar_inner;
-        // auto-hide mode completes it after SetWindowPos and show both succeed.
-        // Reset overlap state so the overlap thread re-syncs cleanly.
-        CURRENT_DOCK_OVERLAP.store(0, Ordering::Relaxed);
-        let _ = app.emit("dock-overlap", false);
-        // Sync the adaptive-dock signal so the dock expands immediately if a
-        // maximized window is already in the foreground when it's enabled.
-        let _ = app.emit(
-            "dock-maximized",
-            CURRENT_FOREGROUND_MAXIMIZED.load(Ordering::Relaxed),
-        );
-    }
-}
-
-fn disable_dock(app: &AppHandle) {
-    // Clear this before showing the native taskbar: the WinEvent hook can run
-    // during ShowWindow and would otherwise immediately hide it again.
-    NATIVE_TASKBAR_HIDDEN.store(false, Ordering::Relaxed);
-    // Keep Bloom's dock available if Explorer has not made its taskbar visible.
-    if !set_taskbar_visibility(true, true) {
-        return;
-    }
-    if let Some(dock_win) = app.get_webview_window("dock") {
-        disable_dock_appbar(dock_win);
-    }
-    DOCK_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
-    crate::services::reconcile_main_appbar(app);
-}
-
-#[tauri::command]
-pub async fn toggle_dock(app: AppHandle, enable: bool) {
-    if enable {
-        // Load the saved dock mode; "smart" is the fresh-install default.
-        let saved_mode = crate::utils::get_setting_str(&app, "bloom-dock-mode")
-            .unwrap_or_else(|| "smart".to_string());
-        init_dock(app, saved_mode).await;
-    } else {
-        disable_dock(&app);
-    }
-}
-
-#[tauri::command]
 pub async fn sync_appbar(app: AppHandle) {
     // Reconcile the notch AppBar against the configured mode so a stale
     // registration cannot survive DPI/power events (issue #109).
     crate::services::reconcile_main_appbar(&app);
-    if let Some(dock_win) = app.get_webview_window("dock") {
-        // Skip dock re-registration if dock is disabled in settings.
-        if dock_enabled() && DOCK_APPBAR_REGISTERED.load(Ordering::Relaxed) {
-            register_dock_appbar(dock_win);
-        } else {
-            if let Ok(hwnd) = dock_win.hwnd() {
-                re_assert_topmost(hwnd);
-            }
-        }
-    }
+
     sync_overlays(&app);
-}
-
-#[tauri::command]
-pub async fn change_dock_mode(app: AppHandle, mode: String) {
-    // A disabled dock keeps the new mode in settings (init_dock applies it on
-    // re-enable) but must not be shown or replace the native taskbar now.
-    if !dock_enabled() {
-        return;
-    }
-    if let Some(dock_win) = app.get_webview_window("dock") {
-        if mode == "fixed" {
-            register_dock_appbar(dock_win.clone());
-        } else {
-            let _ = dock_win.show();
-            if let Ok(hwnd) = dock_win.hwnd() {
-                let hwnd_val = hwnd.0 as isize;
-                tauri::async_runtime::spawn_blocking(move || {
-                    unregister_appbar_native(HWND(hwnd_val as *mut _));
-                });
-                DOCK_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
-
-                // Retry primary_monitor() — can fail on autostart before shell initializes
-                let dock_clone = dock_win.clone();
-                tauri::async_runtime::spawn(async move {
-                    for attempt in 0..10 {
-                        // Never fall back to a hardcoded pixel height.
-                        // Extract HWND as isize before any await (raw pointer is not Send).
-                        let hwnd_val = dock_clone.hwnd().map(|h| h.0 as isize).unwrap_or(0);
-                        let ph = dock_clone
-                            .outer_size()
-                            .map(|s| s.height as i32)
-                            .unwrap_or(0);
-                        let monitor_info = dock_clone.primary_monitor().ok().flatten().map(|m| {
-                            let s = m.size();
-                            let p = m.position();
-                            (
-                                tauri::PhysicalSize::new(s.width, s.height),
-                                tauri::PhysicalPosition::new(p.x, p.y),
-                            )
-                        });
-
-                        if hwnd_val != 0 {
-                            if let Some((m_size, m_pos)) = monitor_info {
-                                if ph <= 10 {
-                                    if attempt < 9 {
-                                        tokio::time::sleep(tokio::time::Duration::from_millis(300))
-                                            .await;
-                                    }
-                                    continue;
-                                }
-                                let final_y = m_pos.y + m_size.height as i32 - ph;
-                                let positioned = unsafe {
-                                    use windows::Win32::Foundation::HWND;
-                                    use windows::Win32::UI::WindowsAndMessaging::{
-                                        GetWindowRect, SetWindowPos, SWP_FRAMECHANGED,
-                                        SWP_NOACTIVATE, SWP_NOZORDER,
-                                    };
-                                    let hwnd = HWND(hwnd_val as *mut _);
-                                    let moved = SetWindowPos(
-                                        hwnd,
-                                        None,
-                                        m_pos.x,
-                                        final_y,
-                                        m_size.width as i32,
-                                        ph,
-                                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                                    )
-                                    .is_ok();
-                                    let mut rect = windows::Win32::Foundation::RECT::default();
-                                    moved
-                                        && GetWindowRect(hwnd, &mut rect).is_ok()
-                                        && rect.left == m_pos.x
-                                        && rect.top == final_y
-                                        && rect.right - rect.left == m_size.width as i32
-                                        && rect.bottom - rect.top == ph
-                                };
-                                if !positioned {
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(300))
-                                        .await;
-                                    continue;
-                                }
-                                if let Ok(hwnd) = dock_clone.hwnd() {
-                                    re_assert_topmost(hwnd);
-                                }
-                                if dock_enabled()
-                                    && dock_clone.show().is_ok()
-                                    && dock_clone.is_visible().unwrap_or(false)
-                                    && set_taskbar_visibility(false, false)
-                                {
-                                    NATIVE_TASKBAR_HIDDEN.store(true, Ordering::Relaxed);
-                                }
-                                break;
-                            }
-                        }
-                        if attempt < 9 {
-                            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-                        }
-                    }
-                });
-            }
-        }
-
-        // Ensure always on top and native taskbar stays hidden
-        if let Ok(hwnd) = dock_win.hwnd() {
-            re_assert_topmost(hwnd);
-        }
-        // Sync the current overlap state immediately to the frontend
-        let current = CURRENT_DOCK_OVERLAP.load(Ordering::Relaxed);
-        if current != -1 {
-            let _ = app.emit("dock-overlap", current == 1);
-        }
-        let _ = app.emit(
-            "dock-maximized",
-            CURRENT_FOREGROUND_MAXIMIZED.load(Ordering::Relaxed),
-        );
-
-        // Double sync after a short delay to catch any layout changes
-        let dock_clone = dock_win.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            if DOCK_APPBAR_REGISTERED.load(Ordering::Relaxed) {
-                register_dock_appbar(dock_clone);
-            }
-        });
-    }
 }
 
 #[tauri::command]
@@ -529,6 +219,30 @@ pub fn set_quota_panel_height(app: AppHandle, height: u32) -> Result<(), String>
         crate::services::apply_main_appbar_mode(&app, false);
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn media_panel_bounds(app: AppHandle, height: f64) -> Result<f64, String> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTOPRIMARY};
+    if !height.is_finite() || !(0.0..=2048.0).contains(&height) { return Err("Invalid media panel height.".into()); }
+    let window = app.get_webview_window("main").ok_or("Notch unavailable.")?;
+    let monitor = window.primary_monitor().map_err(|_|"Monitor unavailable.")?.ok_or("Monitor unavailable.")?;
+    let origin = monitor.position();
+    let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+    unsafe {
+        let native = MonitorFromPoint(POINT { x: origin.x, y: origin.y }, MONITOR_DEFAULTTOPRIMARY);
+        if !GetMonitorInfoW(native, &mut info).as_bool() { return Err("Work area unavailable.".into()); }
+    }
+    let factor = monitor.scale_factor() * crate::utils::get_bloom_scale(&app);
+    let finder = crate::myfinder::get_myfinder_state();
+    let header = if finder.available { (finder.height as f64).max(24.0 * factor) + 8.0 * factor } else { 0.0 };
+    let available = ((info.rcWork.bottom - info.rcWork.top).max(1) as f64 - header).max(1.0);
+    let requested = if height == 0.0 { crate::quota_helper::NORMAL_HEIGHT as f64 } else { height.max(crate::quota_helper::NORMAL_HEIGHT as f64) };
+    let physical = ((requested * factor).min(available) + header).ceil() as u32;
+    window.set_size(tauri::PhysicalSize::new(monitor.size().width, physical)).map_err(|_|"Could not size media panel.")?;
+    crate::services::apply_main_appbar_mode(&app, false);
+    Ok(available / factor)
 }
 
 fn get_uwp_launch_cmd(exe_path: &str) -> Option<String> {
@@ -2354,247 +2068,30 @@ pub fn open_notification_center() {
 }
 
 #[tauri::command]
-pub fn open_system_tray() {
-    // The native taskbar is already available when the dock is disabled.
-    if !dock_enabled() {
-        return;
-    }
-    tauri::async_runtime::spawn_blocking(move || unsafe {
-        use std::sync::atomic::Ordering;
-        use windows::core::PCSTR;
-        use windows::Win32::UI::WindowsAndMessaging::{
-            FindWindowA, GetWindowLongA, IsWindowVisible, SetLayeredWindowAttributes,
-            SetWindowLongA, ShowWindow, GWL_EXSTYLE, LWA_ALPHA, SW_SHOW, WS_EX_LAYERED,
-            WS_EX_TRANSPARENT,
-        };
-
-        if !dock_enabled() {
-            return;
-        }
-
-        let tray_class = PCSTR(c"Shell_TrayWnd".as_ptr() as *const u8);
-        let hwnd = FindWindowA(tray_class, windows::core::PCSTR::null()).unwrap_or_default();
-        if hwnd.0.is_null() {
-            return;
-        }
-
-        let currently_hidden = crate::state::NATIVE_TASKBAR_HIDDEN.load(Ordering::Relaxed);
-        if currently_hidden {
-            // 1. Make the taskbar completely invisible and click-through
-            let exstyle = GetWindowLongA(hwnd, GWL_EXSTYLE);
-            let _ = SetWindowLongA(
-                hwnd,
-                GWL_EXSTYLE,
-                exstyle | WS_EX_LAYERED.0 as i32 | WS_EX_TRANSPARENT.0 as i32,
-            );
-            let _ = SetLayeredWindowAttributes(
-                hwnd,
-                windows::Win32::Foundation::COLORREF(0),
-                0,
-                LWA_ALPHA,
-            );
-
-            // 2. Show the taskbar window WITHOUT calling ABM_SETSTATE (prevents work-area
-            //    recalculation which would displace the notch/dock appbars).
-            use crate::utils::ORIGINAL_TRAY_RECT;
-            use windows::Win32::UI::WindowsAndMessaging::{
-                SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
-            };
-            if let Ok(guard) = ORIGINAL_TRAY_RECT.lock() {
-                if let Some(rect) = *guard {
-                    let _ = SetWindowPos(
-                        hwnd,
-                        None,
-                        rect.left,
-                        rect.top,
-                        0,
-                        0,
-                        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
-                    );
-                }
-            }
-            let _ = ShowWindow(hwnd, SW_SHOW);
-            crate::state::NATIVE_TASKBAR_HIDDEN.store(false, Ordering::Relaxed);
-
-            // Give Windows a moment to realize the taskbar is "there"
-            std::thread::sleep(std::time::Duration::from_millis(50));
-
-            // 3. Send the Win+B and Space macro to open the tray chevron
-            use windows::Win32::UI::Input::KeyboardAndMouse::{
-                SendInput, INPUT, INPUT_0, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_LWIN,
-                VK_SPACE,
-            };
-            let b_key = VIRTUAL_KEY(0x42); // 'B' key
-
-            let inputs = [
-                // Win+B
-                INPUT {
-                    r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: VK_LWIN,
-                            wScan: 0,
-                            dwFlags: Default::default(),
-                            time: 0,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                },
-                INPUT {
-                    r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: b_key,
-                            wScan: 0,
-                            dwFlags: Default::default(),
-                            time: 0,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                },
-                INPUT {
-                    r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: b_key,
-                            wScan: 0,
-                            dwFlags: KEYEVENTF_KEYUP,
-                            time: 0,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                },
-                INPUT {
-                    r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: VK_LWIN,
-                            wScan: 0,
-                            dwFlags: KEYEVENTF_KEYUP,
-                            time: 0,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                },
-            ];
-            SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
-
-            std::thread::sleep(std::time::Duration::from_millis(150));
-
-            // Space to open the popup
-            let space_inputs = [
-                INPUT {
-                    r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: VK_SPACE,
-                            wScan: 0,
-                            dwFlags: Default::default(),
-                            time: 0,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                },
-                INPUT {
-                    r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: VK_SPACE,
-                            wScan: 0,
-                            dwFlags: KEYEVENTF_KEYUP,
-                            time: 0,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                },
-            ];
-            SendInput(&space_inputs, std::mem::size_of::<INPUT>() as i32);
-
-            // 4. Start monitoring for the tray popup to close
-            std::thread::spawn(move || {
-                let overflow_class =
-                    PCSTR(c"TopLevelWindowForOverflowXamlIsland".as_ptr() as *const u8);
-                let win10_overflow_class = PCSTR(c"NotifyIconOverflowWindow".as_ptr() as *const u8);
-
-                // Wait for it to appear
-                let mut found = false;
-                for _ in 0..50 {
-                    let h1 = FindWindowA(overflow_class, PCSTR::null()).unwrap_or_default();
-                    let h2 = FindWindowA(win10_overflow_class, PCSTR::null()).unwrap_or_default();
-                    if (!h1.0.is_null() && IsWindowVisible(h1).as_bool())
-                        || (!h2.0.is_null() && IsWindowVisible(h2).as_bool())
-                    {
-                        found = true;
-                        break;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
-
-                if found {
-                    // Wait for it to disappear
-                    loop {
-                        std::thread::sleep(std::time::Duration::from_millis(200));
-                        let h1 = FindWindowA(overflow_class, PCSTR::null()).unwrap_or_default();
-                        let h2 =
-                            FindWindowA(win10_overflow_class, PCSTR::null()).unwrap_or_default();
-                        let visible = (!h1.0.is_null() && IsWindowVisible(h1).as_bool())
-                            || (!h2.0.is_null() && IsWindowVisible(h2).as_bool());
-                        if !visible {
-                            break;
-                        }
-                    }
-                }
-
-                // Once closed, hide the taskbar only if the dock is still enabled.
-                if dock_enabled() {
-                    let hidden = crate::utils::set_taskbar_visibility(false, false);
-                    crate::state::NATIVE_TASKBAR_HIDDEN.store(hidden, Ordering::Relaxed);
-                }
-
-                // Revert transparency
-                let tray_class = PCSTR(c"Shell_TrayWnd".as_ptr() as *const u8);
-                let hwnd = FindWindowA(tray_class, PCSTR::null()).unwrap_or_default();
-                if !hwnd.0.is_null() {
-                    let exstyle = GetWindowLongA(hwnd, GWL_EXSTYLE);
-                    let _ = SetLayeredWindowAttributes(
-                        hwnd,
-                        windows::Win32::Foundation::COLORREF(0),
-                        255,
-                        LWA_ALPHA,
-                    );
-                    let _ = SetWindowLongA(
-                        hwnd,
-                        GWL_EXSTYLE,
-                        exstyle & !(WS_EX_LAYERED.0 as i32) & !(WS_EX_TRANSPARENT.0 as i32),
-                    );
-                }
-            });
-        } else {
-            // If already toggled on manually, toggle off
-            let hidden = crate::utils::set_taskbar_visibility(false, false);
-            crate::state::NATIVE_TASKBAR_HIDDEN.store(hidden, Ordering::Relaxed);
-
-            let exstyle = GetWindowLongA(hwnd, GWL_EXSTYLE);
-            let _ = SetLayeredWindowAttributes(
-                hwnd,
-                windows::Win32::Foundation::COLORREF(0),
-                255,
-                LWA_ALPHA,
-            );
-            let _ = SetWindowLongA(
-                hwnd,
-                GWL_EXSTYLE,
-                exstyle & !(WS_EX_LAYERED.0 as i32) & !(WS_EX_TRANSPARENT.0 as i32),
-            );
-        }
-    });
-}
-
-#[tauri::command]
 pub fn media_play_pause() {
     if let Some(sender) = COMMAND_SENDER.get() {
         let _ = sender.send(crate::types::SystemCommand::MediaPlayPause);
     }
+}
+
+#[tauri::command]
+pub async fn media_action(generation:String,op:String,position_ms:Option<i64>)->Result<String,String>{
+    let tab_op=["mute","unmute","show"].contains(&op.as_str());
+    // Tab and player generations are disjoint address spaces: each op family
+    // only reaches its own kind, and a tab op never falls through to SMTC.
+    if crate::media_bridge::tab_for_generation(&generation).is_some(){
+        if !tab_op{return Err("Unsupported media action.".into());}
+        return crate::media_bridge::connector_action(&generation,&op,None).await;
+    }
+    if tab_op{return Err("Unsupported media action.".into());}
+    if !["playPause","next","previous","seek"].contains(&op.as_str()){return Err("Unsupported media action.".into());}
+    if crate::media_bridge::target_for_generation(&generation).is_some(){
+        return crate::media_bridge::connector_action(&generation,&op,position_ms).await;
+    }
+    if !crate::media_bridge::native_allowed(&generation){return Err("Media changed. Try again.".into());}
+    if op=="seek" && position_ms.is_none_or(|p|!(0..=31_536_000_000).contains(&p)){return Err("Seeking is unavailable.".into());}
+    COMMAND_SENDER.get().ok_or("Media worker unavailable.")?.send(crate::types::SystemCommand::MediaTarget{generation,op,position_ms}).map_err(|_|"Media worker unavailable.")?;
+    Ok("dispatched".into())
 }
 
 #[tauri::command]
@@ -3083,20 +2580,15 @@ pub fn clear_volume_mixer_rect() {
     }
 }
 
-/// Unregisters the notch and dock AppBars so Windows gives their work area back.
+/// Unregisters the notch AppBar so Windows gives their work area back.
 pub fn release_appbars(handle: &AppHandle) {
     if let Some(w) = handle.get_webview_window("main") {
         if let Ok(hwnd) = w.hwnd() {
             unregister_appbar_native(hwnd);
         }
     }
-    if let Some(w) = handle.get_webview_window("dock") {
-        if let Ok(hwnd) = w.hwnd() {
-            unregister_appbar_native(hwnd);
-        }
-    }
+
     MAIN_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
-    DOCK_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
 }
 
 /// Restore the native taskbar, unregister Bloom's appbars, and exit gracefully.
@@ -3154,19 +2646,11 @@ pub async fn close_window(hwnd: isize) {
     .unwrap_or_default();
 }
 
-fn re_register_appbars(app: &AppHandle, settings: &HashMap<String, serde_json::Value>) {
+fn re_register_appbars(app: &AppHandle, _settings: &HashMap<String, serde_json::Value>) {
     // Reconcile the notch from the live mode: a scale change alters the
     // reserved strip height, and peek/smart must never hold a reservation.
     crate::services::reconcile_main_appbar(app);
-    if let Some(dock_win) = app.get_webview_window("dock") {
-        let is_fixed = settings
-            .get("bloom-dock-mode")
-            .map(|v| v.as_str() == Some("fixed"))
-            .unwrap_or(false);
-        if is_fixed {
-            crate::services::register_dock_appbar(dock_win);
-        }
-    }
+
 }
 
 #[tauri::command]
@@ -3186,6 +2670,12 @@ pub fn save_setting(app: AppHandle, key: String, value: serde_json::Value) -> Re
         "settings-changed",
         serde_json::json!({ "key": &key, "value": &settings[&key] }),
     );
+
+    // The helper owns the reads, so hiding an agent has to reach it too, not
+    // just the frontend's painting.
+    if key == crate::quota_helper::HIDDEN_AGENTS_KEY {
+        let _ = crate::quota_helper::sync_hidden_agents();
+    }
 
     if key == "bloom-scale" {
         re_register_appbars(&app, &settings);
@@ -3867,6 +3357,10 @@ fn apply_imported_settings(app: &AppHandle, settings: &str) -> Result<(), String
     crate::utils::replace_settings_cache(imported.clone());
     drop(_guard);
 
+    if previous.get(crate::quota_helper::HIDDEN_AGENTS_KEY) != imported.get(crate::quota_helper::HIDDEN_AGENTS_KEY) {
+        let _ = crate::quota_helper::sync_hidden_agents();
+    }
+
     // Broadcast changes for every imported key so all windows re-sync
     for (key, value) in &imported {
         let _ = app.emit(
@@ -3930,6 +3424,9 @@ pub fn reset_settings(app: AppHandle) -> Result<(), String> {
     // keys from localStorage. The caller restarts Bloom right after, but this
     // keeps the reset correct even if a window lingers.
     for key in removed {
+        if key == crate::quota_helper::HIDDEN_AGENTS_KEY {
+            let _ = crate::quota_helper::sync_hidden_agents();
+        }
         let _ = app.emit(
             "settings-external-changed",
             serde_json::json!({ "key": key, "value": null }),
@@ -4049,12 +3546,18 @@ pub fn setup_settings_watcher(app: AppHandle) {
                 if let Some((changed, removed)) = changes {
                     // Both file and cache locks are released before emitting.
                     for (key, value) in &changed {
+                        if key == crate::quota_helper::HIDDEN_AGENTS_KEY {
+                            let _ = crate::quota_helper::sync_hidden_agents();
+                        }
                         let _ = app.emit(
                             "settings-external-changed",
                             serde_json::json!({ "key": key, "value": value }),
                         );
                     }
                     for key in removed {
+                        if key == crate::quota_helper::HIDDEN_AGENTS_KEY {
+                            let _ = crate::quota_helper::sync_hidden_agents();
+                        }
                         let _ = app.emit(
                             "settings-external-changed",
                             serde_json::json!({ "key": key, "value": null }),

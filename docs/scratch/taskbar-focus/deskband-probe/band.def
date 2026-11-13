@@ -1,0 +1,4 @@
+LIBRARY probe-band
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

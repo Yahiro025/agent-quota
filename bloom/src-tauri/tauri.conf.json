@@ -4,7 +4,7 @@
   "version": "3.10.0",
   "identifier": "com.sehaz.bloom",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "node node_modules/vite/bin/vite.js",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
@@ -75,7 +75,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' ipc: http://ipc.localhost https://api.open-meteo.com https://geocoding-api.open-meteo.com https://ipapi.co http://ip-api.com https://bloom.sehaz.space"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://api.open-meteo.com https://geocoding-api.open-meteo.com https://ipapi.co http://ip-api.com https://bloom.sehaz.space"
     }
   },
   "bundle": {
@@ -85,8 +85,8 @@
     "publisher": "Sehajveer Singh",
     "copyright": "Copyright © 2026 Sehajveer Singh",
     "category": "Utility",
-    "shortDescription": "A notch and dock for Windows",
-    "longDescription": "Bloom replaces the Windows taskbar with a dock and adds a notch for media, quick controls and status.",
+    "shortDescription": "A desktop notch for Windows",
+    "longDescription": "Bloom adds a notch for media, agent quotas, quick controls and status.",
     "windows": {
       "webviewInstallMode": {
         "type": "embedBootstrapper"

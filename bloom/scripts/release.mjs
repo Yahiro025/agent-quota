@@ -31,7 +31,7 @@ if (execSync(`git tag --list ${tag}`, { cwd: root }).toString().trim()) {
 
 run(`bun scripts/bump-version.mjs ${version}`);
 
-const changed = execSync(`git diff --name-only -- ${versionFiles.join(" ")}`, { cwd: root })
+const changed = execSync(`git diff --relative --name-only -- ${versionFiles.join(" ")}`, { cwd: root })
 	.toString()
 	.split(/\r?\n/)
 	.filter(Boolean);

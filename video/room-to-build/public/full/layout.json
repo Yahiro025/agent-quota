@@ -1,0 +1,275 @@
+{
+  "rest": {
+    "x": 890,
+    "y": 0,
+    "width": 140,
+    "height": 36,
+    "selector": "div.bloom",
+    "elements": {}
+  },
+  "calendar": {
+    "x": 720,
+    "y": 0,
+    "width": 480,
+    "height": 273,
+    "selector": "div.bloom",
+    "elements": {
+      "timer": {
+        "x": 278.03125,
+        "y": 84,
+        "w": 170.203125,
+        "h": 58
+      },
+      "calendar": {
+        "x": 28,
+        "y": 53,
+        "w": 213.265625,
+        "h": 205
+      },
+      "start": {
+        "x": 314.265625,
+        "y": 160,
+        "w": 97.734375,
+        "h": 44
+      }
+    }
+  },
+  "timer-running": {
+    "x": 720,
+    "y": 0,
+    "width": 480,
+    "height": 273,
+    "selector": "div.bloom",
+    "elements": {
+      "timer": {
+        "x": 278.03125,
+        "y": 84,
+        "w": 170.203125,
+        "h": 58
+      },
+      "calendar": {
+        "x": 28,
+        "y": 53,
+        "w": 213.265625,
+        "h": 205
+      },
+      "start": {
+        "x": 314.265625,
+        "y": 160,
+        "w": 97.734375,
+        "h": 44
+      }
+    }
+  },
+  "timer-paused": {
+    "x": 720,
+    "y": 0,
+    "width": 480,
+    "height": 273,
+    "selector": "div.bloom",
+    "elements": {
+      "timer": {
+        "x": 278.03125,
+        "y": 84,
+        "w": 170.203125,
+        "h": 58
+      },
+      "calendar": {
+        "x": 28,
+        "y": 53,
+        "w": 213.265625,
+        "h": 205
+      },
+      "start": {
+        "x": 314.265625,
+        "y": 160,
+        "w": 97.734375,
+        "h": 44
+      }
+    }
+  },
+  "music": {
+    "x": 790,
+    "y": 0,
+    "width": 340,
+    "height": 120,
+    "selector": "div.bloom",
+    "elements": {
+      "art": {
+        "x": 12,
+        "y": 11,
+        "w": 98,
+        "h": 98
+      },
+      "visualizer": {
+        "x": 298,
+        "y": 13,
+        "w": 30,
+        "h": 18
+      }
+    }
+  },
+  "music-compact": {
+    "x": 810,
+    "y": 0,
+    "width": 300,
+    "height": 132,
+    "selector": "div.bloom",
+    "elements": {}
+  },
+  "music-paused": {
+    "x": 810,
+    "y": 0,
+    "width": 300,
+    "height": 132,
+    "selector": "div.bloom",
+    "elements": {}
+  },
+  "shelf-dropzone": {
+    "x": 770,
+    "y": 0,
+    "width": 380,
+    "height": 130,
+    "selector": "div.bloom",
+    "elements": {}
+  },
+  "shelf-files": {
+    "x": 770,
+    "y": 0,
+    "width": 380,
+    "height": 176,
+    "selector": "div.bloom",
+    "elements": {
+      "tile0": {
+        "x": 26,
+        "y": 48,
+        "w": 116,
+        "h": 116
+      },
+      "tile1": {
+        "x": 150,
+        "y": 48,
+        "w": 116,
+        "h": 116
+      }
+    }
+  },
+  "shelf": {
+    "x": 770,
+    "y": 0,
+    "width": 380,
+    "height": 190,
+    "selector": "div.bloom",
+    "elements": {
+      "tile0": {
+        "x": 26,
+        "y": 48,
+        "w": 116,
+        "h": 120
+      },
+      "tile1": {
+        "x": 150,
+        "y": 48,
+        "w": 116,
+        "h": 120
+      },
+      "tile2": {
+        "x": 274,
+        "y": 48,
+        "w": 116,
+        "h": 120
+      }
+    }
+  },
+  "activities": {
+    "x": 890,
+    "y": 0,
+    "width": 140,
+    "height": 36,
+    "selector": "div.bloom",
+    "elements": {}
+  },
+  "overview": {
+    "x": 785,
+    "y": 0,
+    "width": 350,
+    "height": 300,
+    "selector": "div.bloom",
+    "elements": {}
+  },
+  "controls": {
+    "x": 785,
+    "y": 0,
+    "width": 350,
+    "height": 230,
+    "selector": "div.bloom",
+    "elements": {}
+  },
+  "controls-volume": {
+    "x": 785,
+    "y": 0,
+    "width": 350,
+    "height": 230,
+    "selector": "div.bloom",
+    "elements": {}
+  },
+  "wifi": {
+    "x": 785,
+    "y": 0,
+    "width": 350,
+    "height": 300,
+    "selector": "div.bloom",
+    "elements": {}
+  },
+  "bluetooth": {
+    "x": 785,
+    "y": 0,
+    "width": 350,
+    "height": 300,
+    "selector": "div.bloom",
+    "elements": {}
+  },
+  "hardware": {
+    "x": 720,
+    "y": 0,
+    "width": 480,
+    "height": 273,
+    "selector": "div.bloom",
+    "elements": {
+      "timer": {
+        "x": 278.03125,
+        "y": 84,
+        "w": 170.203125,
+        "h": 58
+      },
+      "calendar": {
+        "x": 28,
+        "y": 53,
+        "w": 213.265625,
+        "h": 205
+      },
+      "start": {
+        "x": 314.265625,
+        "y": 160,
+        "w": 97.734375,
+        "h": 44
+      }
+    }
+  },
+  "settings": {
+    "x": 0,
+    "y": -1,
+    "width": 720,
+    "height": 622,
+    "selector": ".settings-container",
+    "elements": {}
+  },
+  "settings-custom": {
+    "x": 0,
+    "y": -1,
+    "width": 720,
+    "height": 622,
+    "selector": ".settings-container",
+    "elements": {}
+  }
+}

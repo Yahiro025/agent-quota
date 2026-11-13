@@ -190,3 +190,48 @@ func TestDevinVersionParsesInstalledCLIOutputAndExitCode(t *testing.T) {
 		t.Fatalf("failed CLI exited with version %q", got)
 	}
 }
+
+func TestDevinVersionRetriesAfterTransientFailure(t *testing.T) {
+	oldPath, hadPath := os.LookupEnv("PATH")
+	oldExt, hadExt := os.LookupEnv("PATHEXT")
+	defer func() {
+		if hadPath {
+			os.Setenv("PATH", oldPath)
+		} else {
+			os.Unsetenv("PATH")
+		}
+		if hadExt {
+			os.Setenv("PATHEXT", oldExt)
+		} else {
+			os.Unsetenv("PATHEXT")
+		}
+		devinVerOnce = struct {
+			v   string
+			ok  bool
+			set bool
+		}{}
+	}()
+
+	dir := t.TempDir()
+	cmd := filepath.Join(dir, "devin.cmd")
+	if err := os.WriteFile(cmd, []byte("@echo off\r\nexit /b 1\r\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	os.Setenv("PATH", dir+string(os.PathListSeparator)+filepath.Join(os.Getenv("SystemRoot"), "System32"))
+	os.Setenv("PATHEXT", ".CMD")
+	devinVerOnce = struct {
+		v   string
+		ok  bool
+		set bool
+	}{}
+	if got := devinVersion(); got != "" {
+		t.Fatalf("failed first probe returned %q", got)
+	}
+
+	if err := os.WriteFile(cmd, []byte("@echo off\r\necho devin 3000.11.3 (9c803229faa4)\r\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := devinVersion(); got != "3000.11.3" {
+		t.Fatalf("transient failure stuck: devinVersion()=%q after recovery", got)
+	}
+}

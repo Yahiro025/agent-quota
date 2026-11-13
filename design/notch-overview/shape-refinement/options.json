@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-16",
+  "scope": "outer-dropdown-shape-only",
+  "shape": "full-width upper-bar attachment with reverse-rounded concave shoulders, straight sides and rounded bottom corners",
+  "selected": "1",
+  "options": {
+    "1": { "name": "Seam", "image": "seam.png" },
+    "2": { "name": "Index", "image": "index.png", "note": "Caption correction replaces its initial shape-edit result." },
+    "3": { "name": "Peek", "image": "peek.png" }
+  }
+}

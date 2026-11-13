@@ -4,10 +4,11 @@ mod battery;
 mod bluetooth;
 mod commands;
 mod diagnostics;
-mod dock_extras;
-mod dock_lifecycle;
 mod excluded;
 mod fullscreen;
+mod media_queue;
+mod media_artwork;
+mod media_bridge;
 mod quota_helper;
 mod services;
 mod shelf;
@@ -19,6 +20,7 @@ mod updater;
 mod utils;
 mod wifi;
 mod window_region;
+mod myfinder;
 
 use std::sync::atomic::Ordering;
 use tauri::Manager;
@@ -120,7 +122,7 @@ fn main() {
             open_wifi_settings,
             open_sound_settings,
             open_notification_center,
-            open_system_tray,
+
             set_ignore_cursor_events,
             set_window_height,
             resize_settings_window,
@@ -128,23 +130,27 @@ fn main() {
             set_splash_fullscreen,
             sync_overlay_position,
             media_play_pause,
+            media_action,
+            media_bridge::media_queue_get,
+            media_bridge::media_list_get,
+            media_bridge::media_queue_select,
             media_next,
             media_previous,
             media_seek,
             open_media_source_app,
-            init_dock,
-            toggle_dock,
-            change_dock_mode,
+
             change_notch_mode,
             refresh_quota,
             set_quota_panel_height,
+            media_panel_bounds,
             sync_appbar,
             open_app,
             launch_new_instance,
-            update_dock_rect,
+
             update_notch_rect,
             window_region::set_window_region,
-            set_dock_hovered,
+            myfinder::get_myfinder_state,
+
             set_notch_hovered,
             set_notch_visible,
             setup_shelf_drop,
@@ -165,7 +171,7 @@ fn main() {
             set_custom_icon,
             remove_custom_icon,
             get_custom_icons,
-            set_menu_open,
+
             focus_window,
             focus_app_windows,
             close_window,
@@ -206,10 +212,6 @@ fn main() {
             updater::check_for_updates,
             updater::install_update,
             updater::get_update_state,
-            dock_extras::get_dock_extras,
-            dock_extras::open_dock_extra,
-            dock_extras::eject_dock_extra,
-            dock_extras::get_dock_drives,
             wifi::wifi_list_networks,
             wifi::wifi_scan,
             wifi::wifi_connect,
@@ -231,16 +233,11 @@ fn main() {
             crate::utils::init_settings_cache(app.handle());
             // Crash-recovery: if a previous session was force-killed while the native
             // taskbar was hidden, restore it now. Runs before the frontend re-hides it
-            // (init_dock fires after a delay), so the flag must be removed first.
+            // so a previous build cannot leave Explorer hidden.
             if taskbar_marker_exists() {
                 restore_taskbar_after_crash();
                 NATIVE_TASKBAR_HIDDEN.store(false, Ordering::Relaxed);
             }
-
-            // Notch startup never hides the taskbar, registers appbars, starts
-            // the watchdog, or opens the dock window — the plan gates the
-            // dock-only setup below.
-            let plan = crate::dock_lifecycle::notch_startup_plan();
 
             // Update check on startup (non-blocking). Runs only when the
             // excluded.rs switch is on; auto-install only happens when the
@@ -294,58 +291,15 @@ fn main() {
                 }
                 tauri::WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
-                    restore_taskbar_and_exit(&handle_for_events);
+                    // Destroying windows from inside their own event callback
+                    // deadlocks the main loop; teardown runs off-thread like quit_bloom.
+                    let handle = handle_for_events.clone();
+                    std::thread::spawn(move || restore_taskbar_and_exit(&handle));
                 }
                 _ => {}
             });
 
-            if plan.open_dock_window {
-                if let Some(dock_win) = app.get_webview_window("dock") {
-                // Same for the dock window, which has a region too.
-                let _ = dock_win.set_ignore_cursor_events(true);
-                if let Ok(hwnd) = dock_win.hwnd() {
-                    DOCK_HWND.store(hwnd.0 as isize, Ordering::Relaxed);
-                }
 
-                let dock_clone = dock_win.clone();
-                let update_dock_window_rect = move || {
-                    if let (Ok(p), Ok(s)) = (dock_clone.outer_position(), dock_clone.outer_size()) {
-                        if let Ok(mut lock) = DOCK_WINDOW_RECT.lock() {
-                            *lock = Some((p, s));
-                        }
-                    }
-                };
-                update_dock_window_rect();
-
-                let u_dock = update_dock_window_rect.clone();
-                let dock_for_events = dock_win.clone();
-                let handle_for_dock_events = app.handle().clone();
-                dock_win.on_window_event(move |e| match e {
-                    tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
-                        u_dock();
-                        sync_overlays(&handle_for_dock_events);
-                    }
-                    tauri::WindowEvent::ScaleFactorChanged { .. } => {
-                        let h = handle_for_dock_events.clone();
-                        if DOCK_APPBAR_REGISTERED.load(Ordering::Relaxed) {
-                            let w = dock_for_events.clone();
-                            tauri::async_runtime::spawn(async move {
-                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                                register_dock_appbar(w);
-                                sync_overlays(&h);
-                            });
-                        } else {
-                            sync_overlays(&h);
-                        }
-                    }
-                    tauri::WindowEvent::CloseRequested { api, .. } => {
-                        api.prevent_close();
-                        restore_taskbar_and_exit(&handle_for_dock_events);
-                    }
-                    _ => {}
-                });
-                }
-            }
 
             sync_overlays(app.handle());
 
@@ -367,7 +321,8 @@ fn main() {
                 ov_win.on_window_event(move |e| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = e {
                         api.prevent_close();
-                        restore_taskbar_and_exit(&overlay_handle);
+                        let handle = overlay_handle.clone();
+                        std::thread::spawn(move || restore_taskbar_and_exit(&handle));
                     }
                 });
             }
@@ -384,11 +339,8 @@ fn main() {
                 // Initialize before the scan so its results are actually stored.
                 let _ = crate::state::INSTALLED_APPS_CACHE.set(std::sync::Mutex::new(Vec::new()));
             }
-            setup_thumbnail_capture(app.handle().clone());
-            trigger_app_scan();
             let tx = setup_system_worker(app.handle().clone());
             let _ = COMMAND_SENDER.set(tx.clone());
-            services::setup_keyboard_hook(app.handle().clone());
             setup_taskbar_hook();
             setup_audio_visualization(app.handle().clone());
             setup_settings_watcher(app.handle().clone());
@@ -399,6 +351,9 @@ fn main() {
             // Quota helper supervisor: returns at once on its own thread, so
             // setup never blocks on agentquota.exe being present.
             quota_helper::start(app.handle());
+            if media_bridge::start(app.handle()).is_err() {
+                eprintln!("Media connector bridge unavailable; native playback remains available.");
+            }
 
             // Listen for second-instance signal to open settings
             if let Some(&h_event) = SINGLE_INSTANCE_EVENT_HANDLE.get() {

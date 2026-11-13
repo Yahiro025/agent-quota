@@ -1,0 +1,10 @@
+PASS valid owned pixel frame
+PASS reject truncated pixels
+PASS reject trailing bytes
+PASS reject absent payload
+PASS reject dimension overflow
+PASS reject unknown operation
+PASS reject incompatible protocol
+PASS reject absent connection generation
+PASS explicit zero-pixel disconnect
+failures=0

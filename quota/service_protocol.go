@@ -19,11 +19,12 @@ import (
 const ServiceVersion = 1
 
 // ServiceRequest is a parent-to-child line: hello, refresh (id "all" or one
-// agent), or shutdown. Shutdown carries no id.
+// agent), agents (the hidden set), or shutdown. Shutdown carries no id.
 type ServiceRequest struct {
-	V  int    `json:"v"`
-	Op string `json:"op"`
-	ID string `json:"id,omitempty"`
+	V      int      `json:"v"`
+	Op     string   `json:"op"`
+	ID     string   `json:"id,omitempty"`
+	Hidden []string `json:"hidden,omitempty"`
 }
 
 // ServiceWindow is one source quota boundary, kept as numbers so the panel does
@@ -71,13 +72,15 @@ type ServiceAgent struct {
 }
 
 // ServiceEvent is a child-to-parent line: ready (agents), snapshot (readings),
-// bye, or error (message).
+// bye, or error (message). Readings has no omitempty: a snapshot with every
+// agent hidden must still send an empty array, or the parent keeps the last
+// snapshot on screen.
 type ServiceEvent struct {
 	V        int            `json:"v"`
 	Op       string         `json:"op"`
 	Message  string         `json:"message,omitempty"`
 	Agents   []string       `json:"agents,omitempty"`
-	Readings []ServiceAgent `json:"readings,omitempty"`
+	Readings []ServiceAgent `json:"readings"`
 }
 
 // DecodeRequest reads one parent line. A wrong version, an unknown op, or a
@@ -92,7 +95,7 @@ func DecodeRequest(line []byte) (ServiceRequest, error) {
 		return ServiceRequest{}, fmt.Errorf("service protocol: unsupported version %d", req.V)
 	}
 	switch req.Op {
-	case "hello", "shutdown":
+	case "hello", "shutdown", "agents":
 	case "refresh":
 		if req.ID == "" {
 			return ServiceRequest{}, fmt.Errorf("service protocol: refresh needs an agent id or \"all\"")

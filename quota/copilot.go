@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,17 +21,34 @@ func ParseCopilot(text string, now time.Time) Reading {
 		return Fail("Copilot's answer couldn't be read.")
 	}
 	plan := ""
-	if p := strOf(root, "plan"); p != nil && *p != "" {
-		plan = capital(*p)
+	for _, key := range []string{"copilot_plan", "plan"} {
+		if p := strOf(root, key); p != nil && *p != "" {
+			plan = capital(*p)
+			break
+		}
 	}
 	resetText := ""
+	var resetAt time.Time
+	resetSource := ""
 	if r := strOf(root, "quota_reset_date"); r != nil && *r != "" {
+		resetSource = *r
+		if len(*r) > 10 {
+			if t, ok := ParseTime(*r); ok {
+				resetAt = t
+			}
+		}
 		if t, ok := ParseTime(*r); ok {
 			resetText = " · resets " + FormatLocal(t, "d MMM")
 		} else if len(*r) >= 10 {
 			if t, err := time.Parse("2006-01-02", (*r)[:10]); err == nil {
 				resetText = " · resets " + FormatLocal(t, "d MMM")
 			}
+		}
+	}
+	if r := strOf(root, "quota_reset_date_utc"); r != nil {
+		if t, err := time.Parse(time.RFC3339Nano, *r); err == nil {
+			resetAt = t.UTC()
+			resetText = " · resets " + FormatLocal(resetAt, "d MMM")
 		}
 	}
 	snaps, ok := root.Get("quota_snapshots")
@@ -43,40 +61,124 @@ func ParseCopilot(text string, now time.Time) Reading {
 	}
 	top := -1.0
 	detailEnt := ""
+	var details []Detail
+	var observedAt time.Time
+	unlimited := 0
 	for _, p := range props {
 		s := p.Val
+		row := Detail{Label: shortEnt(p.Key), ResetAt: resetAt}
+		if epoch := numOf(s, "quota_reset_at"); epoch != nil && *epoch > 0 {
+			if t, ok := fromUnixSecs(*epoch); ok && t.After(now) {
+				row.ResetAt = t
+			}
+		}
+		if row.ResetAt.IsZero() {
+			row.ResetText = resetSource
+		}
+		if stamp := strOf(s, "timestamp_utc"); stamp != nil {
+			if t, err := time.Parse(time.RFC3339Nano, *stamp); err == nil && t.After(observedAt) {
+				observedAt = t.UTC()
+			}
+		}
+		isUnlimited := false
 		if u, ok := s.Get("unlimited"); ok {
 			if b, err := u.Bool(); err == nil && b {
-				continue
+				isUnlimited = true
+				unlimited++
 			}
 		}
 		rem := numOf(s, "percent_remaining")
-		if rem == nil {
-			continue
+		remaining := numOf(s, "quota_remaining")
+		if remaining == nil {
+			remaining = numOf(s, "remaining")
 		}
-		used := min(max(100-*rem, 0), 100)
-		if used > top {
-			top = used
-			detailEnt = fmt.Sprintf("%s %s%%", shortEnt(p.Key), Custom(used, 0))
-			if u := numOf(s, "remaining"); u != nil {
-				if l := numOf(s, "limit"); l != nil && *l > 0 {
-					detailEnt = fmt.Sprintf("%s %s/%s", shortEnt(p.Key), Custom(*l-*u, 0), Custom(*l, 0))
+		entitlement, limit, credits := numOf(s, "entitlement"), numOf(s, "limit"), numOf(s, "credits_used")
+		if limit != nil && *limit <= 0 {
+			limit = nil
+		}
+		if entitlement != nil && *entitlement <= 0 {
+			entitlement = nil
+		}
+		var facts []string
+		if isUnlimited {
+			row.Value = "Unlimited"
+		} else {
+			if rem != nil {
+				used := min(max(100-*rem, 0), 100)
+				facts = append(facts, Custom(used, 0)+"% used")
+				if used > top {
+					top = used
+					detailEnt = fmt.Sprintf("%s %s%%", shortEnt(p.Key), Custom(used, 0))
+					if entitlement == nil && credits == nil && remaining != nil && limit != nil {
+						detailEnt = fmt.Sprintf("%s %s/%s", shortEnt(p.Key), Custom(*limit-*remaining, 0), Custom(*limit, 0))
+					}
+				}
+			}
+			if credits != nil {
+				facts = append(facts, strconv.FormatFloat(*credits, 'f', -1, 64)+" used")
+			}
+			if entitlement != nil {
+				facts = append(facts, strconv.FormatFloat(*entitlement, 'f', -1, 64)+" entitlement")
+			} else if limit != nil {
+				if rem != nil && remaining != nil && credits == nil {
+					facts = append(facts, Custom(*limit-*remaining, 2)+" of "+Custom(*limit, 2)+" used")
+				} else if rem != nil {
+					facts = append(facts, Custom(*limit, 2)+" limit")
+				}
+			}
+			if remaining != nil {
+				facts = append(facts, strconv.FormatFloat(*remaining, 'f', -1, 64)+" remaining")
+			}
+			if rem == nil && entitlement == nil && limit != nil {
+				facts = append(facts, Custom(*limit, 2)+" limit")
+			}
+			row.Value = strings.Join(facts, " · ")
+		}
+		if row.Value != "" {
+			details = append(details, row)
+		}
+		var overage []string
+		if permitted, ok := s.Get("overage_permitted"); ok {
+			if on, err := permitted.Bool(); err == nil && (on || !isUnlimited) {
+				if on {
+					overage = append(overage, "On")
+				} else {
+					overage = append(overage, "Off")
 				}
 			}
 		}
+		for _, metric := range []struct{ key, suffix string }{{"overage_count", " used"}, {"overage_entitlement", " entitlement"}} {
+			if value := numOf(s, metric.key); value != nil && *value > 0 {
+				overage = append(overage, strconv.FormatFloat(*value, 'f', -1, 64)+metric.suffix)
+			}
+		}
+		if len(overage) != 0 {
+			details = append(details, Detail{Label: row.Label + " overage", Value: strings.Join(overage, " · "), ResetAt: row.ResetAt, ResetText: row.ResetText})
+		}
 	}
 	if top < 0 {
-		if plan != "" {
-			return newReading(0, plan+" · Unlimited")
+		if unlimited == 0 || unlimited != len(props) {
+			return Fail("Copilot didn't report plan usage.")
 		}
-		return newReading(0, "Unlimited")
+		r := newReading(0, "Unlimited")
+		if plan != "" {
+			r.Detail = plan + " · Unlimited"
+		}
+		r.Plan, r.Summary, r.Details = plan, "Unlimited", details
+		r.ObservedAt = observedAt
+		r.ResetLabel = strings.TrimPrefix(resetText, " · resets ")
+		return r
 	}
 	detail := ""
 	if plan != "" {
 		detail = plan + " · "
 	}
-	_ = now
-	return newReading(top, detail+detailEnt+resetText)
+	r := newReading(top, detail+detailEnt+resetText)
+	r.Plan, r.Summary = plan, detailEnt
+	r.Details = details
+	r.ObservedAt = observedAt
+	r.ResetLabel = strings.TrimPrefix(resetText, " · resets ")
+	return r
 }
 
 func shortEnt(ent string) string {

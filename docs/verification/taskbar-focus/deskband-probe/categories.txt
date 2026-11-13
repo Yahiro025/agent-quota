@@ -1,0 +1,2 @@
+﻿Deskband category discoverable=true HRESULT=0x00000000
+

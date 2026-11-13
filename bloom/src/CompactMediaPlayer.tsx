@@ -1,7 +1,12 @@
+import { formatTime, formatRemaining } from "./media/time";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { Visualizer } from "./App";
+import { ListMusic } from "lucide-react";
+import { QueueDrawer } from "./media/QueueDrawer";
+import { LyricsSection } from "./media/LyricsSection";
+import type { Lyrics } from "./media/lyrics";
 import {
 	PlayIcon,
 	PauseIcon,
@@ -15,6 +20,7 @@ import {
 } from "./icons";
 
 interface MediaInfo {
+	target_generation?: string;
 	title: string;
 	artist: string;
 	is_playing: boolean;
@@ -24,6 +30,7 @@ interface MediaInfo {
 	duration_ms?: number;
 	seek_enabled?: boolean;
 	position_updated_at?: number;
+	lyrics?: Lyrics;
 }
 
 interface CompactMediaPlayerProps {
@@ -33,6 +40,9 @@ interface CompactMediaPlayerProps {
 	isPlaying: boolean;
 	volume: number;
 	volumeExpanded: boolean;
+	queueExpanded: boolean;
+	onQueueExpandedChange: (expanded: boolean) => void;
+	onQueueHeightChange: (height: number) => void;
 	onVolumeExpandedChange: (expanded: boolean) => void;
 	onTogglePlayPause: () => void;
 	onVolumeChange: (vol: number) => void;
@@ -48,7 +58,7 @@ interface CompactMediaPlayerProps {
 const MARQUEE_SPEED = 30;
 const MARQUEE_MIN_DURATION = 5;
 
-function TitleMarquee({ title }: { title: string }) {
+export function TitleMarquee({ title }: { title: string }) {
 	const textRef = useRef<HTMLSpanElement>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [isOverflowing, setIsOverflowing] = useState(false);
@@ -93,22 +103,6 @@ function TitleMarquee({ title }: { title: string }) {
 	);
 }
 
-function formatTime(ms: number): string {
-	if (ms <= 0) return "0:00";
-	const totalSeconds = Math.floor(ms / 1000);
-	const minutes = Math.floor(totalSeconds / 60);
-	const seconds = totalSeconds % 60;
-	return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function formatRemaining(elapsed: number, duration: number): string {
-	const remaining = Math.max(0, duration - elapsed);
-	const totalSeconds = Math.floor(remaining / 1000);
-	const minutes = Math.floor(totalSeconds / 60);
-	const seconds = totalSeconds % 60;
-	return `-${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
 export function CompactMediaPlayer({
 	mediaInfo,
 	albumArtUrl,
@@ -116,6 +110,9 @@ export function CompactMediaPlayer({
 	isPlaying,
 	volume,
 	volumeExpanded,
+	queueExpanded,
+	onQueueExpandedChange,
+	onQueueHeightChange,
 	onVolumeExpandedChange,
 	onTogglePlayPause,
 	onVolumeChange,
@@ -138,6 +135,7 @@ export function CompactMediaPlayer({
 	const backendPosRef = useRef(positionMs);
 	const backendTimeRef = useRef(positionUpdatedAt || Date.now());
 	const isSeekingRef = useRef(false);
+	const seekGenerationRef = useRef<string | undefined>(undefined);
 
 	// Update refs when backend sends new position (ignore during seek)
 	useEffect(() => {
@@ -169,20 +167,27 @@ export function CompactMediaPlayer({
 	// Seek handlers
 	const handleSeekStart = useCallback(() => {
 		isSeekingRef.current = true;
-	}, []);
+		seekGenerationRef.current = mediaInfo.target_generation;
+	}, [mediaInfo.target_generation]);
 
 	const handleSeekChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
 		setDisplayPosition(Number(e.target.value));
 	}, []);
 
 	const handleSeekEnd = useCallback(() => {
+		if (seekGenerationRef.current !== mediaInfo.target_generation) {
+			isSeekingRef.current = false;
+			backendPosRef.current = positionMs;
+			backendTimeRef.current = positionUpdatedAt || Date.now();
+			return;
+		}
 		const seekPos = displayPosition;
 		isSeekingRef.current = false;
 		// Update backend refs to the seek position so extrapolation continues from there
 		backendPosRef.current = seekPos;
 		backendTimeRef.current = Date.now();
-		invoke("media_seek", { positionMs: seekPos }).catch(() => {});
-	}, [displayPosition]);
+		invoke("media_action", { generation: mediaInfo.target_generation ?? "", op: "seek", positionMs: seekPos }).catch(() => {});
+	}, [displayPosition, mediaInfo.target_generation, positionMs, positionUpdatedAt]);
 
 	const progressPercent = durationMs > 0 ? (displayPosition / durationMs) * 100 : 0;
 
@@ -278,6 +283,7 @@ export function CompactMediaPlayer({
 				<div className="cmp-main-controls">
 					<motion.button
 						className="cmp-btn"
+						aria-label="Previous track"
 						onClick={(e) => {
 							e.stopPropagation();
 							onAnimatePrev();
@@ -296,6 +302,7 @@ export function CompactMediaPlayer({
 
 					<motion.button
 						className="cmp-btn cmp-play"
+						aria-label={isPlaying ? "Pause" : "Play"}
 						onClick={(e) => {
 							e.stopPropagation();
 							onTogglePlayPause();
@@ -318,6 +325,7 @@ export function CompactMediaPlayer({
 
 					<motion.button
 						className="cmp-btn"
+						aria-label="Next track"
 						onClick={(e) => {
 							e.stopPropagation();
 							onAnimateNext();
@@ -335,6 +343,9 @@ export function CompactMediaPlayer({
 					</motion.button>
 				</div>
 
+				<div className="cmp-side-controls">
+				<button className={`cmp-btn cmp-btn-side cmp-queue-toggle${queueExpanded ? " is-active" : ""}`} aria-label="Up next" title="Up next"
+					aria-expanded={queueExpanded} onClick={e => { e.stopPropagation(); onQueueExpandedChange(!queueExpanded); }}><ListMusic size={20} aria-hidden="true" /></button>
 				<motion.button
 					className="cmp-btn cmp-btn-side"
 					onClick={(e) => {
@@ -346,6 +357,7 @@ export function CompactMediaPlayer({
 				>
 					<HeadphonesIcon size={22} />
 				</motion.button>
+				</div>
 			</div>
 
 			{/* Volume expansion */}
@@ -378,6 +390,19 @@ export function CompactMediaPlayer({
 					</motion.div>
 				)}
 			</AnimatePresence>
+			{mediaInfo.lyrics && mediaInfo.lyrics.lines.length > 0 && (
+				<LyricsSection
+					lyrics={mediaInfo.lyrics}
+					generation={mediaInfo.target_generation ?? ""}
+					positionMs={displayPosition}
+				/>
+			)}
+			{queueExpanded && (
+				<QueueDrawer
+					generation={mediaInfo.target_generation ?? ""}
+					onHeightChange={onQueueHeightChange}
+				/>
+			)}
 		</div>
 	);
 }

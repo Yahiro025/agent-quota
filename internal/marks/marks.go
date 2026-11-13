@@ -52,6 +52,9 @@ var logos = map[string]logo{
 	"copilot":     {pad: .16, box: [4]float32{0, 0, 24, 24}, tile: color.RGBA{0x1F, 0x23, 0x28, 0xFF}, asset: "copilot-24.svg"},
 	"devin":       {pad: .16, box: [4]float32{70, 50.12, 286.54, 326.04}, tile: color.RGBA{0x00, 0x14, 0x23, 0xFF}, asset: "devin.svg"},
 	"antigravity": {pad: .08, box: [4]float32{0, 0, 32, 32}, tile: color.RGBA{0x1F, 0x23, 0x28, 0xFF}},
+	"grokbot":     {pad: .16, box: [4]float32{0, 0, 32, 32}, tile: color.RGBA{0x0A, 0x0A, 0x0A, 0xFF}, edge: true},
+	"commandcode": {pad: .16, box: [4]float32{0, 0, 24, 24}, tile: color.RGBA{0x18, 0x18, 0x1B, 0xFF}, edge: true},
+	"qoder":       {pad: .16, box: [4]float32{0, 0, 24, 24}, tile: color.RGBA{0x10, 0x18, 0x28, 0xFF}, edge: true},
 }
 
 // ForUsed picks the quota ring colour using the original Hover palette.
@@ -117,6 +120,8 @@ func Draw(c *raster.Canvas, id string, x, y, size int) {
 		target := image.Rect(gx, gy, gx+glyphW, gy+glyphH)
 		mark := antigravityLogo()
 		xdraw.CatmullRom.Scale(c.Img, target, mark, mark.Bounds(), xdraw.Over, nil)
+	case "grokbot":
+		c.FillPathRect(markGrok, m.box, gx, gy, glyphW, glyphH, color.RGBA{0xF2, 0xF4, 0xF7, 0xFF}, false)
 	default:
 		// Keep unknown IDs legible without adding text dependencies to the painter.
 		c.FillPath("M 5 4 L 19 4 L 19 20 L 5 20 Z", [4]float32{0, 0, 24, 24}, gx, gy, max(glyphW, glyphH), color.RGBA{0xD4, 0xD8, 0xE0, 0xFF}, false)
@@ -162,6 +167,12 @@ func Accent(id string) color.RGBA {
 		return color.RGBA{0x7E, 0xC8, 0xB0, 0xFF}
 	case "antigravity":
 		return color.RGBA{0x55, 0xAA, 0xFA, 0xFF}
+	case "grokbot":
+		return color.RGBA{0xF2, 0xF4, 0xF7, 0xFF}
+	case "commandcode":
+		return color.RGBA{0x8C, 0xD8, 0xFF, 0xFF}
+	case "qoder":
+		return color.RGBA{0x3B, 0x82, 0xF6, 0xFF}
 	default:
 		return Grey
 	}

@@ -1,0 +1,22 @@
+{
+  "name": "agent-quota-room-to-build",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts --port=3010",
+    "render": "node scripts/render.mjs picture",
+    "preview": "node scripts/render.mjs preview",
+    "audio": "node scripts/render.mjs audio",
+    "audio:sfx": "node scripts/render.mjs audio nobgm",
+    "master": "node scripts/master.mjs",
+    "capture": "node scripts/capture.mjs",
+    "capture:panels": "node scripts/capture-full.mjs --panels"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.484",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "remotion": "4.0.484"
+  },
+  "devDependencies": {"@types/react":"19.2.17","typescript":"6.0.3"}
+}

@@ -1,0 +1,13 @@
+{
+    "format":  "pass",
+    "vet":  "pass",
+    "go_packages":  9,
+    "native_checks":  27,
+    "protocol_checks":  9,
+    "live_resize_changes":  12,
+    "live_float_handoff":  "pass",
+    "live_dock_handoff":  "pass",
+    "restored_docked":  false,
+    "source_build":  "68843005",
+    "time":  "2026-10-17T18:50:44.2611702+08:00"
+}

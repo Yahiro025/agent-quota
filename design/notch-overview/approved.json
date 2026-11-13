@@ -1,0 +1,10 @@
+{
+  "concept": "Seam",
+  "finish": "Pure matte black",
+  "surface": "#000000",
+  "selectionSurface": "#101010",
+  "visualTarget": "seam-material-variants/02-pure-matte-black.png",
+  "shape": "Full-width upper attachment, reverse-rounded concave shoulders, straight sides and rounded lower corners",
+  "userSelected": true,
+  "platform": "Windows native CPU-rendered Go widget"
+}

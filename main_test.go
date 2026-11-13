@@ -62,7 +62,7 @@ func TestRelaunchRevealsExistingWidgetInsideWorkArea(t *testing.T) {
 	dpi := user32.NewProc("SetThreadDpiAwarenessContext")
 	previous, _, _ := dpi.Call(^uintptr(3))
 	defer dpi.Call(previous)
-	work := win.WorkArea()
+	work := win.SeamWorkArea()
 	a := &app{settings: settings{Visible: map[string]bool{}, HasPos: true, X: work.Min.X + 100, Y: work.Max.Y}, x: work.Min.X + 100, y: work.Max.Y, w: 152, h: 40, scale: 1}
 	a.poller = quota.NewPoller(func(string) quota.Reading { return quota.Reading{} }, func(string) bool { return false }, a.changed)
 	const title = "AgentQuota relaunch regression"
@@ -156,6 +156,17 @@ func TestPlacementRecoversTaskbarPositionAndPreservesValidDrag(t *testing.T) {
 	x, y := clampWorkPos(-100, 1300, 448, 40, work)
 	if x != 60 || y != 1080 {
 		t.Fatalf("drag clamp = (%d,%d), want (60,1080)", x, y)
+	}
+}
+
+func TestOrbitShadowPaddingPreservesSavedPillAnchor(t *testing.T) {
+	work := image.Rect(0, 0, 1920, 1080)
+	for _, compact := range []bool{false, true} {
+		v := widget.View{Items: make([]widget.Item, 7), Scale: 1.5, Compact: compact}
+		x, y := initialPillPosition(settings{X: 300, Y: 200, HasPos: true}, v, work)
+		if x != 300 || y != 200 {
+			t.Fatalf("compact=%v moved valid saved pill to (%d,%d)", compact, x, y)
+		}
 	}
 }
 

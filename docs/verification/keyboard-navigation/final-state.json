@@ -1,0 +1,70 @@
+{
+  "agent_keys_ready": true,
+  "foreground": 12322108,
+  "host": 2296582,
+  "native_fits": false,
+  "native_protocol": 2,
+  "native_visible": false,
+  "owner": 7018096,
+  "owner_bounds": {
+    "Min": {
+      "X": 1159,
+      "Y": 0
+    },
+    "Max": {
+      "X": 1339,
+      "Y": 68
+    }
+  },
+  "owner_exstyle": 134742152,
+  "owner_visible": true,
+  "parent_background": true,
+  "session": 6928046883233097987,
+  "snapshot": {
+    "Available": true,
+    "Fits": false,
+    "Hidden": false,
+    "Bounds": {
+      "Min": {
+        "X": 0,
+        "Y": 1150
+      },
+      "Max": {
+        "X": 1920,
+        "Y": 1200
+      }
+    },
+    "Tray": {
+      "Min": {
+        "X": 1485,
+        "Y": 1150
+      },
+      "Max": {
+        "X": 1920,
+        "Y": 1200
+      }
+    },
+    "Readout": {
+      "Min": {
+        "X": 1485,
+        "Y": 1174
+      },
+      "Max": {
+        "X": 1485,
+        "Y": 1175
+      }
+    },
+    "DPI": 120,
+    "Build": 1753493509
+  },
+  "task_buttons": {
+    "Min": {
+      "X": 120,
+      "Y": 1150
+    },
+    "Max": {
+      "X": 1479,
+      "Y": 1200
+    }
+  }
+}

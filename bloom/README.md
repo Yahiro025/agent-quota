@@ -64,32 +64,6 @@ It feels mechanical. In a good way.
 
 ---
 
-## The Dock
-
-<!-- SHOWCASE: GIF — dock appearing on hover, drag-reorder, window previews -->
-<!-- ![Dock Demo](your-dock-gif-url) -->
-
-<p align="center">
-  <img width="576" height="102" alt="Bloom Dock" src="https://github.com/user-attachments/assets/96229f0e-1246-4baf-b8ad-3e8f77142a12" />
-</p>
-
-A taskbar that actually moves.
-
-Bloom replaces your native Windows taskbar.
-It sits at the bottom of your screen, always there when you need it.
-
-Drag to reorder.
-Hover for window previews.
-Right-click for context menus.
-
-It's not an overlay.
-It _is_ your taskbar.
-
-<!-- SHOWCASE: GIF — dock hover previews in action -->
-<!-- ![Window Previews](your-preview-gif-url) -->
-
----
-
 ## Under the Hood
 
 <!-- SHOWCASE: Optional — architecture diagram or visual of the 5-window system -->
@@ -155,6 +129,37 @@ bun run tauri dev
 ```
 
 You'll need [Rust](https://rustup.rs/) and [Bun](https://bun.sh/). That's it.
+
+---
+
+## Development
+
+One command runs the real desktop app with live reload:
+
+```bash
+bun run dev:app   # or: npm run dev:app
+```
+
+It starts Vite (HMR) and `tauri dev`, which builds the Rust side in debug mode and
+launches the actual notch window — not a browser preview. Because Bloom is
+single-instance, the command first closes an installed Bloom gracefully; if that
+cannot be done safely it asks you to quit Bloom from its tray icon and retry.
+
+What updates while it runs:
+
+- **React components and CSS** — hot-swapped in the running window, state kept
+  where React Refresh can preserve it. No rebuild, no restart.
+- **Other frontend modules** — the webview reloads itself; window state resets.
+- **Rust (`src-tauri`)** — cargo rebuilds incrementally and relaunches the app
+  automatically. Native state resets; the quota helper is respawned.
+
+Stop with `Ctrl+C` in the dev terminal (or the tray's Quit). Both restore the
+Windows taskbar, which Bloom hides while it runs.
+
+Development never packages or installs anything. Release builds stay separate:
+`bun run build` for the frontend, `bun run tauri build` / `bun run release` for
+installers. The dev instance also skips autostart registration so your login
+entry keeps pointing at the installed build.
 
 ---
 

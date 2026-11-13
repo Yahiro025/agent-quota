@@ -16,14 +16,55 @@ import (
 
 // Service is one session: a poller plus the writer Serve installs. The writer
 // is nil outside Serve so a change before (or after) a session writes nothing.
+//
+// Visibility is the parent's hidden set. The poller asks it On from its read
+// goroutines while the session loop replaces the set, so it carries its own
+// lock. A session that never sees an agents line starts with nothing hidden.
+type Visibility struct {
+	mu     sync.RWMutex
+	hidden map[string]bool
+}
+
+func NewVisibility() *Visibility {
+	return &Visibility{hidden: map[string]bool{}}
+}
+
+// On reports whether id should be polled and shown.
+func (v *Visibility) On(id string) bool {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return !v.hidden[id]
+}
+
+// SetHidden replaces the hidden set. Ids outside ItemAll are ignored, so a
+// newer parent may name an agent this build does not have.
+func (v *Visibility) SetHidden(ids []string) {
+	next := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if slices.Contains(ItemAll[:], id) {
+			next[id] = true
+		}
+	}
+	v.mu.Lock()
+	v.hidden = next
+	v.mu.Unlock()
+}
+
 type Service struct {
-	p  *Poller
-	mu sync.Mutex
-	w  io.Writer
+	p       *Poller
+	visible *Visibility
+	mu      sync.Mutex
+	w       io.Writer
 }
 
 func NewService(p *Poller) *Service {
-	return &Service{p: p}
+	return NewServiceWith(p, NewVisibility())
+}
+
+// NewServiceWith shares the parent's visibility set with the poller's isOn, so
+// an agents line filters snapshots and stops the reads themselves.
+func NewServiceWith(p *Poller, visible *Visibility) *Service {
+	return &Service{p: p, visible: visible}
 }
 
 // Handle answers one parent line with its reply events; done means shutdown.
@@ -38,6 +79,8 @@ func (s *Service) Handle(line string) (events []ServiceEvent, done bool) {
 	}
 	switch req.Op {
 	case "hello":
+		// Install startup visibility before any reader can start.
+		s.visible.SetHidden(req.Hidden)
 		events = []ServiceEvent{
 			{V: ServiceVersion, Op: "ready", Agents: slices.Clone(ItemAll[:])},
 			s.Snapshot(),
@@ -51,6 +94,13 @@ func (s *Service) Handle(line string) (events []ServiceEvent, done bool) {
 		} else {
 			s.p.RefreshOne(req.ID)
 		}
+	case "agents":
+		s.visible.SetHidden(req.Hidden)
+		events = []ServiceEvent{s.Snapshot()}
+		// Refresh prunes the agents that just went off and starts the ones
+		// that came back on; the snapshot above already reflects the new set
+		// even before those reads finish.
+		s.p.Refresh(true)
 	case "shutdown":
 		return []ServiceEvent{{V: ServiceVersion, Op: "bye"}}, true
 	}
@@ -61,6 +111,9 @@ func (s *Service) Handle(line string) (events []ServiceEvent, done bool) {
 func (s *Service) Snapshot() ServiceEvent {
 	ev := ServiceEvent{V: ServiceVersion, Op: "snapshot", Readings: make([]ServiceAgent, 0, len(ItemAll))}
 	for _, id := range ItemAll {
+		if !s.visible.On(id) {
+			continue
+		}
 		ev.Readings = append(ev.Readings, s.agent(id))
 	}
 	return ev

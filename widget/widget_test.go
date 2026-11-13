@@ -23,8 +23,8 @@ func TestRenderStates(t *testing.T) {
 	if open.Bounds().Dy() <= img.Bounds().Dy() {
 		t.Fatal("panel did not grow the image")
 	}
-	if w, _ := PillSize(7, 34); w != 541 {
-		t.Fatalf("seven-agent pill width = %d, want 541", w)
+	if w, _ := PillSize(7, 34); w != 549 {
+		t.Fatalf("seven-agent rail including its open control is %d px, want 549", w)
 	}
 }
 
@@ -62,17 +62,16 @@ func TestInspectorKeepsPillAnchorAndOpaqueTextSurface(t *testing.T) {
 		v.Above = above
 		img := Render(v)
 		pill := PillBounds(v)
-		if pill.Max.X != img.Bounds().Max.X || !pill.In(img.Bounds()) {
+		if pill.Max.X != img.Bounds().Max.X-shadowPad || !pill.In(img.Bounds()) {
 			t.Fatal("inspector does not keep the pill at its right edge")
 		}
-		panelY := pillH + panelGap
+		panel := PanelBounds(v)
 		if above {
-			panelY = 0
-			if pill.Max.Y != img.Bounds().Max.Y {
+			if pill.Max.Y != img.Bounds().Max.Y-shadowPad {
 				t.Fatal("above inspector misplaced pill")
 			}
 		}
-		pixel := img.RGBAAt(100, panelY+20)
+		pixel := img.RGBAAt(panel.Min.X+100, panel.Min.Y+20)
 		if pixel.A != 255 {
 			t.Fatal("inspector lets desktop text show through its reading surface")
 		}

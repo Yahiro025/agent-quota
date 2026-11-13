@@ -3,11 +3,12 @@ import type { QuotaAgent } from "./protocol";
 import { alertRows } from "./quotaView";
 import "../components/QuickPanel.css";
 
-// Same paint as QuotaPanel: green below 70, amber from 70, red from 90.
-const BAND_COLOR = {
-	green: "#32D74B",
-	amber: "#FFD60A",
-	red: "#FF453A"
+// Text colors use CSS variables so light mode reaches >= 4.5:1 contrast
+// while dark mode stays byte-identical to the original paint.
+const BAND_TEXT_COLOR = {
+	green: "var(--usage-normal-text, #32D74B)",
+	amber: "var(--usage-warning-text, #FFD60A)",
+	red: "var(--usage-critical-text, #FF453A)"
 } as const;
 
 // Compact strip of the urgent readings, layered over the island until every
@@ -47,7 +48,8 @@ export function QuotaAlert({
 						)}
 						<span
 							className="quota-alert-pct"
-							style={{ color: BAND_COLOR[row.band ?? "red"] }}
+							data-band={row.band ?? "red"}
+							style={{ color: BAND_TEXT_COLOR[row.band ?? "red"] }}
 						>
 							{Math.round(row.used ?? 0)}%
 						</span>

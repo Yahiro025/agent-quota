@@ -6,6 +6,7 @@
 // the two displays can never disagree.
 
 import { band, urgent, type QuotaAgent, type QuotaDetail, type QuotaWindow } from "./protocol";
+import { agentName } from "./marks";
 
 // A reset instant rendered both ways; which one a row shows is a display
 // toggle, not two different times.
@@ -19,6 +20,16 @@ export interface QuotaDetailView {
 	value: string;
 	resetText?: string;
 	reset?: QuotaResetView;
+}
+
+// One structured metric row of the detail card: label, band-painted
+// percentage when a number exists, and that row's own reset sentence.
+export interface QuotaMetricRow {
+	label: string;
+	used?: number;
+	value: string;
+	reset?: string;
+	resetClock?: string;
 }
 
 export interface QuotaRow {
@@ -37,9 +48,9 @@ export interface QuotaRow {
 	details: QuotaDetailView[];
 }
 
-// `panel` is the currently open notch panel. `showInRest` asks for quota on
-// the resting island: only an urgent reading can ask, and not while the
-// quotas panel is already the open one.
+// `panel` is the currently open notch panel. `showInRest` is true when an
+// urgent reading exists and the quotas panel is not already open. The strip
+// still waits for a hover; see `quotaAlertVisible`.
 export function quotaView(
 	readings: QuotaAgent[],
 	panel: string,
@@ -49,6 +60,13 @@ export function quotaView(
 		showInRest: panel !== "quotas" && readings.some(urgent),
 		panel: readings.map((reading) => toRow(reading, now))
 	};
+}
+
+// The usage-limit strip is a hover detail of the collapsed notch. An urgent
+// reading does not paint it on the resting island, and an open panel is left
+// alone so calendar, music, and the quota space stay visible.
+export function quotaAlertVisible(showInRest: boolean, hovered: boolean, open: boolean): boolean {
+	return showInRest && hovered && !open;
 }
 
 // The urgent subset of readings, as the same rows the panel would draw, so
@@ -136,33 +154,127 @@ export function basis(a: QuotaAgent): string {
 	if (a.id === "kiro") return "Credits";
 	if (a.id === "cursor") return "Plan";
 	if (a.id === "copilot") return "Premium";
+	if (a.id === "grokbot") return "Week";
+	if (a.id === "qoder") return "Credits";
 	return "Usage";
 }
 
 // One string per detail row of the selected agent: `Label · Value · reset`.
-// Go breaks to a second line when the row overflows; CSS wraps here instead.
+// The panel draws the same rows via detailRows; these lines feed the hover
+// tooltip so the two surfaces never disagree.
 export function detailLines(a: QuotaAgent, now: Date, clock: boolean): string[] {
 	if (a.state === "waiting") return ["Checking usage…"];
 	if (a.state === "failed") {
 		const message = a.err || a.detail || "";
 		return message ? [message] : [];
 	}
-	const details = a.details ?? [];
-	if (details.length === 0) {
-		const s = seamDetailText(a, now, clock);
-		return s ? [s] : [];
-	}
-	return details.map((row) => {
-		let value = row.label;
-		if (row.value) value = value ? value + " · " + row.value : row.value;
-		const reset = detailResetText(row, now, clock);
-		if (reset) value += " · " + reset;
-		return value;
-	});
+	return detailRows(a, now, clock).map((row) =>
+		[row.label, row.value, row.reset].filter(Boolean).join(" · ")
+	);
 }
 
-export function failedCount(readings: QuotaAgent[]): number {
-	return readings.filter((a) => a.state === "failed").length;
+// The selected agent's usage as structured rows. `details` rows carry their
+// own labels and reset instants; bare `windows` rows get a reset only from
+// reset5h (5h window or a lone window) or resetLabel on a lone window;
+// grouped agents pool their 5h window into one summary row.
+export function detailRows(a: QuotaAgent, now: Date, clock: boolean): QuotaMetricRow[] {
+	if (a.state === "waiting" || a.state === "failed") return [];
+	if ((a.details?.length ?? 0) > 0) {
+		return a.details!.map((row) => {
+			const m = /^\s*(\d+(?:\.\d+)?)%/.exec(row.value);
+			const pooled = m
+				? undefined
+				: (a.windows ?? []).find(
+						(w) => w.label.toLowerCase() === row.label.toLowerCase()
+					);
+			const parsed = m ? parseFloat(m[1]) : pooled?.used;
+			const used =
+				typeof parsed === "number"
+					? Math.min(Math.max(parsed, 0), 100)
+					: undefined;
+			const value =
+				used !== undefined
+					? `${wholePercent(used)}%`
+					: row.value.replace(/\s+used$/i, "").trim() || row.value;
+			return withClock(
+				{
+					label: row.label,
+					used,
+					value,
+					reset: detailResetText(row, now, clock) || undefined
+				},
+				row.resetAt,
+				now,
+				clock
+			);
+		});
+	}
+	if ((a.windows?.length ?? 0) > 0) {
+		return a.windows!.map((w) => {
+			const fromInstant =
+				(w.label === "5h" || a.windows!.length === 1) && a.state === "ok" && a.reset5h;
+			return withClock(
+				{
+					label: windowName(w.label),
+					used: w.used,
+					value: `${wholePercent(w.used)}%`,
+					reset: fromInstant
+						? isoResetText(a.reset5h, now, clock) || undefined
+						: a.resetLabel && a.windows!.length === 1
+							? "resets " + a.resetLabel
+							: undefined
+				},
+				fromInstant ? a.reset5h : undefined,
+				now,
+				clock
+			);
+		});
+	}
+	if ((a.groups?.length ?? 0) > 0) {
+		const used = poolWindow(a, "5h") ?? a.used;
+		if (typeof used === "number" || a.reset5h) {
+			return [
+				withClock(
+					{
+						label: "5h",
+						used: typeof used === "number" ? used : undefined,
+						value: typeof used === "number" ? `${wholePercent(used)}%` : "—",
+						reset:
+							a.state === "ok" && a.reset5h
+								? isoResetText(a.reset5h, now, clock) || undefined
+								: undefined
+					},
+					a.state === "ok" ? a.reset5h : undefined,
+					now,
+					clock
+				)
+			];
+		}
+	}
+	if (typeof a.used === "number") {
+		const fromInstant = a.state === "ok" && !!a.reset5h;
+		return [
+			withClock(
+				{
+					label: basis(a),
+					used: a.used,
+					value: `${wholePercent(a.used)}%`,
+					reset: fromInstant
+						? isoResetText(a.reset5h, now, clock) || undefined
+						: a.resetLabel
+							? "resets " + a.resetLabel
+							: undefined
+				},
+				fromInstant ? a.reset5h : undefined,
+				now,
+				clock
+			)
+		];
+	}
+	if (a.summary || a.detail) {
+		return [{ label: basis(a), value: a.summary || a.detail || "" }];
+	}
+	return [];
 }
 
 export function anyBusy(readings: QuotaAgent[]): boolean {
@@ -176,29 +288,21 @@ export function defaultSelection(readings: QuotaAgent[]): string | undefined {
 	);
 }
 
-// One reset instant as a countdown or wall-clock string; a past instant
-// reads "now" rather than a negative countdown.
-export function formatReset(at: string, now: Date, clock: boolean): string {
-	const instant = new Date(at);
-	if (Number.isNaN(instant.getTime())) return "";
-	if (instant.getTime() <= now.getTime()) return "now";
-	return clock ? clockText(instant) : countdownText(instant, now);
-}
-
-// Go's `resets in …` text for a detail row, floored to whole minutes.
+// `resets in …` text for a detail row: whole hours drop the trailing "0m",
+// multi-day resets drop minute noise, and a past instant reads "now".
 const detailCountdown = (instant: Date, now: Date): string => {
-	const mins = Math.floor((instant.getTime() - now.getTime()) / 60000);
-	const days = Math.floor(mins / 1440);
-	if (days > 0) return `${days}d ${Math.floor(mins / 60) % 24}h ${mins % 60}m`;
-	const hours = Math.floor(mins / 60);
-	return hours > 0 ? `${hours}h ${mins % 60}m` : `${mins}m`;
+	if (instant.getTime() <= now.getTime()) return "now";
+	const minutes = Math.max(
+		1,
+		Math.round((instant.getTime() - now.getTime()) / 60000)
+	);
+	const days = Math.floor(minutes / 1440);
+	const hours = Math.floor((minutes % 1440) / 60);
+	const mins = minutes % 60;
+	if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+	if (hours > 0) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+	return `${mins}m`;
 };
-
-const pad2 = (n: number): string => String(n).padStart(2, "0");
-
-// Go's FormatLocal "d MMM HH:mm" ("23 Oct 08:00").
-const dayClockText = (instant: Date): string =>
-	`${instant.getDate()} ${MONTHS[instant.getMonth()]} ${pad2(instant.getHours())}:${pad2(instant.getMinutes())}`;
 
 const sameLocalDay = (a: Date, b: Date): boolean =>
 	a.getFullYear() === b.getFullYear() &&
@@ -208,62 +312,151 @@ const sameLocalDay = (a: Date, b: Date): boolean =>
 // detailResetLabel in main.go: resetText fills in when no instant arrives;
 // a passed instant shows its wall-clock date rather than "in -3m".
 const detailResetText = (row: QuotaDetail, now: Date, clock: boolean): string => {
-	const instant = row.resetAt ? new Date(row.resetAt) : undefined;
-	if (!instant || Number.isNaN(instant.getTime())) {
-		return row.resetText ? "resets " + row.resetText : "";
-	}
-	if (instant.getTime() <= now.getTime()) return "resets at " + dayClockText(instant);
-	if (clock) {
-		return sameLocalDay(instant, now)
-			? "resets " + clockText(instant)
-			: "resets " + dayClockText(instant);
-	}
+    return isoResetText(row.resetAt, now, clock) || (row.resetText ? "resets " + row.resetText : "");
+};
+
+// A reset5h ISO instant as the same reset sentence a detail row gets; the
+// row's own label already names the window, so no "5h" prefix here.
+const isoResetText = (at: string | undefined, now: Date, clock: boolean): string => {
+	const instant = at ? new Date(at) : undefined;
+	if (!instant || Number.isNaN(instant.getTime())) return "";
+	if (instant.getTime() <= now.getTime()) return "resets now";
+	if (clock) return "resets " + wallClock(instant, now);
 	return "resets in " + detailCountdown(instant, now);
 };
 
-// resetLabels in main.go: the 5h row's own reset sentence. A past instant
-// still reads "now" here (Bloom keeps the line instead of dropping it).
-const reset5hPanelText = (at: string | undefined, now: Date, clock: boolean): string => {
-	const instant = at ? new Date(at) : undefined;
-	if (!instant || Number.isNaN(instant.getTime())) return "";
-	if (instant.getTime() <= now.getTime()) return "5h resets now";
-	if (clock) {
-		return sameLocalDay(instant, now)
-			? "5h resets " + clockText(instant)
-			: "5h resets " + dayClockText(instant);
-	}
-	return "5h resets in " + detailCountdown(instant, now);
-};
+// Same locale clock as the notch. A later day keeps the "d MMM" date in front of it.
+export function wallClock(instant: Date, now: Date): string {
+	const time = clockText(instant);
+	if (sameLocalDay(instant, now)) return time;
+	return `${instant.getDate()} ${MONTHS[instant.getMonth()]} ${time}`;
+}
 
-// metrics in widget/widget.go: summary, else every window as `Name nn%`,
-// else the freeform detail string.
-const metricsText = (a: QuotaAgent): string => {
-	if (a.summary) return a.summary;
-	const parts = (a.windows ?? []).map(
-		(w) => `${windowName(w.label)} ${wholePercent(w.used)}%`
-	);
-	return parts.length ? parts.join("   ") : (a.detail ?? "");
+const withClock = (
+	row: QuotaMetricRow,
+	iso: string | undefined,
+	now: Date,
+	clock: boolean
+): QuotaMetricRow => {
+	if (clock || !iso) return row;
+	const instant = new Date(iso);
+	if (Number.isNaN(instant.getTime()) || instant.getTime() <= now.getTime()) return row;
+	return { ...row, resetClock: wallClock(instant, now) };
 };
 
 // quota.Custom(v, 0): .NET "0" rounding, half away from zero.
 const wholePercent = (v: number): string =>
 	(v < 0 ? "-" : "") + Math.round(Math.abs(v));
 
-// seamDetail in widget/seam.go: the fallback block when no per-window
-// detail rows arrived.
-const seamDetailText = (a: QuotaAgent, now: Date, clock: boolean): string => {
-	// Go only turns reset5h into a row's reset when the state is OK
-	// (main.go buildView); a stale row falls back to its resetLabel.
-	const reset = a.state === "ok" ? reset5hPanelText(a.reset5h, now, clock) : "";
-	if ((a.groups?.length ?? 0) > 0) {
-		let s = `${a.groups!.length} model groups`;
-		if (reset) s += "  ·  " + reset;
-		return s;
-	}
-	if (reset) {
-		return (a.windows?.length ?? 0) > 0 ? metricsText(a) + "  ·  " + reset : reset;
-	}
-	let s = metricsText(a);
-	if (a.resetLabel) s += "  ·  resets " + a.resetLabel;
-	return s;
+// --- collapsed-notch hover badge --------------------------------------
+// poolWindow in widget/pools.go: the fullest window carrying a label wins,
+// whether it sits at the top level or inside a model group.
+const poolWindow = (a: QuotaAgent, label: string): number | undefined => {
+	let found: number | undefined;
+	const visit = (windows: QuotaWindow[] | undefined) => {
+		for (const w of windows ?? []) {
+			if (w.label === label && (found === undefined || w.used > found)) found = w.used;
+		}
+	};
+	visit(a.windows);
+	for (const g of a.groups ?? []) visit(g.windows);
+	return found;
 };
+
+// headlineUsed in widget/pools.go: the 5h pool when reported, else the
+// agent's own percentage.
+const headlineUsed = (a: QuotaAgent): number | undefined => poolWindow(a, "5h") ?? a.used;
+
+// The one agent the collapsed notch's hover badge shows: the pinned
+// selection, else the busiest numeric reading (ties keep the earlier
+// agent; a reported 0 still beats no number), else the default selection.
+export function hoverQuotaAgent(
+	readings: QuotaAgent[],
+	selected?: string
+): QuotaAgent | undefined {
+	if (readings.length === 0) return undefined;
+	if (selected !== undefined) {
+		const pinned = readings.find((a) => a.id === selected);
+		if (pinned) return pinned;
+	}
+	let best: QuotaAgent | undefined;
+	let bestUsed = -Infinity;
+	for (const a of readings) {
+		const used = headlineUsed(a);
+		if (typeof used === "number" && used > bestUsed) {
+			best = a;
+			bestUsed = used;
+		}
+	}
+	if (best !== undefined) return best;
+	return readings.find((a) => a.id === defaultSelection(readings)) ?? readings[0];
+}
+
+// The agent after currentId in snapshot order, wrapping to the first.
+// A missing current lands on the first reading. A one-agent list stays put.
+// Waiting and failed readings are real steps.
+export function nextAgent(readings: QuotaAgent[], currentId?: string): string | undefined {
+	if (readings.length === 0) return undefined;
+	const index = readings.findIndex((a) => a.id === currentId);
+	return readings[(index + 1) % readings.length]?.id;
+}
+
+// The two concentric arcs around an agent mark: inner is the shorter
+// window (5h, or Devin's day), outer the longer one (week). With fewer
+// than two usage metrics the outer track stays empty; a waiting or failed
+// agent draws both tracks empty. Windows are pooled from `a.windows` and
+// `a.groups[].windows` like pools.go, and detail rows can donate their
+// leading percentage when the windows alone can't fill two rings.
+export function agentRings(a: QuotaAgent): {
+	inner: number | undefined;
+	outer: number | undefined;
+} {
+	if (a.state === "waiting" || a.state === "failed") {
+		return { inner: undefined, outer: undefined };
+	}
+	const fiveH = poolWindow(a, "5h");
+	const week = poolWindow(a, "week");
+	if (fiveH !== undefined && week !== undefined) return { inner: fiveH, outer: week };
+	const day = poolWindow(a, "day");
+	if (day !== undefined && week !== undefined) return { inner: day, outer: week };
+
+	// Distinct window values in reported order, then detail percentages.
+	const wins: number[] = [];
+	const labels = new Set<string>();
+	const collect = (windows: QuotaWindow[] | undefined) => {
+		for (const w of windows ?? []) {
+			if (labels.has(w.label)) continue;
+			labels.add(w.label);
+			wins.push(w.used);
+		}
+	};
+	collect(a.windows);
+	for (const g of a.groups ?? []) collect(g.windows);
+	if (wins.length < 2) {
+		for (const d of a.details ?? []) {
+			const m = /^(\d+(?:\.\d+)?)%/.exec(d.value) ?? /^(\d+(?:\.\d+)?)%/.exec(d.label);
+			if (m === null) continue;
+			const pct = parseFloat(m[1]);
+			if (!wins.includes(pct)) wins.push(pct);
+			if (wins.length >= 2) break;
+		}
+	}
+	if (wins.length >= 2) {
+		const inner = typeof a.used === "number" ? a.used : wins[0];
+		const outer = wins.find((v) => v !== inner) ?? wins[1];
+		return { inner, outer };
+	}
+	if (wins.length === 1 || typeof a.used === "number") {
+		return { inner: headlineUsed(a), outer: undefined };
+	}
+	return { inner: undefined, outer: undefined };
+}
+
+// The badge's tooltip: name and plan on the first line, then the same
+// detail lines the panel would draw (or the basis caption when there are
+// none), so the hover text never disagrees with the open space.
+export function hoverQuotaTooltip(a: QuotaAgent, now: Date = new Date()): string {
+	const head = agentName(a.id) + (a.plan ? ` · ${a.plan}` : "");
+	const lines = detailLines(a, now, false);
+	return [head, ...(lines.length > 0 ? lines : [basis(a)])].join("\n");
+}

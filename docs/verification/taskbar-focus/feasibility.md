@@ -2,6 +2,8 @@
 
 Date: 2026-10-17. Outcome: **FAIL under the approved constraints.**
 
+**Later authorized native probe, 2026-10-17:** relaxing the Explorer-DLL restriction for a disposable experiment demonstrated a real inline slot, full readout fit and auto-hide movement on this machine. See [native probe result and limits](deskband-probe/RESULT.md). Windows confirmation is required when enabling/re-enabling the band; app-controlled drag-to-dock, physical pointer focus and lifecycle scenarios remain unverified. This updates the revised-route evidence, not the historical pure-Go verdict or the full Focus implementation gate.
+
 This is a failed implementation prerequisite, not a completed Focus feature. Product code and the installed executable were not changed. Tasks 2–5 have not started.
 
 ## Live machine evidence

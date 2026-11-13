@@ -1,0 +1,35 @@
+﻿{
+    "source":  "Installed Spotify desktop via Spicetify",
+    "spotifyVersion":  "1.2.53.440",
+    "spicetifyVersion":  "2.46.4",
+    "method":  "Player.origin.skipToNext({uri,uid})",
+    "beforeAt":  "2026-10-29T15:05:27.020Z",
+    "afterAt":  "2026-10-29T15:05:47.616Z",
+    "fixture":  "Four copies of the already-current track, distinct queue occurrence IDs; original displayed queue empty",
+    "beforeOccurrenceIds":  [
+                                "q0",
+                                "q1",
+                                "q2",
+                                "q3"
+                            ],
+    "selectedOccurrence":  "q2",
+    "afterOccurrenceIds":  [
+                               "q3"
+                           ],
+    "observedCurrent":  "q2",
+    "observedPlaying":  true,
+    "originalModes":  {
+                          "repeat":  1,
+                          "shuffle":  false
+                      },
+    "restoreStatus":  "restored",
+    "restoredPlaying":  false,
+    "restoredUserQueueCount":  0,
+    "limits":  [
+                   "Only duplicate-track fixture tested",
+                   "No distinct-track fixture or full context continuation",
+                   "No shuffle/repeat variant coverage",
+                   "No multi-source routing proof",
+                   "Instrumentation, not Bloom integration"
+               ]
+}

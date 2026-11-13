@@ -20,8 +20,15 @@ pub struct AudioVisualizationData {
     pub frequencies: Vec<f32>,
 }
 
+use crate::media_queue::Lyrics;
+
 #[derive(Serialize, Clone)]
 pub struct MediaInfo {
+    #[serde(default)]
+    pub target_generation: String,
+    /// Display name of the player that owns this media, for its volume session.
+    #[serde(default)]
+    pub app: String,
     pub title: String,
     pub artist: String,
     pub is_playing: bool,
@@ -35,9 +42,12 @@ pub struct MediaInfo {
     pub seek_enabled: bool,
     #[serde(default)]
     pub position_updated_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lyrics: Option<Lyrics>,
 }
 
 pub enum SystemCommand {
+    MediaTarget { generation: String, op: String, position_ms: Option<i64> },
     SetVolume(f32),
     MediaPlayPause,
     MediaNext,

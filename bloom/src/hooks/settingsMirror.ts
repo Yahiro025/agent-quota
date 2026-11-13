@@ -5,12 +5,12 @@ const LOCAL_ONLY_KEYS = new Set([
 	"bloom-first-run",
 	"bloom-app-version",
 	"bloom-timer-last-duration",
-	"bloom-announcement-cache",
-	"bloom-announcement-cache-at",
 	// Notch shelf contents; persisted only when bloom-shelf-persist is on.
 	"bloom-shelf-items",
 	// Legacy name, only read as a fallback for bloom-media-visualizer-enabled.
-	"bloom-visualizer-enabled"
+	"bloom-visualizer-enabled",
+	// Measured resting MyFinder strip width so a pinned quota strip aligns on restart.
+	"bloom-resting-strip-width"
 ]);
 
 // What this window's first render saw: useState initializers read localStorage.

@@ -12,6 +12,24 @@
 
 **Execution outcome, 2026-10-17:** Task 1 returned FAIL under the approved constraints. See [feasibility evidence](../../verification/taskbar-focus/feasibility.md). Tasks 2–5 were not started, as required by the gate. The feature is not implemented; the next action is review of a revised integration option.
 
+**Probe revision authorized, 2026-10-17:** After the architecture comparison, the user instructed "do that yourself" in response to the recommended native deskband feasibility probe. Task 1 may now build, register, show, test and remove a disposable Explorer-loaded C++ deskband. This relaxes the no-Explorer-DLL constraint for the probe only. It does not authorize silently changing the selected interaction or installing a product build. Preserve the installed app, quota settings, taskbar layout and original shell settings. Do not restart Explorer automatically. Tasks 2–5 remain gated on the revised evidence.
+
+### Revised Task 1 probe steps
+
+- [x] Generate frozen, real-size readout and popup images using the existing Go renderer; no live quota readers.
+- [x] Build the native deskband and disposable controller. Validate COM lifetime, resource bounds and focus behavior outside Explorer before loading it.
+- [x] Register a unique per-user probe class, enable it through `ITrayDeskBand`, and measure the shell-allocated slot against task buttons and tray. No private taskbar resizing or reparenting.
+- [ ] Exercise popup input/focus, shell relayout, hide/show and available DPI/auto-hide scenarios; distinguish synthetic messages from real pointer evidence.
+- [x] Hide and unregister the probe, verify app/settings preservation, and record the verdict and remaining unverified scenarios.
+
+**Revised Task 1 evidence:** [native probe result](../../verification/taskbar-focus/deskband-probe/RESULT.md). Explorer allocated a 152×48 client rectangle for the complete 148×48 readout at 125% DPI, shifted task buttons aside, retained the 50-pixel taskbar height, and moved the band with auto-hide. The enabling confirmation appeared on initial show and re-show. Native screenshot capture timed out; physical pointer focus, drag/undock, crowded layout, real DPI transitions and Explorer recreation remain unverified. Placement is demonstrated, but the full selected-interaction gate is not marked PASS. Tasks 2–5 remain unstarted. Cleanup and preservation checks passed.
+
+## Execution update, 2026-10-17
+
+The user's subsequent instruction to finish the remaining work authorizes the production native deskband and installation. This supersedes the earlier conditional product stop and prohibition on an Explorer-loaded DLL. The main agent implemented the renderer, native pixel host, Go adapter, docking state, settings and installation in an isolated snapshot; integrated changes preserve the original dirty working tree. Native sizing uses documented deskband negotiation rather than private child resizing.
+
+Tasks 2 through 4 are implemented; Task 5's automated, renderer and available live installation/recovery checks are complete. Physical-pointer drag/click, live DPI changes, crowding and actual Explorer restart remain explicitly unobserved. The earlier checkboxes below retain the original planned acceptance scope; they must not be read as proof that unavailable live scenarios were exercised. See [final verification](../../verification/taskbar-focus/verification.md) and native/taskbar/README.md for the actual shipped contract and build procedure.
+
 ## Global Constraints
 
 - Preserve the authentic selected-agent mark, inner five-hour ring, outer weekly ring, primary percentage, and reset countdown.

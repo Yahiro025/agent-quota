@@ -1,0 +1,154 @@
+{
+  "clock": "2026-10-25T09:41:00+08:00",
+  "readings": [
+    {
+      "id": "claude",
+      "state": "ok",
+      "used": 42,
+      "plan": "Pro",
+      "reset5h": "2026-10-25T13:05:00+08:00",
+      "windows": [
+        {
+          "label": "5h",
+          "used": 42
+        },
+        {
+          "label": "week",
+          "used": 28
+        }
+      ],
+      "details": [
+        {
+          "label": "5h",
+          "value": "42% used",
+          "resetAt": "2026-10-25T13:05:00+08:00"
+        },
+        {
+          "label": "Week",
+          "value": "28% used",
+          "resetAt": "2026-10-27T15:59:00+08:00"
+        }
+      ]
+    },
+    {
+      "id": "kiro",
+      "state": "ok",
+      "used": 62,
+      "details": [
+        {
+          "label": "Credits",
+          "value": "620 of 1,000 used"
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "state": "ok",
+      "used": 18,
+      "plan": "Plus",
+      "reset5h": "2026-10-25T13:05:00+08:00",
+      "windows": [
+        {
+          "label": "5h",
+          "used": 18
+        },
+        {
+          "label": "week",
+          "used": 36
+        }
+      ],
+      "details": [
+        {
+          "label": "5h",
+          "value": "18% used",
+          "resetAt": "2026-10-25T13:05:00+08:00"
+        },
+        {
+          "label": "Week",
+          "value": "36% used",
+          "resetAt": "2026-10-27T15:59:00+08:00"
+        }
+      ]
+    },
+    {
+      "id": "cursor",
+      "state": "ok",
+      "used": 71,
+      "plan": "Pro"
+    },
+    {
+      "id": "copilot",
+      "state": "ok",
+      "used": 35,
+      "details": [
+        {
+          "label": "Premium requests",
+          "value": "35% used"
+        }
+      ]
+    },
+    {
+      "id": "devin",
+      "state": "ok",
+      "used": 56,
+      "plan": "Pro",
+      "windows": [
+        {
+          "label": "day",
+          "used": 56
+        },
+        {
+          "label": "week",
+          "used": 28
+        }
+      ],
+      "details": [
+        {
+          "label": "Day",
+          "value": "56% used",
+          "resetAt": "2026-10-25T15:59:00+08:00"
+        },
+        {
+          "label": "Week",
+          "value": "28% used",
+          "resetAt": "2026-10-27T15:59:00+08:00"
+        }
+      ]
+    },
+    {
+      "id": "antigravity",
+      "state": "ok",
+      "used": 24,
+      "reset5h": "2026-10-25T13:05:00+08:00",
+      "groups": [
+        {
+          "name": "Gemini 3 Pro",
+          "windows": [
+            {
+              "label": "5h",
+              "used": 24
+            }
+          ]
+        },
+        {
+          "name": "Claude Sonnet 4.5",
+          "windows": [
+            {
+              "label": "5h",
+              "used": 12
+            }
+          ]
+        },
+        {
+          "name": "GPT-OSS 120B",
+          "windows": [
+            {
+              "label": "5h",
+              "used": 8
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

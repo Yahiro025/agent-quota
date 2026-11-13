@@ -332,7 +332,7 @@ func TestClaudeAsksWithItsOwnSignInAndExplainsRefusals(t *testing.T) {
 	}{
 		{401, "Anthropic refused Claude Code’s sign-in — run claude to renew it."},
 		{403, "This sign-in can’t read plan usage — run claude and sign in again."},
-		{429, "Anthropic is limiting usage checks; Hover tries again in five minutes."},
+		{429, "Anthropic is limiting usage checks; trying again in five minutes."},
 		{500, "api.anthropic.com answered 500."},
 	} {
 		url, _ := serve(t, c.status, "{}")

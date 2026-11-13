@@ -1,0 +1,13 @@
+{
+    "format":  "pass",
+    "vet":  "pass",
+    "go_packages":  9,
+    "queue_regression":  "red then green",
+    "live_ownership_changes":  12,
+    "backlog_before_ms":  388.7782,
+    "backlog_after_ms":  3.4557,
+    "native_host_changed":  false,
+    "physical_pointer_verified":  false,
+    "installed_and_root_match":  true,
+    "time":  "2026-10-17T19:00:59.3791738+08:00"
+}

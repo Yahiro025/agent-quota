@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"unsafe"
 
+	"agent-quota/internal/core"
 	"golang.org/x/sys/windows"
 )
 
@@ -42,6 +43,15 @@ var (
 	pGetDPIForSystem    = user32.NewProc("GetDpiForSystem")
 	pLoadCursor         = user32.NewProc("LoadCursorW")
 	pSetCursor          = user32.NewProc("SetCursor")
+	pMonitorFromPoint   = user32.NewProc("MonitorFromPoint")
+	pGetMonitorInfo     = user32.NewProc("GetMonitorInfoW")
+	pForegroundWindow   = user32.NewProc("GetForegroundWindow")
+	pIsIconic           = user32.NewProc("IsIconic")
+	pWindowLong         = user32.NewProc("GetWindowLongPtrW")
+	dwmapi              = windows.NewLazySystemDLL("dwmapi.dll")
+	pWindowCloaked      = dwmapi.NewProc("DwmGetWindowAttribute")
+	shell32             = windows.NewLazySystemDLL("shell32.dll")
+	pNotificationState  = shell32.NewProc("SHQueryUserNotificationState")
 	pCreateCompatibleDC = gdi32.NewProc("CreateCompatibleDC")
 	pCreateDIBSection   = gdi32.NewProc("CreateDIBSection")
 	pSelectObject       = gdi32.NewProc("SelectObject")
@@ -61,18 +71,20 @@ const (
 
 	swShowNoactivate = 4
 
-	wmDestroy       = 0x0002
-	wmMouseactivate = 0x0021
-	wmSetcursor     = 0x0020
-	maNoactivate    = 3
-	wmMousemove     = 0x0200
-	wmLbuttondown   = 0x0201
-	wmLbuttonup     = 0x0202
-	wmRbuttonup     = 0x0205
-	wmMouseleave    = 0x02A3
-	wmTimer         = 0x0113
-	wmDpichanged    = 0x02E0
-	wmCommand       = 0x0111
+	wmDestroy        = 0x0002
+	wmMouseactivate  = 0x0021
+	wmNchittest      = 0x0084
+	wmCapturechanged = 0x0215
+	wmSetcursor      = 0x0020
+	maNoactivate     = 3
+	wmMousemove      = 0x0200
+	wmLbuttondown    = 0x0201
+	wmLbuttonup      = 0x0202
+	wmRbuttonup      = 0x0205
+	wmMouseleave     = 0x02A3
+	wmTimer          = 0x0113
+	wmDpichanged     = 0x02E0
+	wmCommand        = 0x0111
 
 	ulwAlpha     = 2
 	acSrcOver    = 0
@@ -101,7 +113,33 @@ const (
 	tPoll  = 1
 	tHover = 2
 	tLeave = 3
+	// tTopmost rides the same WM_TIMER dispatch as tPoll (id + 100), so the app
+	// can re-assert z-order and fullscreen suppression every two seconds.
+	tTopmost = 4
+
+	monitorDefaultToPrimary = 1
+	gwlStyle                = ^uintptr(15) // GWL_STYLE = -16
+	gwlExStyle              = ^uintptr(19) // GWL_EXSTYLE = -20
+	wsCaption               = 0x00C00000
+	dwmwaCloaked            = 14
+	// QUNS_RUNNING_D3D_FULL_SCREEN and QUNS_PRESENTATION_MODE are the two
+	// shell states that only occur when something truly covers the desktop.
+	qunsRunningD3DFullScreen = 3
+	qunsPresentationMode     = 4
 )
+
+// A monitor's rcMonitor/rcWork pair decides whether an appbar such as
+// MyDockFinder has reserved the screen's top edge.
+type rect32 struct {
+	left, top, right, bottom int32
+}
+
+type monitorInfo struct {
+	size    uint32
+	monitor rect32
+	work    rect32
+	flags   uint32
+}
 
 // MenuItem is one right-click menu row.
 type MenuItem struct {
@@ -126,11 +164,20 @@ var cb Callback
 var hwnd windows.HWND
 var singleMutex windows.Handle
 
+// windowVisible mirrors ShowWindow state so the maintenance tick never raises
+// (or implicitly shows) a window the app deliberately hid. menuOpen suppresses
+// re-ordering while a context menu owns the topmost band.
+var (
+	windowVisible bool
+	menuOpen      bool
+)
+
 var (
 	dragging       bool
 	downSX, downSY int
 	downWX, downWY int
 	moved          bool
+	pressed        bool
 )
 
 type point struct {
@@ -209,6 +256,12 @@ func armLeave() {
 }
 
 func showMenu() {
+	if k := activeAgentKeyboard.Load(); k != nil {
+		k.paused.Store(true)
+		defer k.paused.Store(false)
+	}
+	menuOpen = true
+	defer func() { menuOpen = false }()
 	m, _, _ := pCreatePopupMenu.Call()
 	if m == 0 {
 		return
@@ -235,7 +288,24 @@ func showMenu() {
 }
 
 func wndProc(h windows.HWND, msg uint32, w, l uintptr) uintptr {
+	if handleTaskbarMessage(msg, w, l) {
+		return 0
+	}
 	switch msg {
+	case agentNavigateMessage:
+		handleAgentNavigation(w, l)
+		return 0
+	case 0x0018:
+		if w == 0 {
+			EnableAgentNavigation(false)
+		}
+	case wmNchittest:
+		if hit, ok := cb.(interface{ ContainsPoint(int, int) bool }); ok {
+			x, y, _, _ := windowRect()
+			if !hit.ContainsPoint(int(int16(l&0xFFFF))-x, int(int16(l>>16))-y) {
+				return ^uintptr(0)
+			}
+		}
 	case wmSetcursor:
 		cursor := uintptr(32512)
 		if pointer, ok := cb.(interface{ PointerHand() bool }); ok && pointer.PointerHand() {
@@ -247,6 +317,7 @@ func wndProc(h windows.HWND, msg uint32, w, l uintptr) uintptr {
 	case wmMouseactivate:
 		return maNoactivate
 	case wmDestroy:
+		stopAgentKeyboard()
 		pPostQuitMessage.Call(0)
 		return 0
 	case wmMousemove:
@@ -257,27 +328,38 @@ func wndProc(h windows.HWND, msg uint32, w, l uintptr) uintptr {
 		}
 		// Hover: open the panel after ~400 ms.
 		pSetTimer.Call(uintptr(h), tHover, 400, 0)
-		if dragging {
+		if pressed {
 			sx, sy := cursorPos()
 			if abs(sx-downSX)+abs(sy-downSY) > 4 {
 				moved = true
 			}
-			if moved {
+			if moved && dragging {
 				cb.OnMove(downWX+sx-downSX, downWY+sy-downSY)
 			}
 		}
 		return 0
 	case wmLbuttondown:
+		pKillTimer.Call(uintptr(h), tHover)
+		pKillTimer.Call(uintptr(h), tLeave)
 		sx, sy := cursorPos()
 		wx, wy, _, _ := windowRect()
 		downSX, downSY = sx, sy
 		downWX, downWY = wx, wy
-		dragging, moved = true, false
+		dragging, moved, pressed = true, false, true
+		if drag, ok := cb.(interface{ CanDrag(int, int) bool }); ok {
+			dragging = drag.CanDrag(int(int16(l&0xFFFF)), int(int16(l>>16)))
+		}
+		if dragging {
+			if start, ok := cb.(interface{ OnDragStart() }); ok {
+				start.OnDragStart()
+			}
+		}
 		pSetCapture.Call(uintptr(h))
 		return 0
 	case wmLbuttonup:
-		if dragging {
-			dragging = false
+		if pressed {
+			wasDragging := dragging
+			dragging, pressed = false, false
 			pReleaseCapture.Call()
 			if !moved {
 				if pointer, ok := cb.(interface{ OnPointerClick(int, int) }); ok {
@@ -285,13 +367,23 @@ func wndProc(h windows.HWND, msg uint32, w, l uintptr) uintptr {
 				} else {
 					cb.OnClick()
 				}
-			} else if end, ok := cb.(interface{ OnDragEnd() }); ok {
-				end.OnDragEnd()
+			} else if wasDragging {
+				if end, ok := cb.(interface{ OnDragEnd() }); ok {
+					end.OnDragEnd()
+				}
 			}
 		}
 		return 0
+	case wmCapturechanged:
+		dragging, pressed = false, false
+		return 0
 	case wmRbuttonup:
 		showMenu()
+		return 0
+	case 0x020A:
+		if wheel, ok := cb.(interface{ OnScroll(int) }); ok {
+			wheel.OnScroll(int(int16(w >> 16)))
+		}
 		return 0
 	case wmMouseleave:
 		if pointer, ok := cb.(interface{ OnPointerMove(int, int) }); ok {
@@ -358,6 +450,12 @@ func Create(title string, x, y int, c Callback) error {
 		return windows.GetLastError()
 	}
 	pShowWindow.Call(uintptr(hwnd), swShowNoactivate)
+	windowVisible = true
+	if _, ok := c.(interface{ OnAgentNavigate(int) }); ok {
+		if err := startAgentKeyboard(uintptr(hwnd)); err != nil {
+			core.Logf("%v", err)
+		}
+	}
 	runtime.KeepAlive(proc)
 	return nil
 }
@@ -368,14 +466,27 @@ func Resize(x, y, w, h int) {
 		return
 	}
 	pSetWindowPos.Call(uintptr(hwnd), hwndTopmost, uintptr(x), uintptr(y), uintptr(w), uintptr(h), swpNoactivate|swpShowwindow)
+	windowVisible = true
 }
 
-// StartPoll arms the 30 s refresh timer.
+// RaiseTopmost re-asserts z-order above same-band appbars such as
+// MyDockFinder. It deliberately omits SWP_SHOWWINDOW: the maintenance tick must
+// never undo a deliberate hide (fullscreen suppression, docked readout).
+func RaiseTopmost() {
+	if hwnd == 0 || !windowVisible || menuOpen {
+		return
+	}
+	pSetWindowPos.Call(uintptr(hwnd), hwndTopmost, 0, 0, 0, 0, swpNomove|swpNosize|swpNoactivate)
+}
+
+// StartPoll arms the 30 s refresh timer and the 2 s maintenance timer. The
+// maintenance tick reaches the app as OnMenu(104), like the poll as 101.
 func StartPoll() {
 	if hwnd == 0 {
 		return
 	}
 	pSetTimer.Call(uintptr(hwnd), tPoll+100, 30_000, 0)
+	pSetTimer.Call(uintptr(hwnd), tTopmost+100, 2_000, 0)
 }
 
 // ScreenSize is the primary monitor size in pixels.
@@ -393,6 +504,97 @@ func WorkArea() image.Rectangle {
 	}
 	w, h := ScreenSize()
 	return image.Rect(0, 0, w, h)
+}
+
+// MonitorBounds is the primary monitor's full rectangle in physical pixels, so
+// its Min.Y is the screen's top edge even when an appbar has taken the edge.
+func MonitorBounds() image.Rectangle {
+	mon, _, _ := pMonitorFromPoint.Call(0, monitorDefaultToPrimary)
+	if mon != 0 {
+		var mi monitorInfo
+		mi.size = uint32(unsafe.Sizeof(mi))
+		if r, _, _ := pGetMonitorInfo.Call(mon, uintptr(unsafe.Pointer(&mi))); r != 0 {
+			b := image.Rect(int(mi.monitor.left), int(mi.monitor.top), int(mi.monitor.right), int(mi.monitor.bottom))
+			if !b.Empty() {
+				return b
+			}
+		}
+	}
+	w, h := ScreenSize()
+	return image.Rect(0, 0, w, h)
+}
+
+// SeamWorkAreaFor lifts a work area's top ceiling to the monitor's top edge.
+// Seam is a notch: it belongs against the bezel, over a top appbar such as
+// MyDockFinder (which reserves y = 0..30) or a top-docked taskbar. Side and
+// bottom appbars still bound it, so it never covers those.
+func SeamWorkAreaFor(work, monitor image.Rectangle) image.Rectangle {
+	if !monitor.Empty() && monitor.Min.Y < work.Min.Y {
+		return image.Rect(work.Min.X, monitor.Min.Y, work.Max.X, work.Max.Y)
+	}
+	return work
+}
+
+// SeamWorkArea is the placement and clamp rectangle for the floating widget.
+func SeamWorkArea() image.Rectangle {
+	return SeamWorkAreaFor(WorkArea(), MonitorBounds())
+}
+
+func foregroundWindow() uintptr {
+	h, _, _ := pForegroundWindow.Call()
+	return h
+}
+
+// FullscreenFor reports whether fg covers the primary monitor as a borderless
+// fullscreen surface. Titled windows, tool windows and shell/desktop surfaces
+// are rejected so an ordinary maximised window on an auto-hide taskbar and a
+// same-band appbar are never mistaken for fullscreen.
+func FullscreenFor(fg uintptr) bool {
+	if fg == 0 || fg == uintptr(hwnd) {
+		return false
+	}
+	if visible, _, _ := pWindowVisible.Call(fg); visible == 0 {
+		return false
+	}
+	if iconic, _, _ := pIsIconic.Call(fg); iconic != 0 {
+		return false
+	}
+	// DWM cloaks windows on other virtual desktops; they are not on screen.
+	var cloaked int32
+	if hr, _, _ := pWindowCloaked.Call(fg, dwmwaCloaked, uintptr(unsafe.Pointer(&cloaked)), 4); hr == 0 && cloaked != 0 {
+		return false
+	}
+	style, _, _ := pWindowLong.Call(fg, gwlStyle)
+	exstyle, _, _ := pWindowLong.Call(fg, gwlExStyle)
+	if exstyle&(wsExToolwindow|wsExNoactivate) != 0 {
+		return false
+	}
+	if style&wsCaption != 0 {
+		return false
+	}
+	switch className(fg) {
+	case "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
+		"XamlExplorerHostIslandWindow", "Windows.UI.Core.CoreWindow",
+		"MultitaskingViewFrame", "ForegroundStaging":
+		return false
+	}
+	r := rectOf(fg)
+	mon := MonitorBounds()
+	return !mon.Empty() && r.Min.X <= mon.Min.X && r.Min.Y <= mon.Min.Y && r.Max.X >= mon.Max.X && r.Max.Y >= mon.Max.Y
+}
+
+// Fullscreen also honours the shell's own fullscreen/presentation states, which
+// cover games and display modes whose window shape alone is inconclusive.
+func Fullscreen() bool {
+	if FullscreenFor(foregroundWindow()) {
+		return true
+	}
+	var state int32
+	if hr, _, _ := pNotificationState.Call(uintptr(unsafe.Pointer(&state))); hr == 0 &&
+		(state == qunsRunningD3DFullScreen || state == qunsPresentationMode) {
+		return true
+	}
+	return false
 }
 
 // NotifyExisting lets a second launch ask the current window to reveal itself.
@@ -467,6 +669,7 @@ func Flush(bgra []byte, w, h int) error {
 	if r == 0 {
 		return fmt.Errorf("UpdateLayeredWindow: %w", err)
 	}
+	publishAgentHitMask(bgra, w, h)
 	return nil
 }
 

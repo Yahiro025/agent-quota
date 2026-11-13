@@ -1,0 +1,16 @@
+{
+  "floating_drag": {
+    "max_ms": 7.0469,
+    "mean_ms": 1.513350833333333,
+    "p95_ms": 4.4303,
+    "samples": 120
+  },
+  "native_drag": {
+    "max_ms": 15.7389,
+    "mean_ms": 3.912309166666667,
+    "p95_ms": 7.2858,
+    "samples": 120
+  },
+  "physical_pointer_injected": false,
+  "queued_120_moves_ms": 3.4557
+}

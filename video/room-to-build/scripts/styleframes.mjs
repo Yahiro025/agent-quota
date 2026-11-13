@@ -1,0 +1,10 @@
+import {createRequire} from 'node:module';
+import path from 'node:path';
+const require=createRequire(import.meta.url);
+const {chromium}=require('../../../.scratch/qa/node_modules/playwright');
+const browser=await chromium.launch({headless:true,channel:'msedge'});
+const page=await browser.newPage({viewport:{width:1920,height:1080}});
+await page.goto('file:///'+path.resolve('styleframes.html').replaceAll('\\','/'));
+await page.evaluate(()=>document.fonts.ready);
+for(const id of ['hook','reveal','end'])await page.locator('#'+id).screenshot({path:'out/qa/style-'+id+'.png'});
+await browser.close();
