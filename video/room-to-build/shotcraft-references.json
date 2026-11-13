@@ -1,0 +1,106 @@
+[
+  {
+    "name": "cursor-flyover",
+    "summary": "整页俯瞰后，相机依次飞到四个功能区 zoom-in 特写，SVG 光标先一步到位指点、点击留下涟漪并触发界面响应，最后拉回俯瞰",
+    "use": "单页产品的功能巡览：一镜带观众看完四个功能区，光标当\"导游手指\"",
+    "duration": "约 8.0s（240f@30fps；俯瞰 22f · 四站各 44f（飞行 20f + 停留 24f）· 拉回 24f · hold 18f）",
+    "energy": "中（等距巡航，节奏靠点击涟漪打点）",
+    "intention": "替代\"四个功能四段剪辑\"的省镜方案：一个连续相机把四个角串成一条参观动线，光标是观众的注意力代理——它到哪、点哪，观众就看哪。空间连续让功能之间的位置关系也被顺带记住。",
+    "source": "references/shots/camera/cursor-flyover.md",
+    "updatedAt": "2026-10-02T21:01:48.000Z",
+    "styles": [
+      {
+        "key": "cursor-flyover",
+        "label": "cursor-flyover",
+        "description": "整页俯瞰后，相机依次飞到四个功能区 zoom-in 特写，SVG 光标先一步到位指点、点击留下涟漪并触发界面响应，最后拉回俯瞰",
+        "media": {
+          "url": "./media/cursor-flyover.mp4?v=1790980736795",
+          "type": "mp4"
+        }
+      }
+    ],
+    "sourceUrl": "./source/cursor-flyover.md",
+    "category": "camera",
+    "tags": [
+      "camera"
+    ],
+    "addedAt": "2026-08-07T04:03:34.000Z"
+  },
+  {
+    "name": "shot-transitions",
+    "summary": "镜头交棒三式——推进流白、whip-pan 甩镜（急刹款）、mask-wipe 穿窗（纵深款），按能量落差与接缝语义选型",
+    "use": "任何两镜衔接处（技法卡，分镜阶段排完镜头后逐个接缝选一式）",
+    "duration": "n/a（技法卡；各式占用帧数见参数表，从相邻镜头预算里划）",
+    "energy": "n/a（技法卡，不占能量位）",
+    "intention": "库内各镜头卡只管自己的入场和收尾，镜与镜\"怎么接\"一直没有词汇—— 接缝裸切会把逐镜头攒出的电影感一次漏光。公认优秀的发布片 （Linear Releases/Agent，2026-07-11 抽帧逆向）全程没有一次裸切： 换景要么靠深度旅行、要么靠焦点接力、要么靠黑场字卡蓄力。本卡收三式： 白闪盖切、甩镜借糊帧换景、穿窗点进详情世界。",
+    "source": "references/shots/transition/shot-transitions.md",
+    "updatedAt": "2026-10-02T21:01:48.000Z",
+    "styles": [
+      {
+        "key": "flash-cut",
+        "label": "推进流白 flash-cut",
+        "description": "前镜相机推进，切点跨骑一层白闪盖住换页",
+        "use": "交互穿透、能量相近的页面→页面（库内已有，收编）",
+        "media": {
+          "url": "./media/flash-cut.mp4?v=1784437314733",
+          "type": "mp4"
+        }
+      },
+      {
+        "key": "whip-pan",
+        "label": "whip-pan 甩镜",
+        "description": "机位一拍横甩到下一场景，中段运动模糊糊到不可辨，借糊帧换景",
+        "use": "快节奏功能段连打（高能量→高能量的轻快款，比 B 式省帧提速）",
+        "media": {
+          "url": "./media/whip-pan.mp4?v=1790980736865",
+          "type": "mp4"
+        }
+      },
+      {
+        "key": "mask-wipe",
+        "label": "mask-wipe 穿窗",
+        "description": "页面内真实元素（卡片）放大成全屏窗口，新场景从窗内长出接管",
+        "use": "语义化接缝：功能总览→该功能详情（\"点开这张卡进入它的世界\"）",
+        "media": {
+          "url": "./media/mask-wipe.mp4?v=1790980736866",
+          "type": "mp4"
+        }
+      }
+    ],
+    "sourceUrl": "./source/shot-transitions.md",
+    "category": "transition",
+    "tags": [
+      "transition"
+    ],
+    "addedAt": "2026-07-19T05:45:41.000Z"
+  },
+  {
+    "name": "spotlight-hero-card",
+    "summary": "关灯的剧场里一束钨丝聚光（带体积光柱）扫过页面锁定一张卡，斜侧推进后卡片弹起悬浮、香槟色光束沿轮廓两圈、连同 3D 注记一起贴回原位",
+    "use": "\"单一主角\"式产品开场；把一个核心对象（卡片/条目/模块）立成全片主角",
+    "duration": "172f（约 5.7s；锁定 f34 → 触地 f142 → 30f 真静止 hold）",
+    "energy": "中（质感最高的一镜，节奏慢而稳）",
+    "intention": "开场只讲一件事：这一张卡就是产品的原子单位。聚光灯替观众做视线引导，弹起悬浮给它体积和重量，轮廓光束是\"扫描/检视\"的隐喻，最后贴回原位表示它属于这个页面。",
+    "source": "references/shots/opening/spotlight-hero-card.md",
+    "updatedAt": "2026-10-02T21:01:48.000Z",
+    "styles": [
+      {
+        "key": "spotlight-hero-card",
+        "label": "spotlight-hero-card",
+        "description": "关灯的剧场里一束钨丝聚光（带体积光柱）扫过页面锁定一张卡，斜侧推进后卡片弹起悬浮、香槟色光束沿轮廓两圈、连同 3D 注记一起贴回原位",
+        "media": {
+          "url": "./media/spotlight-hero-card.mp4?v=1790980736873",
+          "type": "mp4"
+        }
+      }
+    ],
+    "sourceUrl": "./source/spotlight-hero-card.md",
+    "category": "opening",
+    "tags": [
+      "opening",
+      "effects",
+      "camera"
+    ],
+    "addedAt": "2026-07-19T05:45:41.000Z"
+  }
+]

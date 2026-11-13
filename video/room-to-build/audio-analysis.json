@@ -1,0 +1,32 @@
+{
+  "source_bpm": 122.01848242640048,
+  "source_phase_seconds": 0.0686178651544068,
+  "target_bpm": 120,
+  "atempo": 0.983457568179329,
+  "fit_mean_abs_ms": 19.963544682986534,
+  "fit_max_abs_ms": 48.298995209293594,
+  "grid_transients_within_20ms": 0.5116279069767442,
+  "method": "Low-band 40-160Hz attack-grid search and least-squares transient refit; 22050Hz, 110-sample hop. Downloaded music trimmed and tempo-adjusted without synthesis.",
+  "sfx": {
+    "impact-deep-whoosh.mp3": {
+      "peak_seconds": 0.551125,
+      "peak_frame_30fps": 17,
+      "peak_dbfs": 2.143498659133911
+    },
+    "switch-click-quick.mp3": {
+      "peak_seconds": 0.014708333333333334,
+      "peak_frame_30fps": 0,
+      "peak_dbfs": 2.9084973335266113
+    },
+    "swoosh-quick.mp3": {
+      "peak_seconds": 0.2959583333333333,
+      "peak_frame_30fps": 9,
+      "peak_dbfs": -0.8682398796081543
+    },
+    "swoosh-slow.mp3": {
+      "peak_seconds": 2.14675,
+      "peak_frame_30fps": 64,
+      "peak_dbfs": 0.39273008704185486
+    }
+  }
+}

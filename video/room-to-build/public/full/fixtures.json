@@ -1,0 +1,30 @@
+{
+  "media": {
+    "title": "House Vibez",
+    "artist": "Lily J",
+    "is_playing": true,
+    "has_media": true,
+    "artwork": [
+      "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iNjAwIiB2aWV3Qm94PSIwIDAgNjAwIDYwMCI+PGRlZnM+PHJhZGlhbEdyYWRpZW50IGlkPSJnIj48c3RvcCBzdG9wLWNvbG9yPSIjZmZjZjg2Ii8+PHN0b3Agb2Zmc2V0PSIuNDgiIHN0b3AtY29sb3I9IiNlOTg0NDAiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMzZTE4MTYiLz48L3JhZGlhbEdyYWRpZW50PjwvZGVmcz48cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjYwMCIgZmlsbD0iIzExMTAxNCIvPjxjaXJjbGUgY3g9IjM0NSIgY3k9IjI3MCIgcj0iMjMwIiBmaWxsPSJ1cmwoI2cpIi8+PHBhdGggZD0iTS03MCA0ODAgUTE3MCAxMTAgMzkwIDQwMCBUNzUwIDI2MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTAwZTEyIiBzdHJva2Utd2lkdGg9IjEzNSIvPjxwYXRoIGQ9Ik0tNzAgNDg1IFExNzAgMTE1IDM5MCA0MDUgVDc1MCAyNjUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZGI5YiIgc3Ryb2tlLW9wYWNpdHk9Ii43IiBzdHJva2Utd2lkdGg9IjIiLz48L3N2Zz4="
+    ],
+    "position_ms": 92500,
+    "duration_ms": 111464,
+    "seek_enabled": true,
+    "position_updated_at": 1792892460000
+  },
+  "weather": {
+    "temperature": 24,
+    "condition": "Clear"
+  },
+  "deviceNames": [
+    "Studio Headphones",
+    "Wireless Keyboard",
+    "Desk Speaker"
+  ],
+  "networkNames": [
+    "Studio",
+    "Workspace",
+    "Guest"
+  ],
+  "data": "Fictional frontend demo state; no OS settings changed"
+}

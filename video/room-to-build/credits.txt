@@ -1,0 +1,42 @@
+BLOOM + AGENT QUOTA — ONE NOTCH AWAY
+Original concept, storyboard, animation, and edit for this project.
+
+Real interface: the local Bloom 3.10.0 companion and Agent Quota integration.
+Bloom source: GPL-3.0-only (bloom/package.json). Interface captures use fictional demo readings.
+Provider marks are shown to identify the supported services, with no implication of endorsement.
+Mark provenance is retained at ../../internal/marks/assets/ATTRIBUTION.md and ../../bloom/src/quota/marks/ATTRIBUTION.md.
+Codex vector macro: existing LobeHub Icons paths, MIT; license copied to public/LOBEHUB-MIT-LICENSE.txt.
+Inter font: project-bundled Inter, SIL Open Font License. Original font source: https://github.com/rsms/inter
+
+Video Shotcraft motion references and adapted PageCam / DigitRoll components:
+https://github.com/Vincentwei1021/video-shotcraft
+Apache-2.0. Local skill at C:/Users/Bennett/.agents/skills/video-shotcraft.
+No Shotcraft demo branding or product content appears in this film.
+
+MUSIC — downloaded asset, copied from Video Shotcraft's licensed local library:
+House Vibez — Lily J
+https://assets.mixkit.co/music/745/745.mp3
+Mixkit Stock Music Free License: https://mixkit.co/license/#musicFree
+Licensed for incorporation in videos; no standalone redistribution intended.
+
+SOUND EFFECTS — downloaded assets, copied from the same library:
+Slow sweeping swoosh
+https://assets.mixkit.co/active_storage/sfx/163/163-preview.mp3
+Fast small sweep transition
+https://assets.mixkit.co/active_storage/sfx/166/166-preview.mp3
+Quick switch click
+https://assets.mixkit.co/active_storage/sfx/2582/2582-preview.mp3
+Cinematic whoosh deep impact
+https://assets.mixkit.co/active_storage/sfx/1143/1143-preview.mp3
+All four: Mixkit Sound Effects Free License: https://mixkit.co/license/#sfxFree
+
+Visual study only: https://www.apple.com/macbook-pro/
+No Apple media, music, hardware models, artwork, or copy reused.
+Original amber album artwork: public/album-art.svg, authored for this film.
+All other visible staging is original vector/CSS artwork; UI is captured from project source.
+Music, timer, shelf, command center, connectivity, status, overlays, quota, Overview and settings
+captures use a mocked backend and fictional demo data; this is an editorial product demo,
+not evidence of live OS/network/account behavior or measured native performance.
+Fixture and capture records: public/full/fixtures.json, public/full/layout.json,
+scripts/capture-full.mjs and scripts/capture.mjs.
+Audio is edited and mixed only. No generated or code-synthesized audio.

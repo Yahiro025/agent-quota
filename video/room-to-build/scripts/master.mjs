@@ -1,0 +1,12 @@
+import {spawnSync} from 'node:child_process';
+import fs from 'node:fs';
+const run=(args)=>{const r=spawnSync('ffmpeg',['-hide_banner','-y',...args],{encoding:'utf8',maxBuffer:8e6});if(r.status!==0)throw Error(r.stderr);return r.stderr;};
+const logs={};
+const first=run(['-i','out/audio-music.wav','-af','loudnorm=I=-14:TP=-2:LRA=11:print_format=json','-f','null','NUL']);
+const measured=JSON.parse(first.match(/\{[\s\S]*?\}/g).at(-1));
+const filter=`loudnorm=I=-14:TP=-2:LRA=11:measured_I=${measured.input_i}:measured_TP=${measured.input_tp}:measured_LRA=${measured.input_lra}:measured_thresh=${measured.input_thresh}:offset=${measured.target_offset}:linear=false:print_format=json`;
+logs.music={analysis:measured,master:JSON.parse(run(['-i','out/audio-music.wav','-af',filter,'-ar','48000','-ac','2','-t','90','-c:a','pcm_s24le','out/master-music.wav']).match(/\{[\s\S]*?\}/g).at(-1))};
+run(['-i','out/audio-sfx.wav','-af','volume=2dB,alimiter=limit=0.86:level=false:latency=true','-ar','48000','-ac','2','-t','90','-c:a','pcm_s24le','out/master-sfx.wav']);
+logs.sfx={gainDb:2,limiterCeiling:0.86,reason:'Preserve quiet spaces and tactile effect dynamics rather than normalize sparse effects to music loudness.'};
+logs.source='Both unmastered editions rendered from FullTimeline.ts with the bgm input prop; no audio synthesis.';
+fs.writeFileSync('out/audio-mastering.json',JSON.stringify(logs,null,2));console.log(logs);
