@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-16",
+  "round": 2,
+  "numbering": "display-order",
+  "selected": null,
+  "options": {
+    "1": { "name": "Seam", "image": "01-seam.png" },
+    "2": { "name": "Index", "image": "02-index.png" },
+    "3": { "name": "Peek", "image": "03-peek.png" }
+  }
+}

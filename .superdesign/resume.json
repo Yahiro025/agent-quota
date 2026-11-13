@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "bloom-notch": {
+      "targetKind": "existing-ui",
+      "projectId": "096c6db4-6501-402a-92a2-5834e7f62ac4",
+      "baselineDraftId": "ad83645c-0ee6-475e-8095-eab0200ed730",
+      "activeDraftId": "628e6b30-87cb-48d4-bb91-8f33115792f2",
+      "designSystemPath": ".superdesign/design-system.md",
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        ".superdesign/init/theme.md",
+        ".superdesign/init/layouts.md",
+        "bloom/src/quota/QuotaSpace.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "65a64280a53418f4e0d8b838735da07b2cadd3d6d06274b69495e3c32c314e18",
+        ".superdesign/init/theme.md": "54c85a541601c31bd546a150f8d8b56a96e0b33f3c2b66c80bd744f77d868a1c",
+        ".superdesign/init/layouts.md": "aa82de87390da8721f5f73cbce3d1a7ff2d2b409eb8551383eefc987edd9bef6",
+        "bloom/src/quota/QuotaSpace.css": "89b44da752ee9b437a4844b0c760cc61ac3f187a1c37e280a5fcce1235190acf"
+      },
+      "drafts": {
+        "ad83645c-0ee6-475e-8095-eab0200ed730": {
+          "title": "Bloom Notch Reproduction",
+          "visualDirection": "current centered housing",
+          "currentVersion": 1
+        },
+        "f4e81ae6-d2f4-4f70-b418-bc88447d6df5": {
+          "title": "Bloom Notch Refined",
+          "visualDirection": "quiet instrument",
+          "parentDraftId": "ad83645c-0ee6-475e-8095-eab0200ed730",
+          "currentVersion": 1
+        },
+        "628e6b30-87cb-48d4-bb91-8f33115792f2": {
+          "title": "Bloom Notch — Continuous Island",
+          "visualDirection": "continuous black island, resting and open",
+          "parentDraftId": "ad83645c-0ee6-475e-8095-eab0200ed730",
+          "currentVersion": 2
+        }
+      },
+      "updatedAt": "2026-10-28T02:06:40Z"
+    }
+  }
+}

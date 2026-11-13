@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bloom notch island</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --surface: #000000;
+            --text: #f4f2f6;
+            --secondary: #b9b3c1;
+            --muted: #a19aa9;
+            --usage-green: #32d74b;
+            --usage-amber: #ffb340;
+            --track: rgba(255, 255, 255, 0.12);
+            --radius-housing: 18px;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Inter, sans-serif;
+            background: #e5e5e5;
+            overflow: hidden;
+        }
+
+        .wallpaper {
+            width: 1440px;
+            height: 900px;
+            background: linear-gradient(135deg, #f3f4f6 0%, #d1d5db 100%);
+            display: flex;
+        }
+
+        .frame {
+            position: relative;
+            flex: 1;
+            height: 900px;
+        }
+
+        .caption {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 28px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #6b6572;
+        }
+
+        .pill,
+        .island-pill {
+            height: 36px;
+            padding: 0 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            white-space: nowrap;
+            color: var(--text);
+            background: var(--surface);
+        }
+
+        .resting {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: max-content;
+            border-bottom-left-radius: var(--radius-housing);
+            border-bottom-right-radius: var(--radius-housing);
+        }
+
+        .island {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: max-content;
+            min-width: 386px;
+            background: var(--surface);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            border-bottom-left-radius: var(--radius-housing);
+            border-bottom-right-radius: var(--radius-housing);
+            overflow: hidden;
+        }
+
+        .island-pill {
+            background: transparent;
+        }
+
+        .waveform {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 12px;
+        }
+
+        .wave-bar {
+            width: 2px;
+            background: var(--secondary);
+            border-radius: 1px;
+        }
+
+        .mark {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            flex: none;
+        }
+
+        .status-text {
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: -0.01em;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+        }
+
+        .live-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--usage-green);
+        }
+
+        .panel {
+            padding-bottom: 8px;
+        }
+
+        .qs-header {
+            height: 24px;
+            padding: 0 10px 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .qs-caption {
+            font-size: 10px;
+            color: var(--secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .qs-tools {
+            display: flex;
+            gap: 2px;
+        }
+
+        .qs-tools button {
+            width: 22px;
+            height: 22px;
+            display: grid;
+            place-items: center;
+            color: var(--secondary);
+            background: transparent;
+            border: 0;
+            border-radius: 6px;
+            padding: 0;
+        }
+
+        .qs-rings {
+            display: flex;
+            padding: 4px 12px 0;
+        }
+
+        .qs-cell {
+            width: 64px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            padding: 6px 0 8px;
+            border-radius: 8px;
+            color: var(--muted);
+        }
+
+        .qs-cell.selected {
+            background: #1c1c20;
+            color: var(--text);
+        }
+
+        .mini {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+        }
+
+        .qs-pct,
+        .qs-name {
+            font-size: 9px;
+            line-height: 1.2;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .qs-name {
+            font-weight: 500;
+        }
+
+        .qs-detail {
+            margin: 8px 16px 0;
+            padding: 4px 8px 0;
+        }
+
+        .qs-title {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .qs-title h3 {
+            margin: 0;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .qs-place {
+            margin-left: auto;
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .qs-metric-row {
+            display: grid;
+            grid-template-columns: 36px 1fr auto auto;
+            align-items: center;
+            gap: 10px;
+            height: 28px;
+        }
+
+        .qs-label,
+        .qs-percent,
+        .qs-reset {
+            font-size: 11px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .qs-label {
+            font-weight: 500;
+        }
+
+        .qs-percent {
+            font-weight: 600;
+            text-align: right;
+        }
+
+        .qs-reset {
+            font-size: 10.5px;
+            color: var(--muted);
+            min-width: 48px;
+            text-align: right;
+        }
+
+        .qs-bar {
+            height: 3px;
+            background: var(--track);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .qs-bar span {
+            display: block;
+            height: 100%;
+        }
+
+        .qs-footer {
+            margin: 8px 16px 0;
+            padding: 8px 8px 2px;
+            border-top: 1px solid #181818;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 10.5px;
+            color: var(--muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="wallpaper">
+        <div class="frame">
+            <div class="pill resting">
+                <div class="waveform" aria-hidden="true">
+                    <div class="wave-bar" style="height: 8px"></div>
+                    <div class="wave-bar" style="height: 12px"></div>
+                    <div class="wave-bar" style="height: 6px"></div>
+                    <div class="wave-bar" style="height: 10px"></div>
+                </div>
+                <div class="mark" style="background: conic-gradient(var(--usage-amber) 0 259deg, var(--track) 259deg 360deg); -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 63%); mask: radial-gradient(farthest-side, transparent 62%, #000 63%)"></div>
+                <div class="flex items-center gap-1">
+                    <iconify-icon icon="lucide:cloud-sun" class="text-secondary text-lg"></iconify-icon>
+                    <span class="status-text">28°</span>
+                </div>
+                <span class="status-text">12:45</span>
+                <div class="flex items-center gap-2">
+                    <iconify-icon icon="lucide:battery" class="text-secondary text-lg rotate-90"></iconify-icon>
+                    <span class="status-text">70%</span>
+                </div>
+                <div class="live-dot"></div>
+            </div>
+            <p class="caption">Resting</p>
+        </div>
+
+        <div class="frame">
+            <div class="island">
+                <div class="island-pill">
+                    <div class="waveform" aria-hidden="true">
+                        <div class="wave-bar" style="height: 8px"></div>
+                        <div class="wave-bar" style="height: 12px"></div>
+                        <div class="wave-bar" style="height: 6px"></div>
+                        <div class="wave-bar" style="height: 10px"></div>
+                    </div>
+                    <div class="mark" style="background: conic-gradient(var(--usage-amber) 0 259deg, var(--track) 259deg 360deg); -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 63%); mask: radial-gradient(farthest-side, transparent 62%, #000 63%)"></div>
+                    <div class="flex items-center gap-1">
+                        <iconify-icon icon="lucide:cloud-sun" class="text-secondary text-lg"></iconify-icon>
+                        <span class="status-text">28°</span>
+                    </div>
+                    <span class="status-text">12:45</span>
+                    <div class="flex items-center gap-2">
+                        <iconify-icon icon="lucide:battery" class="text-secondary text-lg rotate-90"></iconify-icon>
+                        <span class="status-text">70%</span>
+                    </div>
+                    <div class="live-dot"></div>
+                </div>
+                <div class="panel">
+                    <div class="qs-header">
+                        <span class="qs-caption">Used</span>
+                        <div class="qs-tools">
+                            <button type="button" aria-label="Pin quota space"><iconify-icon icon="lucide:pin" class="text-[12px]"></iconify-icon></button>
+                            <button type="button" aria-label="Close"><iconify-icon icon="lucide:x" class="text-[14px]"></iconify-icon></button>
+                        </div>
+                    </div>
+                    <div class="qs-rings">
+                        <div class="qs-cell">
+                            <div class="mini" style="background: conic-gradient(#32d74b 0 79deg, var(--track) 79deg 360deg); -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 63%); mask: radial-gradient(farthest-side, transparent 62%, #000 63%)"></div>
+                            <span class="qs-pct" style="color: #32d74b">22%</span>
+                            <span class="qs-name">Claude</span>
+                        </div>
+                        <div class="qs-cell">
+                            <div class="mini" style="background: conic-gradient(#32d74b 0 65deg, var(--track) 65deg 360deg); -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 63%); mask: radial-gradient(farthest-side, transparent 62%, #000 63%)"></div>
+                            <span class="qs-pct" style="color: #32d74b">18%</span>
+                            <span class="qs-name">Kiro</span>
+                        </div>
+                        <div class="qs-cell selected">
+                            <div class="mini" style="background: conic-gradient(#ffb340 0 259deg, var(--track) 259deg 360deg); -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 63%); mask: radial-gradient(farthest-side, transparent 62%, #000 63%)"></div>
+                            <span class="qs-pct" style="color: #ffb340">72%</span>
+                            <span class="qs-name">Codex</span>
+                        </div>
+                        <div class="qs-cell">
+                            <div class="mini" style="background: conic-gradient(#32d74b 0 148deg, var(--track) 148deg 360deg); -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 63%); mask: radial-gradient(farthest-side, transparent 62%, #000 63%)"></div>
+                            <span class="qs-pct" style="color: #32d74b">41%</span>
+                            <span class="qs-name">Cursor</span>
+                        </div>
+                        <div class="qs-cell">
+                            <div class="mini" style="background: conic-gradient(#32d74b 0 29deg, var(--track) 29deg 360deg); -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 63%); mask: radial-gradient(farthest-side, transparent 62%, #000 63%)"></div>
+                            <span class="qs-pct" style="color: #32d74b">8%</span>
+                            <span class="qs-name">Copilot</span>
+                        </div>
+                        <div class="qs-cell">
+                            <div class="mini" style="background: conic-gradient(#32d74b 0 198deg, var(--track) 198deg 360deg); -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 63%); mask: radial-gradient(farthest-side, transparent 62%, #000 63%)"></div>
+                            <span class="qs-pct" style="color: #32d74b">55%</span>
+                            <span class="qs-name">Devin</span>
+                        </div>
+                        <div class="qs-cell">
+                            <div class="mini" style="background: conic-gradient(#32d74b 0 227deg, var(--track) 227deg 360deg); -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 63%); mask: radial-gradient(farthest-side, transparent 62%, #000 63%)"></div>
+                            <span class="qs-pct" style="color: #32d74b">63%</span>
+                            <span class="qs-name">Antigravity</span>
+                        </div>
+                    </div>
+                    <div class="qs-detail">
+                        <div class="qs-title">
+                            <h3>Codex</h3>
+                            <span class="qs-place">3 of 7</span>
+                        </div>
+                        <div class="qs-metric-row">
+                            <span class="qs-label">5h</span>
+                            <div class="qs-bar"><span style="width: 40%; background: #32d74b"></span></div>
+                            <span class="qs-percent">40%</span>
+                            <span class="qs-reset">2h 10m</span>
+                        </div>
+                        <div class="qs-metric-row">
+                            <span class="qs-label">Week</span>
+                            <div class="qs-bar"><span style="width: 72%; background: #ffb340"></span></div>
+                            <span class="qs-percent">72%</span>
+                            <span class="qs-reset">4d</span>
+                        </div>
+                    </div>
+                    <div class="qs-footer">
+                        <span>Just checked</span>
+                        <iconify-icon icon="lucide:refresh-cw" class="text-[10px]"></iconify-icon>
+                    </div>
+                </div>
+            </div>
+            <p class="caption">Open</p>
+        </div>
+    </div>
+</body>
+</html>

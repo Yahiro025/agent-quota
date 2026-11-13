@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-16",
+  "concept": "Seam",
+  "concept_selected_by": "user",
+  "material_choice_delegated_by": "user",
+  "material": "Smoked graphite translucency with restrained vibrancy and a fine glass edge",
+  "shape_source": "../shape-refinement/seam.png",
+  "visual_target": "seam-smoked-glass.png",
+  "mode": "operate",
+  "phase": "visual-refinement",
+  "native_implementation_changed": false
+}

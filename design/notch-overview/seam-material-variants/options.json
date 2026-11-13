@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-16",
+  "concept": "Seam",
+  "scope": "material-only",
+  "numbering": "display-order",
+  "source": "../seam-glass/seam-smoked-glass.png",
+  "selected": "2",
+  "options": {
+    "1": { "name": "More transparent", "image": "01-more-transparent.png" },
+    "2": { "name": "Pure matte black", "image": "02-pure-matte-black.png" }
+  }
+}

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body { margin: 0; background: #eceae6; font-family: Inter, sans-serif; }
+.stage { padding: 48px 80px; }
+.qh {
+  min-width: 228px;
+  max-width: 320px;
+  padding: 10px 12px 11px;
+  border-radius: 12px;
+  background: #000;
+  color: #f4f2f6;
+  box-shadow: 0 10px 28px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.08);
+  box-sizing: border-box;
+}
+.qh-title { display: flex; align-items: baseline; gap: 8px; font-size: 12px; font-weight: 600; line-height: 1.2; margin-bottom: 8px; }
+.qh-place { margin-left: auto; font-size: 10px; font-weight: 500; color: #a19aa9; font-variant-numeric: tabular-nums; }
+.qh-rows { display: flex; flex-direction: column; gap: 8px; }
+.qh-row { display: grid; grid-template-columns: minmax(36px, 1fr) auto auto; align-items: center; column-gap: 8px; }
+.qh-label { font-size: 11px; font-weight: 500; }
+.qh-usage { display: flex; align-items: center; gap: 6px; }
+.qh-bar { display: inline-block; width: 36px; height: 3px; border-radius: 999px; background: rgba(255,255,255,.1); overflow: hidden; }
+.qh-fill { display: block; height: 100%; }
+.qh-val { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.qh-reset { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 10.5px; font-weight: 400; line-height: 1.15; color: #a19aa9; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.qh-reset-at { font-size: 11px; font-weight: 500; letter-spacing: -0.01em; color: #f4f2f6; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="qh" id="card">
+    <div class="qh-title"><span>Codex</span><span class="qh-place">3 of 7</span></div>
+    <div class="qh-rows">
+      <div class="qh-row">
+        <span class="qh-label">5h</span>
+        <span class="qh-usage"><span class="qh-bar"><span class="qh-fill" style="width:100%;background:#ff453a"></span></span><span class="qh-val">100%</span></span>
+        <span class="qh-reset"><span>resets in 1h 24m</span><span class="qh-reset-at">3:33 pm</span></span>
+      </div>
+      <div class="qh-row">
+        <span class="qh-label">Week</span>
+        <span class="qh-usage"><span class="qh-bar"><span class="qh-fill" style="width:54%;background:#32d74b"></span></span><span class="qh-val">54%</span></span>
+        <span class="qh-reset"><span>resets in 5d</span><span class="qh-reset-at">2 Nov 2:09 pm</span></span>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
