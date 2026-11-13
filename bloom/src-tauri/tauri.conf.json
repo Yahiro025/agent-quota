@@ -4,7 +4,7 @@
   "version": "3.10.0",
   "identifier": "com.sehaz.bloom",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "node node_modules/vite/bin/vite.js",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
@@ -85,8 +85,8 @@
     "publisher": "Sehajveer Singh",
     "copyright": "Copyright © 2026 Sehajveer Singh",
     "category": "Utility",
-    "shortDescription": "A notch and dock for Windows",
-    "longDescription": "Bloom replaces the Windows taskbar with a dock and adds a notch for media, quick controls and status.",
+    "shortDescription": "A desktop notch for Windows",
+    "longDescription": "Bloom adds a notch for media, agent quotas, quick controls and status.",
     "windows": {
       "webviewInstallMode": {
         "type": "embedBootstrapper"

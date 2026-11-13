@@ -26,6 +26,21 @@ pub struct Entry {
     pub video_id: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct LyricLine {
+    pub t: u64,
+    pub text: String,
+}
+
+/// One track's lyric sheet. `track_id` is the connector's track identity, so a
+/// late reply for a skipped track can never land on the next one.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Lyrics {
+    pub track_id: String,
+    pub synced: bool,
+    pub lines: Vec<LyricLine>,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Snapshot {
     pub session: String,

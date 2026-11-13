@@ -2,15 +2,13 @@ use crate::types::{AppInfo, IntRect, SystemCommand};
 use std::collections::HashMap;
 use std::sync::mpsc::Sender;
 use std::sync::{
-    atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU32},
+    atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU32},
     Mutex, OnceLock,
 };
 use tauri::{AppHandle, PhysicalPosition, PhysicalSize};
 
 pub static COMMAND_SENDER: OnceLock<Sender<SystemCommand>> = OnceLock::new();
 pub static MAIN_APPBAR_REGISTERED: AtomicBool = AtomicBool::new(false);
-pub static DOCK_APPBAR_REGISTERED: AtomicBool = AtomicBool::new(false);
-pub static CURRENT_DOCK_OVERLAP: AtomicI32 = AtomicI32::new(-1);
 pub static CURRENT_NOTCH_OVERLAP: AtomicI32 = AtomicI32::new(-1);
 pub static NATIVE_TASKBAR_HIDDEN: AtomicBool = AtomicBool::new(false);
 /// A scoped native tray operation temporarily exposes Explorer's UI to UIA.
@@ -21,18 +19,11 @@ pub static TRAY_INTERACTION_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// mutably borrowed", so those callers stand down once this is set.
 pub static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
-pub static DOCK_RECT: Mutex<Option<IntRect>> = Mutex::new(None);
 pub static NOTCH_RECT: Mutex<Option<IntRect>> = Mutex::new(None);
-pub static DOCK_IS_HOVERED: AtomicBool = AtomicBool::new(false);
 pub static NOTCH_IS_HOVERED: AtomicBool = AtomicBool::new(false);
 /// Frontend-reported whether the notch is actually on screen. While false in
 /// smart/peek mode the notch must stay click-through even over its footprint.
 pub static NOTCH_IS_VISIBLE: AtomicBool = AtomicBool::new(true);
-pub static MENU_IS_OPEN: AtomicBool = AtomicBool::new(false);
-// The dock window's handle, for the mouse hook to tell whether a press lands
-// on the dock (which closes its own menus) or outside it.
-pub static DOCK_HWND: AtomicIsize = AtomicIsize::new(0);
-pub static MENU_RECT: Mutex<Option<IntRect>> = Mutex::new(None);
 pub static ICON_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 pub static INSTALLED_APPS_CACHE: OnceLock<Mutex<Vec<AppInfo>>> = OnceLock::new();
@@ -49,7 +40,6 @@ pub static LAST_START_TOGGLE_MS: AtomicI64 = AtomicI64::new(0);
 pub static START_OPEN_AT_PRESS: AtomicBool = AtomicBool::new(false);
 pub static OVERLAY_IN_SPLASH: AtomicBool = AtomicBool::new(false);
 pub static CURRENT_FOREGROUND_FULLSCREEN: AtomicBool = AtomicBool::new(false);
-pub static CURRENT_FOREGROUND_MAXIMIZED: AtomicBool = AtomicBool::new(false);
 
 pub static SINGLE_INSTANCE_MUTEX_HANDLE: OnceLock<isize> = OnceLock::new();
 pub static SINGLE_INSTANCE_EVENT_HANDLE: OnceLock<isize> = OnceLock::new();
@@ -75,8 +65,6 @@ pub fn close_single_instance_handles() {
 
 pub static MAIN_WINDOW_RECT: Mutex<Option<(PhysicalPosition<i32>, PhysicalSize<u32>)>> =
     Mutex::new(None);
-pub static DOCK_WINDOW_RECT: Mutex<Option<(PhysicalPosition<i32>, PhysicalSize<u32>)>> =
-    Mutex::new(None);
 
 pub static DISPLAY_MONITOR_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 pub static LAST_DISPLAY_CHANGE_MS: AtomicI64 = AtomicI64::new(0);
@@ -94,6 +82,6 @@ pub static PROCESS_NAME_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLo
 pub static THUMBNAIL_CACHE: OnceLock<Mutex<HashMap<isize, (String, i64)>>> = OnceLock::new();
 pub static FOCUS_TIMESTAMPS: OnceLock<Mutex<HashMap<isize, i64>>> = OnceLock::new();
 pub static SETTINGS_CACHE: OnceLock<Mutex<HashMap<String, serde_json::Value>>> = OnceLock::new();
-/// Serialize read/modify/write settings commands from all four webviews.
+/// Serialize read/modify/write settings commands from all webviews.
 pub static SETTINGS_FILE_LOCK: Mutex<()> = Mutex::new(());
 pub static PINNED_FILE_LOCK: Mutex<()> = Mutex::new(());

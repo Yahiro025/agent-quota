@@ -22,6 +22,7 @@ test("sends a bounded inventory and dispatches each request ID at most once", as
 		{
 			Socket,
 			inventory: async () => ({ snapshots: [{ session: "s" }], unknown_playing: false }),
+			onPublished: (send) => send({ op: "lyrics", session: "s" }),
 			perform: async () => {
 				calls++;
 				return { status: "confirmed", snapshot: { session: "s" } };
@@ -33,6 +34,7 @@ test("sends a bounded inventory and dispatches each request ID at most once", as
 	await socket.onopen();
 	expect(sent[0].op).toBe("inventory");
 	expect(sent[0].snapshots[0].session).toBe("s");
+	expect(sent[1].op).toBe("lyrics");
 	await socket.onmessage({ data: JSON.stringify({ id: "one", session: "s", op: "select" }) });
 	await socket.onmessage({ data: JSON.stringify({ id: "one", session: "s", op: "select" }) });
 	expect(calls).toBe(1);

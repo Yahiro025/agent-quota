@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
 	clipToWindow,
 	createRegionSender,
@@ -9,6 +9,11 @@ import {
 } from "../src/windowRegion";
 
 const empty: RegionState = { key: "", current: [], held: [] };
+const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+afterEach(() => {
+	if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+	else Reflect.deleteProperty(globalThis, "window");
+});
 
 describe("window region", () => {
 	test("pads and clips rectangles to whole pixels inside the window", () => {

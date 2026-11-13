@@ -1,9 +1,12 @@
 import { startConnector } from "./client.js";
 import { spotifySnapshot } from "./providers.js";
+import { createLyricsFeed } from "./lyrics.js";
 import { selectOccurrence } from "../proof/spotify-selection.js";
 const config = globalThis.__BLOOM_MEDIA_CONFIG__;
 let api = null,
 	session = crypto.randomUUID();
+// Failures share the bounded cache, so unavailable lyrics do not retry every poll.
+const publishLyrics = createLyricsFeed((path) => globalThis.Spicetify?.CosmosAsync?.get(path));
 function current() {
 	const next = globalThis.Spicetify?.Player?.origin;
 	if (next !== api) {
@@ -18,6 +21,7 @@ globalThis.__bloomMediaConnection = startConnector(config, {
 		const snapshot = current();
 		return { snapshots: snapshot ? [snapshot] : [], unknown_playing: false };
 	},
+	onPublished: (send, data) => publishLyrics(send, data.snapshots[0]),
 	perform: async (request) => {
 		// Tab rows are a Brave concept; Spotify has no tab to mute or reveal.
 		if (["mute", "unmute", "show"].includes(request.op)) return { status: "unavailable" };

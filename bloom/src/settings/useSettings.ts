@@ -7,13 +7,6 @@ import type { UpdateCheckResult } from "../updater";
 import { useSettingsSync } from "../hooks/useSettingsSync";
 import { reloadIfMirrorWasStale } from "../hooks/settingsMirror";
 import { hexToHsl } from "../theme";
-import {
-	addCustomFolder,
-	removeCustomFolder,
-	toggleEnabledFolder,
-	toggleHiddenDrive,
-	DEFAULT_ENABLED_FOLDERS
-} from "../dockExtras";
 import type { WidgetConfig } from "./types";
 import {
 	parseHiddenAgents,
@@ -86,55 +79,6 @@ export function useSettings() {
 	const [statusWidgets, setStatusWidgets] = useState<WidgetConfig>({
 		left: ["weather"],
 		right: ["battery"]
-	});
-	const [dockEnabled, setDockEnabled] = useState(true);
-	const [dockPreviewEnabled, setDockPreviewEnabled] = useState(true);
-	const [dockIconOnly, setDockIconOnly] = useState(
-		() => localStorage.getItem("bloom-dock-icon-only") === "true"
-	);
-	const [dockSeparatorEnabled, setDockSeparatorEnabled] = useState(
-		() => localStorage.getItem("bloom-dock-separator-enabled") !== "false"
-	);
-	const [startIcon, setStartIcon] = useState(
-		() => localStorage.getItem("bloom-start-icon") || "default"
-	);
-	const [dockAdaptive, setDockAdaptive] = useState(
-		() => localStorage.getItem("bloom-dock-adaptive") === "true"
-	);
-	const [dockWinNumberEnabled, setDockWinNumberEnabled] = useState(
-		() => localStorage.getItem("bloom-dock-win-number-enabled") !== "false"
-	);
-	const [dockExtrasPosition, setDockExtrasPosition] = useState(
-		() => localStorage.getItem("bloom-dock-extras-position") || "off"
-	);
-	const [dockExtrasDrives, setDockExtrasDrives] = useState(
-		() => localStorage.getItem("bloom-dock-extras-drives") !== "false"
-	);
-	const [dockExtrasHiddenDrives, setDockExtrasHiddenDrives] = useState(
-		() => localStorage.getItem("bloom-dock-extras-hidden-drives") || ""
-	);
-	const [dockExtrasRecycleBin, setDockExtrasRecycleBin] = useState(
-		() => localStorage.getItem("bloom-dock-extras-recycle-bin") !== "false"
-	);
-	// Off unless turned on, so existing docks don't change.
-	const [dockTaskView, setDockTaskView] = useState(
-		() => localStorage.getItem("bloom-dock-task-view") === "true"
-	);
-	const [dockExtrasFolders, setDockExtrasFolders] = useState(
-		() => localStorage.getItem("bloom-dock-extras-folders") ?? DEFAULT_ENABLED_FOLDERS
-	);
-	const [dockExtrasCustomFolders, setDockExtrasCustomFolders] = useState(
-		() => localStorage.getItem("bloom-dock-extras-custom-folders") || "[]"
-	);
-	const [dockMode, setDockMode] = useState(() => {
-		// "smart" is the fresh-install default — keep in step with App.tsx,
-		// Dock.tsx, and the backend fallback in commands.rs.
-		const raw = localStorage.getItem("bloom-dock-mode") || "smart";
-		return raw === "auto-hide" ? "smart" : raw;
-	});
-	const [dockEdgeDelay, setDockEdgeDelay] = useState(() => {
-		const val = localStorage.getItem("bloom-dock-edge-delay");
-		return val !== null ? parseInt(val) : 200;
 	});
 	const [notchMode, setNotchMode] = useState("fixed");
 	const [notchEdgeDelay, setNotchEdgeDelay] = useState(() => {
@@ -218,20 +162,6 @@ export function useSettings() {
 			apply(getVal("bloom-auto-update"), setAutoUpdate, readBool);
 			apply(getVal("bloom-volume-edge-enabled"), setVolumeEdgeEnabled, readBool);
 			apply(getVal("bloom-brightness-edge-enabled"), setBrightnessEdgeEnabled, readBool);
-			apply(getVal("bloom-dock-enabled"), setDockEnabled, readBool);
-			apply(getVal("bloom-dock-preview-enabled"), setDockPreviewEnabled, readBool);
-			apply(getVal("bloom-dock-icon-only"), setDockIconOnly, readBool);
-			apply(getVal("bloom-dock-separator-enabled"), setDockSeparatorEnabled, readBool);
-			apply(getVal("bloom-start-icon"), setStartIcon, (v) => v);
-			apply(getVal("bloom-dock-adaptive"), setDockAdaptive, readBool);
-			apply(getVal("bloom-dock-win-number-enabled"), setDockWinNumberEnabled, readBool);
-			apply(getVal("bloom-dock-extras-position"), setDockExtrasPosition, (v) => v);
-			apply(getVal("bloom-dock-extras-drives"), setDockExtrasDrives, readBool);
-			apply(getVal("bloom-dock-extras-recycle-bin"), setDockExtrasRecycleBin, readBool);
-			apply(getVal("bloom-dock-task-view"), setDockTaskView, readBool);
-			apply(getVal("bloom-dock-extras-hidden-drives"), setDockExtrasHiddenDrives, (v) => v);
-			apply(getVal("bloom-dock-extras-folders"), setDockExtrasFolders, (v) => v);
-			apply(getVal("bloom-dock-extras-custom-folders"), setDockExtrasCustomFolders, (v) => v);
 
 			apply(getVal("bloom-temp-unit"), setTempUnitFahrenheit, (v) => v === "fahrenheit");
 			apply(getVal("bloom-scale"), setScale, parseFloat);
@@ -239,8 +169,6 @@ export function useSettings() {
 
 			apply(getVal("bloom-notch-mode"), setNotchMode, (v) => (v === "auto-hide" ? "smart" : v));
 			apply(getVal("bloom-notch-edge-delay"), setNotchEdgeDelay, parseInt);
-			apply(getVal("bloom-dock-mode"), setDockMode, (v) => (v === "auto-hide" ? "smart" : v));
-			apply(getVal("bloom-dock-edge-delay"), setDockEdgeDelay, parseInt);
 
 			const savedCity = getVal("bloom-weather-city");
 			if (savedCity) setCityName(savedCity);
@@ -347,24 +275,8 @@ export function useSettings() {
 
 	// ── Sync settings from other windows ──
 	useSettingsSync({
-		"bloom-dock-mode": setDockMode,
-		"bloom-dock-edge-delay": setDockEdgeDelay,
 		"bloom-notch-mode": setNotchMode,
 		"bloom-notch-edge-delay": setNotchEdgeDelay,
-		"bloom-dock-enabled": setDockEnabled,
-		"bloom-dock-icon-only": setDockIconOnly,
-		"bloom-dock-separator-enabled": setDockSeparatorEnabled,
-		"bloom-start-icon": setStartIcon,
-		"bloom-dock-preview-enabled": setDockPreviewEnabled,
-		"bloom-dock-adaptive": setDockAdaptive,
-		"bloom-dock-win-number-enabled": setDockWinNumberEnabled,
-		"bloom-dock-extras-position": setDockExtrasPosition,
-		"bloom-dock-extras-drives": setDockExtrasDrives,
-		"bloom-dock-extras-recycle-bin": setDockExtrasRecycleBin,
-		"bloom-dock-task-view": setDockTaskView,
-		"bloom-dock-extras-hidden-drives": setDockExtrasHiddenDrives,
-		"bloom-dock-extras-folders": setDockExtrasFolders,
-		"bloom-dock-extras-custom-folders": setDockExtrasCustomFolders,
 		"bloom-weather-enabled": setWeatherEnabled,
 		"bloom-calendar-enabled": setCalendarEnabled,
 		"bloom-timer-sound-enabled": setTimerSoundEnabled,
@@ -394,7 +306,7 @@ export function useSettings() {
 		"bloom-theme-saturation": setThemeSaturation,
 		"bloom-theme-brightness": setThemeBrightness,
 		"bloom-weather-city": (v) => setCityName(v || "")
-	});
+    }, [], (key) => { if (key === QUOTA_HIDDEN_AGENTS_KEY) setQuotaHiddenAgents([]); });
 
 	// ── Listen for system accent changes (adaptive theme) ──
 	useEffect(() => {
@@ -511,7 +423,8 @@ export function useSettings() {
 				await disable();
 				setAutostart(false);
 			} else {
-				await enable();
+				// Dev runs from target/debug; registering it in HKCU Run would hijack login.
+				if (!import.meta.env.DEV) await enable();
 				setAutostart(true);
 			}
 		} catch (err) {}
@@ -636,106 +549,6 @@ export function useSettings() {
 		saveSetting("bloom-temp-unit", next ? "fahrenheit" : "celsius");
 	};
 
-	const toggleDock = () => {
-		const next = !dockEnabled;
-		setDockEnabled(next);
-		saveSetting("bloom-dock-enabled", String(next));
-	};
-
-	const toggleDockPreview = () => {
-		const next = !dockPreviewEnabled;
-		setDockPreviewEnabled(next);
-		saveSetting("bloom-dock-preview-enabled", String(next));
-	};
-
-	const toggleDockIconOnly = () => {
-		const next = !dockIconOnly;
-		setDockIconOnly(next);
-		saveSetting("bloom-dock-icon-only", String(next));
-	};
-
-	const toggleDockSeparator = () => {
-		const next = !dockSeparatorEnabled;
-		setDockSeparatorEnabled(next);
-		saveSetting("bloom-dock-separator-enabled", String(next));
-	};
-
-	const handleStartIconChange = (icon: string) => {
-		setStartIcon(icon);
-		saveSetting("bloom-start-icon", icon);
-	};
-
-	const toggleDockAdaptive = () => {
-		const next = !dockAdaptive;
-		setDockAdaptive(next);
-		saveSetting("bloom-dock-adaptive", String(next));
-	};
-
-	const toggleDockWinNumber = () => {
-		const next = !dockWinNumberEnabled;
-		setDockWinNumberEnabled(next);
-		saveSetting("bloom-dock-win-number-enabled", String(next));
-	};
-
-	const handleDockExtrasPositionChange = (position: string) => {
-		setDockExtrasPosition(position);
-		saveSetting("bloom-dock-extras-position", position);
-	};
-
-	const toggleDockExtrasDrives = () => {
-		const next = !dockExtrasDrives;
-		setDockExtrasDrives(next);
-		saveSetting("bloom-dock-extras-drives", String(next));
-	};
-
-	const toggleDockExtrasDrive = (letter: string) => {
-		const next = toggleHiddenDrive(dockExtrasHiddenDrives, letter);
-		setDockExtrasHiddenDrives(next);
-		saveSetting("bloom-dock-extras-hidden-drives", next);
-	};
-
-	const toggleDockExtrasRecycleBin = () => {
-		const next = !dockExtrasRecycleBin;
-		setDockExtrasRecycleBin(next);
-		saveSetting("bloom-dock-extras-recycle-bin", String(next));
-	};
-
-	const toggleDockTaskView = () => {
-		const next = !dockTaskView;
-		setDockTaskView(next);
-		saveSetting("bloom-dock-task-view", String(next));
-	};
-
-	const toggleDockExtraFolder = (id: string) => {
-		const next = toggleEnabledFolder(dockExtrasFolders, id);
-		setDockExtrasFolders(next);
-		saveSetting("bloom-dock-extras-folders", next);
-	};
-
-	const handleAddDockExtraFolder = async () => {
-		try {
-			const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
-			const selected = await openDialog({
-				title: "Add a folder to the dock",
-				directory: true,
-				multiple: false
-			});
-			if (typeof selected === "string") {
-				const next = addCustomFolder(dockExtrasCustomFolders, selected);
-				setDockExtrasCustomFolders(next);
-				saveSetting("bloom-dock-extras-custom-folders", next);
-			}
-		} catch (e) {
-			console.error("Folder picker failed:", e);
-		}
-	};
-
-	const handleRemoveDockExtraFolder = (path: string) => {
-		const next = removeCustomFolder(dockExtrasCustomFolders, path);
-		setDockExtrasCustomFolders(next);
-		saveSetting("bloom-dock-extras-custom-folders", next);
-	};
-
 	const toggleAutoUpdate = () => {
 		const next = !autoUpdate;
 		setAutoUpdate(next);
@@ -743,19 +556,9 @@ export function useSettings() {
 	};
 
 	// ── Value setters ──
-	const setDockModeValue = (newMode: string) => {
-		setDockMode(newMode);
-		saveSetting("bloom-dock-mode", newMode);
-	};
-
 	const setNotchModeValue = (newMode: string) => {
 		setNotchMode(newMode);
 		saveSetting("bloom-notch-mode", newMode);
-	};
-
-	const handleDockEdgeDelayChange = (val: number) => {
-		setDockEdgeDelay(val);
-		saveSetting("bloom-dock-edge-delay", val.toString());
 	};
 
 	const handleNotchEdgeDelayChange = (val: number) => {
@@ -1001,41 +804,6 @@ export function useSettings() {
 		// Widgets
 		statusWidgets,
 		handleWidgetsChange,
-
-		// Dock
-		dockEnabled,
-		toggleDock,
-		dockMode,
-		setDockModeValue,
-		dockEdgeDelay,
-		handleDockEdgeDelayChange,
-		dockPreviewEnabled,
-		toggleDockPreview,
-		dockIconOnly,
-		toggleDockIconOnly,
-		dockSeparatorEnabled,
-		toggleDockSeparator,
-		startIcon,
-		handleStartIconChange,
-		dockAdaptive,
-		toggleDockAdaptive,
-		dockWinNumberEnabled,
-		toggleDockWinNumber,
-		dockExtrasPosition,
-		handleDockExtrasPositionChange,
-		dockExtrasDrives,
-		toggleDockExtrasDrives,
-		dockExtrasHiddenDrives,
-		toggleDockExtrasDrive,
-		dockExtrasRecycleBin,
-		toggleDockExtrasRecycleBin,
-		dockTaskView,
-		toggleDockTaskView,
-		dockExtrasFolders,
-		toggleDockExtraFolder,
-		dockExtrasCustomFolders,
-		handleAddDockExtraFolder,
-		handleRemoveDockExtraFolder,
 
 		// Overlays
 		volumeOverlayEnabled,

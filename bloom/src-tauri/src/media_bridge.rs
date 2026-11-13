@@ -51,7 +51,9 @@ fn authenticate(request: &Request, settings: &Settings) -> Option<Source> {
     (different == 0).then_some(source)
 }
 
-use crate::media_queue::{validate, Broker, Entry, NativeHint, NoTarget, Snapshot, TabInfo, Target};
+use crate::media_queue::{
+    validate, Broker, Entry, LyricLine, Lyrics, NativeHint, NoTarget, Snapshot, TabInfo, Target,
+};
 // The diagnostics log exists only in the app binary, not the lib test crate.
 #[cfg(not(test))]
 use crate::media_queue::{invalid_field, Rejected};
@@ -78,10 +80,31 @@ struct State {
     // Windows-only players have no connector to publish them, so the media
     // thread hands them over here for `build` to append.
     native_cards: Vec<MediaCard>,
+    // One sheet per client: a connector publishes one playing session, and the
+    // sheet names its track so a stale reply cannot attach to the next one.
+    lyrics: HashMap<String, (String, Lyrics)>,
 }
 const PLAYER_OPS: [&str; 5] = ["select", "playPause", "next", "previous", "seek"];
 const TAB_OPS: [&str; 3] = ["mute", "unmute", "show"];
 impl State {
+    fn accept_lyrics(&mut self, client: &str, session: String, sheet: Lyrics) -> bool {
+        if session.is_empty() || session.len() > 256 || sheet.track_id.is_empty()
+            || sheet.track_id.len() > 256 || sheet.lines.len() > 500
+            || sheet.lines.iter().any(|line| line.text.len() > 500 || line.t > 31_536_000_000)
+            || (sheet.synced && sheet.lines.windows(2).any(|pair| pair[0].t > pair[1].t))
+        {
+            return false;
+        }
+        // A late response is harmless noise, never a replacement for the current sheet.
+        if self.broker.clients.get(client).is_some_and(|source| {
+            source.source == Source::Spotify && source.inventory.iter().any(|snapshot| {
+                snapshot.session == session && snapshot.current_id == sheet.track_id
+            })
+        }) {
+            self.lyrics.insert(client.to_owned(), (session, sheet));
+        }
+        true
+    }
     fn prepare(
         &mut self,
         generation: &str,
@@ -295,6 +318,7 @@ impl State {
     fn disconnect(&mut self, client: &str) {
         self.broker.clients.remove(client);
         self.senders.remove(client);
+        self.lyrics.remove(client);
         let ids: Vec<_> = self
             .pending
             .iter()
@@ -861,6 +885,18 @@ pub fn media_list(now: u64) -> MediaList {
 pub fn media_list_get() -> MediaList {
     media_list(now())
 }
+/// The sheet for a generation only while it still names that track. A track
+/// change leaves the old sheet behind rather than showing it on the new song.
+pub fn lyrics_for(generation: &str, current_id: &str) -> Option<Lyrics> {
+    let client = generation.split_once(':')?.0;
+    shared()
+        .lock()
+        .ok()?
+        .lyrics
+        .get(client)
+        .filter(|(session, sheet)| generation == format!("{client}:{session}") && sheet.track_id == current_id)
+        .map(|(_, sheet)| sheet.clone())
+}
 pub fn target_for_generation(generation: &str) -> Option<Target> {
     shared()
         .lock()
@@ -964,6 +1000,14 @@ enum Incoming {
         status: String,
         #[serde(default)]
         snapshot: Option<Snapshot>,
+    },
+    Lyrics {
+        session: String,
+        track_id: String,
+        #[serde(default)]
+        synced: bool,
+        #[serde(default)]
+        lines: Vec<LyricLine>,
     },
 }
 
@@ -1117,6 +1161,11 @@ async fn socket(
                     let valid=match message {
                         Incoming::Inventory{snapshots,tabs,unknown_playing,pull}=>{wants_pull=pull;state.inventory(&client,source,snapshots,tabs,unknown_playing,now())},
                         Incoming::Result{id,status,snapshot}=>{if id.len()>128 || status.len()>32{false}else{state.finish(&client,&id,&status,snapshot,now());true}},
+                        Incoming::Lyrics{session,track_id,synced,lines}=>{
+                            // A sheet is display-only, so it carries its own
+                            // bounds instead of trusting the connector's.
+                            state.accept_lyrics(&client,session,Lyrics{track_id,synced,lines})
+                        },
                     };
                     if !valid{break CloseReason::Invalid;}
                     // The opt-in latches only once the inventory was accepted.
@@ -2028,5 +2077,32 @@ mod tests {
         request.headers_mut().insert("Sec-WebSocket-Protocol",format!("bloom.v1, {}",config.youtube).parse().unwrap());
         let stream=tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST,port)).await.unwrap();
         tokio_tungstenite::client_async(request,stream).await.unwrap().0
+    }
+}
+
+#[cfg(test)]
+mod lyrics_tests {
+    use super::*;
+
+    #[test]
+    fn stale_track_and_session_sheets_cannot_replace_current_lyrics() {
+        let mut state = State::default();
+        let snapshot = Snapshot {
+            session: "session".into(), revision: "1".into(), current_id: "b".into(),
+            title: "B".into(), observed_ms: 100, ..Default::default()
+        };
+        assert!(state.broker.update("client", Source::Spotify, vec![snapshot], false, 100));
+        let sheet = |id: &str| Lyrics { track_id: id.into(), synced: true,
+            lines: vec![LyricLine { t: 0, text: id.into() }] };
+        assert!(state.accept_lyrics("client", "session".into(), sheet("b")));
+        assert!(state.accept_lyrics("client", "session".into(), sheet("a")));
+        assert!(state.accept_lyrics("client", "previous-session".into(), sheet("b")));
+        assert_eq!(state.lyrics["client"].0, "session");
+        assert_eq!(state.lyrics["client"].1.lines[0].text, "b");
+        let mut oversized = sheet("b");
+        oversized.lines[0].text = "x".repeat(501);
+        assert!(!state.accept_lyrics("client", "session".into(), oversized));
+        state.disconnect("client");
+        assert!(state.lyrics.is_empty());
     }
 }

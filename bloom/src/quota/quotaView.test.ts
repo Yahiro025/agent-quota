@@ -5,8 +5,6 @@ import {
 	basis,
 	defaultSelection,
 	detailLines,
-	failedCount,
-	formatReset,
 	nextAgent
 } from "./quotaView";
 
@@ -156,39 +154,6 @@ describe("detailLines", () => {
 				false
 			)
 		).toEqual(["no credentials"]);
-	});
-});
-
-describe("formatReset", () => {
-	test("a time in the past gives now", () => {
-		expect(formatReset("2026-10-22T23:59:00Z", NOW, false)).toBe("now");
-		expect(formatReset("2026-10-23T00:00:00Z", NOW, false)).toBe("now");
-	});
-
-	test("clock: true gives local h:mm AM/PM", () => {
-		const at = "2026-10-23T06:18:00Z";
-		const expected = new Date(at).toLocaleTimeString([], {
-			hour: "numeric",
-			minute: "2-digit"
-		});
-		expect(formatReset(at, NOW, true)).toBe(expected);
-	});
-
-	test("countdown for a future time", () => {
-		expect(formatReset("2026-10-23T01:30:00Z", NOW, false)).toBe("1h 30m");
-	});
-});
-
-describe("failedCount", () => {
-	test("counts failed agents", () => {
-		const readings: QuotaAgent[] = [
-			agent({ id: "claude" }),
-			agent({ id: "kiro" }),
-			agent({ id: "codex" }),
-			agent({ id: "cursor" }),
-			agent({ id: "copilot", state: "failed", err: "HTTP 401" })
-		];
-		expect(failedCount(readings)).toBe(1);
 	});
 });
 

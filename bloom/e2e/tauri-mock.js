@@ -61,6 +61,8 @@
 			return Promise.resolve(window.__mediaList ?? { cards: [], other_audio: false });
 		if (cmd === "load_settings") return Promise.resolve({});
 		if (cmd === "get_update_state") return Promise.resolve({ available: false });
+		// No MyFinder: the standalone notch. Without this the hook read `undefined.revision` and the page never rendered.
+		if (cmd === "get_myfinder_state") return Promise.resolve({ revision: 0, available: false, hidden: false, height: 0, color: null, menuRight: 0 });
 		if (cmd === "get_cpu_usage") return Promise.resolve(42);
 		if (cmd === "get_ram_usage") return Promise.resolve(55);
 		if (cmd === "get_network_speed") return Promise.resolve([1024, 2048]);

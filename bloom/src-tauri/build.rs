@@ -13,9 +13,17 @@ fn embed_helper() {
     let repo = manifest_dir.join("..").join("..");
     println!("cargo:rerun-if-changed=../../go.mod");
     println!("cargo:rerun-if-changed=../../go.sum");
-    println!("cargo:rerun-if-changed=../../main.go");
+    // Watch every existing root Go source, not just main.go. Watch source
+    // directories separately so changes to build output do not rebuild the helper.
+    for entry in std::fs::read_dir(&repo).expect("read Go source directory") {
+        let path = entry.expect("read Go source entry").path();
+        if path.extension().is_some_and(|ext| ext == "go") {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
     println!("cargo:rerun-if-changed=../../quota");
     println!("cargo:rerun-if-changed=../../internal");
+    println!("cargo:rerun-if-changed=../../widget");
 
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("agentquota.exe");
     let status = Command::new(find_go())

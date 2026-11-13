@@ -17,6 +17,21 @@ import type { UpdateCheckResult } from "./updater";
 import { batteryTooltip, type BatteryDetails } from "./batteryTooltip";
 import { createRegionSender, measureElements, notchPillBox, type RegionRect } from "./windowRegion";
 import "./App.css";
+import "./myfinder.css";
+import { band } from "./quota/protocol";
+import {
+	fitQuotaStrip,
+	stripHeadline,
+	stripSecond,
+	stripShowsValue,
+	worstBand
+} from "./quota/stripFit";
+
+// Clear bar between MyFinder's menu and Bloom's strip, in CSS pixels.
+const STRIP_MENU_GAP = 8;
+// Expand and Pin appear on hover; their width is always held back so the
+// strip does not grow over the menu when the pointer arrives.
+const STRIP_CONTROLS_WIDTH = 48;
 import { initTheme } from "./theme";
 import {
 	PlayIcon,
@@ -34,20 +49,20 @@ import { useMediaList } from "./media/useMediaList";
 import { useWeather } from "./hooks/useWeather";
 import { useSettingsSync } from "./hooks/useSettingsSync";
 import { useTrailingThrottle } from "./hooks/useTrailingThrottle";
-import { useAnnouncement, showAnnouncements } from "./hooks/useAnnouncement";
 import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import type { WidgetConfig } from "./components/StatusWidgetConfig";
 import { EdgeSurface } from "./components/EdgeSurface";
+import { useMyFinder } from "./hooks/useMyFinder";
+import { constrainBarRegions, fittedBarHeight, myfinderIdleHidden, myfinderMaterial } from "./myfinder";
 import { ShelfTypeIcon } from "./components/ShelfTypeIcon";
 import { WifiPanel } from "./components/WifiPanel";
-import { QuotaHoverCard, QuotaPanel, QuotaRingMark } from "./quota/QuotaPanel";
+import { QuotaChip, QuotaHoverCard, QuotaPanel, QuotaRingMark } from "./quota/QuotaPanel";
 import { useSlidingPad } from "./quota/useSlidingPad";
 import { QuotaAlert } from "./quota/QuotaAlert";
 import { parseSnapshot, urgent, type QuotaAgent } from "./quota/protocol";
-import { agentName } from "./quota/marks";
+import { AgentMark, agentName } from "./quota/marks";
 import { alertRows, hoverQuotaAgent, nextAgent, quotaView } from "./quota/quotaView";
 import { reduceAttention } from "./quota/attention";
 import {
@@ -62,11 +77,12 @@ import {
 	MemoryStick,
 	HardDrive,
 	ArrowUpDown,
+	ArrowUp,
+	ArrowDown,
 	BellRing,
 	Play,
 	Pause,
 	RotateCcw,
-	Megaphone,
 	Type,
 	X,
 	ChevronRight,
@@ -452,6 +468,7 @@ interface MediaInfo {
 	duration_ms?: number;
 	seek_enabled?: boolean;
 	position_updated_at?: number;
+	lyrics?: import("./media/lyrics").Lyrics;
 }
 
 interface AudioSessionInfo {
@@ -501,7 +518,6 @@ type BloomMode =
 	| "music"
 	| "calendar"
 	| "command-center"
-	| "announcement"
 	| "status"
 	| "shelf"
 	| "wifi"
@@ -569,6 +585,9 @@ const TitleMarquee = ({ title }: { title: string }) => {
 
 function App() {
 	const reduceMotion = useReducedMotion();
+	const { state: myfinder, dpi: displayDpi } = useMyFinder();
+	const integrated = myfinder.available && myfinder.height > 0;
+	const finderMaterial = myfinderMaterial(myfinder.color);
 	const panelHandoff = reduceMotion ? PANEL_HANDOFF_REDUCED : PANEL_HANDOFF;
 	const panelHandoffUnscaled = reduceMotion ? PANEL_HANDOFF_REDUCED : PANEL_HANDOFF_UNSCALED;
 	useEffect(() => {
@@ -578,7 +597,7 @@ function App() {
 	const [time, setTime] = useState("");
 	const [isHovered, setIsHovered] = useState(false);
 	// Expanded into a panel by a click. Hover alone only peeks.
-	const [isOpen, setIsOpen] = useState(false);
+	const [isOpen, setIsOpen] = useState(() => localStorage.getItem("bloom-quota-pinned") === "true");
 	const isOpenRef = useRef(false);
 	isOpenRef.current = isOpen;
 	const [isReady, setIsReady] = useState(false);
@@ -602,6 +621,8 @@ function App() {
 	} | null>(null);
 	const statusTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [clusterWidth, setClusterWidth] = useState(0);
+	// Width of the bar row apart from the quota housing: the clock, gaps and padding.
+	const [stripOther, setStripOther] = useState(120);
 	const [showPowerPulse, setShowPowerPulse] = useState(false);
 	const [showLowBatteryPulse, setShowLowBatteryPulse] = useState(false);
 	const [lowBatteryThreshold, setLowBatteryThreshold] = useState(() =>
@@ -763,30 +784,11 @@ function App() {
 		};
 	}, [windowLabel, notchMode, triggerEventPeek]);
 
-	// Remote announcement shown as a persistent notch card until dismissed.
-	const {
-		announcement,
-		dismissed: announcementDismissed,
-		dismiss: dismissAnnouncement
-	} = useAnnouncement(showAnnouncements());
-	const announcementShownRef = useRef<string | null>(null);
-	const announcementOpen = !!announcement && !announcementDismissed;
-	const announcementOpenRef = useRef(false);
-	announcementOpenRef.current = announcementOpen;
-
 	const [screenFree, setScreenFree] = useState(true);
 	const [isImpacted, setIsImpacted] = useState(false);
 	const [isExpanded, setIsExpanded] = useState(false);
 	const [startupAnimating, setStartupAnimating] = useState(false);
 
-	const [dockMode, setDockMode] = useState(() => {
-		const raw = localStorage.getItem("bloom-dock-mode") || "smart";
-		if (raw === "auto-hide") return "smart";
-		return raw;
-	});
-	const [dockEnabled, setDockEnabled] = useState(
-		() => localStorage.getItem("bloom-dock-enabled") !== "false"
-	);
 	const [isNotchHovered, setIsNotchHovered] = useState(false);
 
 	const [isEdgeHovered, setIsEdgeHovered] = useState(false);
@@ -796,6 +798,7 @@ function App() {
 	// (notch-edge-hover) brings it back until the hover grace ends.
 	const isVisible = screenFree || interactionState !== "none";
 	const bloomRef = useRef<HTMLDivElement>(null);
+	const finderStripRef = useRef<HTMLDivElement>(null);
 	const pillClusterRef = useRef<HTMLDivElement>(null);
 	const timeCenterRef = useRef<HTMLDivElement>(null);
 	const musicBubbleRef = useRef<HTMLButtonElement>(null);
@@ -804,20 +807,41 @@ function App() {
 	// The pill's target box in window CSS px, and the sender that applies the
 	// notch window's region (holding earlier regions while it shrinks).
 	const pillTargetRef = useRef<RegionRect | null>(null);
+	const barConstraint = useRef<{ strip: RegionRect; boundary: number } | null>(null);
 	const sendNotchRegion = useMemo(
 		() =>
 			createRegionSender((rects) => {
-				invoke("set_window_region", { rects }).catch(() => {});
+				const fit = barConstraint.current;
+				invoke("set_window_region", {
+					rects: fit ? constrainBarRegions(rects, fit.strip, fit.boundary) : rects
+				}).catch(() => {});
 			}),
 		[]
 	);
+	const sendFittedRegion = useMemo(() => createRegionSender((rects) => {
+		const fit = barConstraint.current;
+		invoke("set_window_region", { rects: fit ? constrainBarRegions(rects, fit.strip, fit.boundary) : rects }).catch(() => {});
+	}, 0), []);
 
 	// Recomputes the notch window's region from the pill's target box and the
 	// floating parts drawn around it, and sends it if it changed. Reads only
 	// refs and the DOM, so it is safe to call from any callback.
 	const updateNotchRegion = () => {
 		const wanted: RegionRect[] = [];
-		if (pillTargetRef.current) wanted.push(pillTargetRef.current);
+		if (barConstraint.current) {
+			// Follow the painted animation frame directly: holding the old
+			// panel would leave an invisible input blocker after closing.
+			const panel = bloomRef.current;
+			if (panel && Number(getComputedStyle(panel).opacity) > 0.01) {
+				const r = panel.getBoundingClientRect();
+				if (r.height > 1) wanted.push({ x: r.left, y: r.top, width: r.width, height: r.height }); // unpadded: an unpainted region pixel shows as a pale haze
+			}
+		} else if (pillTargetRef.current) wanted.push(pillTargetRef.current);
+		if (finderStripRef.current) {
+			const row = finderStripRef.current.querySelector(".main-row") ?? finderStripRef.current;
+			const r = row.getBoundingClientRect();
+			wanted.push({ x: r.left, y: r.top, width: r.width, height: r.height });
+		}
 		// Each floating part, padded to cover what it paints outside its box: a
 		// tooltip card's shadow reaches 20px out plus a 6px drop, a bubble's
 		// glow less, and the screen corners nothing.
@@ -828,21 +852,28 @@ function App() {
 				[".screen-corner", 0]
 			])
 		);
-		sendNotchRegion(wanted);
+		if (barConstraint.current) sendFittedRegion(wanted);
+		else sendNotchRegion(wanted);
 	};
 	const [systemSettingsReady, setSystemSettingsReady] = useState(false);
 	const [waitForStartupSplash, setWaitForStartupSplash] = useState(false);
 	const initialSystemSyncDone = useRef(false);
 	const splashDone = useRef(false);
 	const systemSyncQueue = useRef<Promise<void>>(Promise.resolve());
-	const appliedDock = useRef<{ enabled: boolean; mode: string } | null>(null);
 	const appliedNotchMode = useRef<string | null>(null);
+
+	const [quotaPinned, setQuotaPinned] = useState(
+		() => localStorage.getItem("bloom-quota-pinned") === "true"
+	);
+	const [quotaCompact, setQuotaCompact] = useState(
+		() => localStorage.getItem("bloom-quota-compact") === "true"
+	);
 
 	const isAnyInteraction = isHovered || isNotchHovered || isEdgeHovered;
 	const isHidden =
-		!startupAnimating &&
+		myfinderIdleHidden(myfinder, isOpen || quotaPinned, isNotchHovered) || (!startupAnimating && !integrated &&
 		((notchMode === "smart" && isOverlapped && interactionState === "none") ||
-			(notchMode === "peek" && interactionState === "none" && !eventPeek && !quotaAlertHold));
+			(notchMode === "peek" && interactionState === "none" && !eventPeek && !quotaAlertHold && !quotaPinned)));
 
 	useEffect(() => {
 		if (isAnyInteraction) {
@@ -873,7 +904,7 @@ function App() {
 		const updateRect = () => {
 			if (bloomRef.current && windowLabel === "main") {
 				// Activity bubbles sit beside the pill and must stay clickable too.
-				const rects = [bloomRef.current, musicBubbleRef.current, shelfBubbleRef.current]
+				const rects = [bloomRef.current, finderStripRef.current, musicBubbleRef.current, shelfBubbleRef.current]
 					.filter((el): el is NonNullable<typeof el> => el !== null)
 					.map((el) => el.getBoundingClientRect());
 				const left = Math.min(...rects.map((r) => r.left));
@@ -898,12 +929,13 @@ function App() {
 		window.addEventListener("resize", updateRect);
 		const observer = new ResizeObserver(updateRect);
 		if (bloomRef.current) observer.observe(bloomRef.current);
+		if (finderStripRef.current) observer.observe(finderStripRef.current);
 
 		return () => {
 			window.removeEventListener("resize", updateRect);
 			observer.disconnect();
 		};
-	}, [isExpanded, isHidden, windowLabel, scale]);
+	}, [isExpanded, isHidden, windowLabel, scale, integrated]);
 
 	useEffect(() => {
 		if (!windowLabel) return;
@@ -1119,7 +1151,15 @@ function App() {
 				setSettingsMusicCompactNotch(getVal("bloom-music-compact-notch", "true") !== "false");
 				setLastPanel(asNotchPanel(getVal("bloom-notch-last-panel")));
 				setQuotaHiddenAgents(parseHiddenAgents(getVal(QUOTA_HIDDEN_AGENTS_KEY)));
-				setQuotaCompact(getVal("bloom-quota-compact", "false") === "true");
+				const savedQuotaCompact = getVal("bloom-quota-compact", "false") === "true";
+				setQuotaCompact(savedQuotaCompact);
+				const savedQuotaPinned = getVal("bloom-quota-pinned", "false") === "true";
+				localStorage.setItem("bloom-quota-pinned", String(savedQuotaPinned));
+				setQuotaPinned(savedQuotaPinned);
+				if (savedQuotaPinned) {
+					setIsOpen(true);
+					setBloomMode("quotas");
+				}
 				const viz =
 					getVal("bloom-media-visualizer-enabled") ?? getVal("bloom-visualizer-enabled", "true");
 				setSettingsVisualizerEnabled(viz !== "false");
@@ -1143,17 +1183,17 @@ function App() {
 				if (windowLabel === "main") {
 					const firstRun = localStorage.getItem("bloom-first-run") === null;
 					if (firstRun) {
-						import("@tauri-apps/plugin-autostart").then(({ enable, isEnabled }) => {
-							isEnabled().then((enabled) => {
-								if (!enabled) enable().catch(() => {});
+						// The dev origin starts with empty localStorage; enabling here
+						// would point the login Run key at target/debug/bloom.exe.
+						if (!import.meta.env.DEV) {
+							import("@tauri-apps/plugin-autostart").then(({ enable, isEnabled }) => {
+								isEnabled().then((enabled) => {
+									if (!enabled) enable().catch(() => {});
+								});
 							});
-						});
+						}
 						localStorage.setItem("bloom-first-run", "done");
 					}
-					const rawDockMode = getVal("bloom-dock-mode", "smart") as string;
-					const dockMode = rawDockMode === "auto-hide" ? "smart" : rawDockMode;
-					setDockMode(dockMode);
-					setDockEnabled(getVal("bloom-dock-enabled", "true") === "true");
 					const storedVersion = localStorage.getItem("bloom-app-version");
 					let waitForSplash = firstRun || storedVersion === null;
 					if (!waitForSplash) {
@@ -1244,11 +1284,18 @@ function App() {
 			"bloom-corners-enabled": setSettingsCornersEnabled,
 			"bloom-scale": setScale,
 			"bloom-low-battery-threshold": setLowBatteryThreshold,
-			"bloom-dock-enabled": setDockEnabled,
-			"bloom-dock-mode": setDockMode,
 			"bloom-notch-mode": setNotchMode,
 			[QUOTA_HIDDEN_AGENTS_KEY]: (value) => setQuotaHiddenAgents(parseHiddenAgents(value)),
 			"bloom-quota-compact": (value) => setQuotaCompact(String(value) === "true"),
+			"bloom-quota-pinned": (value) => {
+				const pinned = String(value) === "true";
+				localStorage.setItem("bloom-quota-pinned", String(pinned));
+				setQuotaPinned(pinned);
+				if (pinned) {
+					setIsOpen(true);
+					setBloomMode("quotas");
+				}
+			},
 			"bloom-status-widgets": (value) => {
 				try {
 					const parsed = JSON.parse(value);
@@ -1260,8 +1307,9 @@ function App() {
 			"bloom-show-update-indicator": (value) => setShowUpdateIndicator(String(value) === "true"),
 			"bloom-time-format-24h": setTimeFormat24h
 		},
-		[windowLabel]
-	);
+        [windowLabel],
+        (key) => { if (key === QUOTA_HIDDEN_AGENTS_KEY) setQuotaHiddenAgents([]); }
+    );
 
 	// One owner applies the latest window settings. Superseded splash timers and
 	// retries are cancelled; an in-flight command finishes before the new state
@@ -1284,19 +1332,6 @@ function App() {
 				.then(async () => {
 					if (cancelled) return;
 					try {
-						if (dockEnabled) {
-							if (!appliedDock.current?.enabled) {
-								await invoke("init_dock", { mode: dockMode });
-								appliedDock.current = { enabled: true, mode: dockMode };
-							} else if (appliedDock.current.mode !== dockMode) {
-								await invoke("change_dock_mode", { mode: dockMode });
-								appliedDock.current = { enabled: true, mode: dockMode };
-							}
-						} else if (appliedDock.current?.enabled !== false) {
-							await invoke("toggle_dock", { enable: false });
-							appliedDock.current = { enabled: false, mode: dockMode };
-						}
-						if (cancelled) return;
 						if (appliedNotchMode.current !== notchMode) {
 							await invoke("change_notch_mode", { mode: notchMode });
 							appliedNotchMode.current = notchMode;
@@ -1353,10 +1388,12 @@ function App() {
 			}
 			unlistenSplash?.();
 		};
-	}, [windowLabel, systemSettingsReady, waitForStartupSplash, dockEnabled, dockMode, notchMode]);
+	}, [windowLabel, systemSettingsReady, waitForStartupSplash, notchMode]);
 
-	// Bloom mode state: 'music', 'calendar', 'command-center', 'announcement', 'shelf', or 'status'
-	const [bloomMode, setBloomMode] = useState<BloomMode>("status");
+	// Bloom mode state: 'music', 'calendar', 'command-center', 'shelf', or 'status'
+	const [bloomMode, setBloomMode] = useState<BloomMode>(() =>
+		localStorage.getItem("bloom-quota-pinned") === "true" ? "quotas" : "status"
+	);
 
 	// Shelf: files and selected text stashed in the notch via drag-and-drop.
 	// Files are stored as plain paths (references, never copies). Session-scoped
@@ -1604,6 +1641,22 @@ function App() {
 	const releaseDeferredRef = useRef(false);
 	const suppressHoverReleaseRef = useRef(false);
 	const suppressHoverReleaseTimer = useRef<number | null>(null);
+	// Inside MyFinder the 8px gap between the bar and its menu is outside the
+	// native window region, so crossing it makes the webview report a leave and
+	// the pointer re-enters a moment later. The release waits out that crossing.
+	const finderLeaveTimer = useRef<number | null>(null);
+	const cancelFinderLeave = () => {
+		if (finderLeaveTimer.current === null) return;
+		window.clearTimeout(finderLeaveTimer.current);
+		finderLeaveTimer.current = null;
+	};
+	const releaseFinderHoverSoon = () => {
+		cancelFinderLeave();
+		finderLeaveTimer.current = window.setTimeout(() => {
+			finderLeaveTimer.current = null;
+			releaseNotchHover();
+		}, 250);
+	};
 
 	const suppressNextHoverRelease = () => {
 		suppressHoverReleaseRef.current = true;
@@ -1805,7 +1858,7 @@ function App() {
 			console.info("[shelf] drag-enter:", event.payload.paths ?? event.payload.text);
 			setIsDragHovering(true);
 			const prev = bloomModeRef.current;
-			if (prev === "announcement" || prev === "shelf") return;
+			if (prev === "shelf") return;
 			shelfPrevModeRef.current = prev;
 			shelfPrevOpenRef.current = isOpenRef.current;
 			shelfDragActiveRef.current = true;
@@ -1832,10 +1885,8 @@ function App() {
 			if (paths.length === 0 && !text) return;
 			if (paths.length > 0) addShelfItems(paths);
 			if (text) addShelfText(text);
-			if (bloomModeRef.current !== "announcement") {
-				setIsOpen(true);
-				setBloomMode("shelf");
-			}
+			setIsOpen(true);
+			setBloomMode("shelf");
 			collapseShelfSoon();
 		};
 
@@ -1860,22 +1911,6 @@ function App() {
 			unlisteners.forEach((fn) => fn());
 		};
 	}, []);
-
-	// Open the notch on an unseen announcement; stays open until dismissed.
-	useEffect(() => {
-		if (!announcement || announcementDismissed) return;
-		if (announcementShownRef.current === announcement.id) return;
-		announcementShownRef.current = announcement.id;
-		setBloomMode("announcement");
-		if (notchMode === "peek") triggerEventPeek(6000);
-	}, [announcement, announcementDismissed, notchMode, triggerEventPeek]);
-
-	// Leave the announcement view once it is dismissed (or gone).
-	useEffect(() => {
-		if (bloomMode === "announcement" && (!announcement || announcementDismissed)) {
-			setBloomMode(mediaInfo.has_media && isPlaying ? "music" : "status");
-		}
-	}, [bloomMode, announcement, announcementDismissed, mediaInfo.has_media, isPlaying]);
 
 	// Window height is now kept constant to prevent rendering layout lag and sharp corners
 
@@ -1910,13 +1945,15 @@ function App() {
 	// Wheel and swipe navigate panels, even from a collapsed live activity.
 	// Music and shelf remain entry points through their activity affordances.
 	const cycleBloomMode = (direction: 1 | -1) => {
-		if (bloomMode === "announcement") return false;
-		const panels = NOTCH_PANELS.filter(panelAvailable);
-		const currentIndex = panels.indexOf(bloomMode as NotchPanel);
+		const panels = NOTCH_PANELS.filter(
+			(p) => panelAvailable(p) && !(quotaPinned && p === "quotas")
+		);
+		const activePanels = panels.length > 0 ? panels : NOTCH_PANELS.filter(panelAvailable);
+		const currentIndex = activePanels.indexOf(bloomMode as NotchPanel);
 		const nextMode =
 			currentIndex === -1
-				? openingPanel()
-				: panels[(currentIndex + direction + panels.length) % panels.length];
+				? nextOpeningPanel()
+				: activePanels[(currentIndex + direction + activePanels.length) % activePanels.length];
 		setIsOpen(true);
 		setBloomMode(nextMode);
 		return true;
@@ -2092,6 +2129,7 @@ function App() {
 	// event carries the readings array, not a protocol line; wrap it so
 	// parseSnapshot stays the single decoder.
 	const [quotaReadings, setQuotaReadings] = useState<QuotaAgent[]>([]);
+	const [hasQuotaSnapshot, setHasQuotaSnapshot] = useState(false);
 	const shownQuotaReadings = useMemo(
 		() => visibleReadings(quotaReadings, quotaHiddenAgents),
 		[quotaReadings, quotaHiddenAgents]
@@ -2100,7 +2138,10 @@ function App() {
 		const unlisten = listen<QuotaAgent[]>("quota-snapshot", (event) => {
 			const line = JSON.stringify({ v: 1, op: "snapshot", readings: event.payload });
 			const next = parseSnapshot(line);
-			if (next !== null) setQuotaReadings(next);
+			if (next !== null) {
+				setQuotaReadings(next);
+				setHasQuotaSnapshot(true);
+			}
 		});
 		return () => {
 			unlisten.then((f) => f());
@@ -2111,16 +2152,27 @@ function App() {
 	// sets the selection before opening, and the pin rides the shared notch
 	// pin so pointer-leave release defers exactly like a Wi-Fi password.
 	const [quotaSelected, setQuotaSelected] = useState<string | undefined>(undefined);
-	const [quotaPinned, setQuotaPinned] = useState(false);
-	// Persisted, unlike the pin: the panel reopens the way it was left.
-	const [quotaCompact, setQuotaCompact] = useState(
-		() => localStorage.getItem("bloom-quota-compact") === "true"
-	);
 	// Measured content height of the quota space, in the pill's own CSS px.
 	// The observer watches `.qs`, not the scroll viewport, so the cap never
 	// feeds back into the requested height.
 	const [quotaSpaceHeight, setQuotaSpaceHeight] = useState(0);
 	const [quotaSpaceWidth, setQuotaSpaceWidth] = useState(0);
+	// Measured content height of the integrated Music/Controls body, in the
+	// pill's own CSS px. Those panels used fixed estimates that ran a row
+	// short, so the dropdown drew a scrollbar. The body is height:auto in
+	// MyFinder, so its box is the content's own height and does not track the
+	// pill being animated to it.
+	const [finderBodyHeight, setFinderBodyHeight] = useState(0);
+	const finderBodyMeasureRef = useCallback((el: HTMLDivElement | null) => {
+		if (!el) return undefined;
+		// scrollHeight is a layout extent: it ignores the handoff transform and
+		// `zoom`, so this is already the pill's own CSS px.
+		const measure = () => setFinderBodyHeight(el.scrollHeight);
+		const ro = new ResizeObserver(measure);
+		ro.observe(el);
+		measure();
+		return () => ro.disconnect();
+	}, []);
 	const quotaSpaceMeasureRef = useCallback(
 		(el: HTMLDivElement | null) => {
 			const target = el?.firstElementChild;
@@ -2315,7 +2367,7 @@ function App() {
 	const collapsedMode = musicActivity && !timerActive ? "music" : "status";
 	const showMusicBubble = musicActivity && timerActive && !isOpen && isVisible && !isHidden;
 	const showShelfBubble =
-		shelfItems.length > 0 && !isOpen && isVisible && !isHidden && bloomMode !== "announcement";
+		shelfItems.length > 0 && !isOpen && isVisible && !isHidden;
 	restingModeRef.current = collapsedMode;
 	bloomModeRef.current = bloomMode;
 
@@ -2326,9 +2378,17 @@ function App() {
 		return panelAvailable(preferred) ? preferred : "command-center";
 	};
 
+	const nextOpeningPanel = (): NotchPanel => {
+		const preferred = openingPanel();
+		if (quotaPinned && preferred === "quotas") {
+			if (defaultPanel !== "quotas" && panelAvailable(defaultPanel)) return defaultPanel;
+			return panelAvailable("calendar") ? "calendar" : "command-center";
+		}
+		return preferred;
+	};
+
 	// Expands the notch into a panel, or into an activity's own view.
 	const openNotch = (view: NotchPanel | "music" | "shelf") => {
-		if (bloomMode === "announcement") return;
 		setIsOpen(true);
 		setBloomMode(view);
 	};
@@ -2372,15 +2432,27 @@ function App() {
 		[setNotchPinned]
 	);
 
-	// The quota pin is not a typing/pairing gesture, so it only sets the
-	// shared notch pin; the attention controller never sees it.
-	const handleQuotaPin = useCallback(
-		(pinned: boolean) => {
-			setQuotaPinned(pinned);
-			setNotchPinned(pinned);
-		},
-		[setNotchPinned]
-	);
+	// The quota pin persists across panel switches and restarts; only an
+	// expanded quota dropdown holds the dropdown region open on hover leave,
+	// whereas a pinned compact strip stays in the topbar independently.
+	const handleQuotaPin = useCallback((pinned: boolean) => {
+		setQuotaPinned(pinned);
+		if (!pinned) {
+			setIsOpen(true);
+			setBloomMode("quotas");
+		}
+		localStorage.setItem("bloom-quota-pinned", String(pinned));
+		invoke("save_setting", {
+			key: "bloom-quota-pinned",
+			value: String(pinned)
+		}).catch(console.error);
+	}, []);
+
+	const dropdownPinned =
+		wifiTyping || btPairing || (quotaPinned && !quotaCompact && bloomMode === "quotas");
+	useEffect(() => {
+		setNotchPinned(dropdownPinned);
+	}, [dropdownPinned, setNotchPinned]);
 
 	const handleQuotaCompact = useCallback(
 		(compact: boolean) => {
@@ -2399,16 +2471,15 @@ function App() {
 		[quotaCompact]
 	);
 
-	// The pin is in memory only and belongs to the quota panel; leaving the
-	// panel unpins so a stale pin cannot hold the notch open elsewhere.
-	useEffect(() => {
-		if (bloomMode !== "quotas" && quotaPinned) handleQuotaPin(false);
-	}, [bloomMode, quotaPinned, handleQuotaPin]);
-
-	// Close acts like the pointer leaving: unpin first so the release is
-	// not deferred, then run the shared release path.
+	// Close acts like the pointer leaving the open dropdown without wiping a
+	// persistent topbar pin; if an expanded quota panel was pinned, collapse
+	// it back to the pinned topbar strip.
 	const closeQuotaSpace = () => {
-		handleQuotaPin(false);
+		if (quotaPinned && !quotaCompact) {
+			handleQuotaCompact(true);
+		}
+		setNotchPinned(false);
+		releaseDeferredRef.current = false;
 		releaseNotchHover();
 	};
 
@@ -2447,7 +2518,7 @@ function App() {
 	// session exists, the timer (with music in its bubble) once one is set, and
 	// the clock otherwise. An open notch is left alone.
 	useEffect(() => {
-		if (isOpen || announcementOpenRef.current) return;
+		if (isOpen) return;
 		if ((bloomMode === "status" || bloomMode === "music") && bloomMode !== collapsedMode) {
 			setBloomMode(collapsedMode);
 		}
@@ -2673,6 +2744,7 @@ function App() {
 					prev.is_playing === info.is_playing &&
 					prev.has_media === info.has_media &&
 					prev.target_generation === info.target_generation &&
+					JSON.stringify(prev.lyrics) === JSON.stringify(info.lyrics) &&
 					!artChanged &&
 					prev.position_ms === info.position_ms &&
 					prev.duration_ms === info.duration_ms
@@ -2889,23 +2961,39 @@ function App() {
 	}, []);
 
 	// Widgets unmount when the notch collapses, without a mouse leave, and an
-	// open card is placed for the notch's shape when it opened.
+	// open card is placed for the notch's shape when it opened. MyFinder's bar
+	// never collapses, and the pointer entering it flips `isHovered` while it
+	// is already over a mark, so clearing on every change there swallowed the
+	// first hover and only a move between marks brought a card back.
 	useEffect(() => {
-		hideStatusTooltip();
-	}, [isHovered, isOpen, hideStatusTooltip]);
+		if (!integrated) hideStatusTooltip();
+	}, [integrated, isHovered, isOpen, hideStatusTooltip]);
+
+	// An open panel covers the bar, and a hidden bar takes its marks away, so
+	// neither may keep a card alive without a pointer on the mark.
+	useEffect(() => {
+		if (integrated && (isOpen || isHidden)) hideStatusTooltip();
+	}, [integrated, isOpen, isHidden, hideStatusTooltip]);
 
 	useLayoutEffect(() => {
 		const el = pillClusterRef.current;
 		if (!el) return;
 		const kids = Array.from(el.children) as HTMLElement[];
 		if (kids.length === 0) return;
-		// offsetWidth ignores absolutely positioned tooltip cards.
-		const content = kids.reduce((w, k) => w + k.offsetWidth, 0) + Math.max(0, kids.length - 1) * 10;
+		// offsetWidth ignores absolutely positioned tooltip cards. The gap is read,
+		// not assumed: MyFinder's strip spaces its items wider than the notch does.
+		const gap = parseFloat(getComputedStyle(el).columnGap) || 0;
+		const content = kids.reduce((w, k) => w + k.offsetWidth, 0) + Math.max(0, kids.length - 1) * gap;
 		const needed = Math.ceil(content + 24);
 		// The pill must always cover the row it draws, so the width follows the
 		// measured content in both directions. Freezing or zeroing it here
 		// clips the clock off the resting notch.
 		setClusterWidth((prev) => (prev === needed ? prev : needed));
+		const housing = el.querySelector<HTMLElement>(".quota-housing");
+		if (housing) {
+			const other = needed - housing.offsetWidth;
+			setStripOther((prev) => (prev === other ? prev : other));
+		}
 	});
 
 	const refreshBatteryDetails = useCallback(() => {
@@ -2961,22 +3049,6 @@ function App() {
 		setBloomMode("wifi");
 	}, []);
 
-	const toggleDockModeSetting = useCallback(
-		async (e: React.MouseEvent) => {
-			e.stopPropagation();
-			const nextMode = dockMode === "fixed" ? "smart" : dockMode === "smart" ? "peek" : "fixed";
-			setDockMode(nextMode);
-			localStorage.setItem("bloom-dock-mode", nextMode);
-			invoke("save_setting", { key: "bloom-dock-mode", value: nextMode }).catch(console.error);
-			try {
-				await invoke("change_dock_mode", { mode: nextMode });
-			} catch (err) {
-				console.error("Failed to change dock mode:", err);
-			}
-		},
-		[dockMode]
-	);
-
 	const toggleNotchModeSetting = useCallback(
 		async (e: React.MouseEvent) => {
 			e.stopPropagation();
@@ -3005,8 +3077,8 @@ function App() {
 			resetTimer();
 			return;
 		}
-		if (!isOpen) {
-			openNotch(openingPanel());
+		if (!isOpen || (bloomMode === "quotas" && quotaCompact)) {
+			openNotch(nextOpeningPanel());
 		} else {
 			cycleBloomMode(1);
 		}
@@ -3108,7 +3180,10 @@ function App() {
 					"CPU Usage",
 					<>
 						<Cpu size={12} strokeWidth={2} />
-						<span className="label">{cpuUsage}%</span>
+						<span className="label">
+							{cpuUsage}
+							<span className="unit">%</span>
+						</span>
 					</>
 				);
 			case "ram":
@@ -3133,13 +3208,24 @@ function App() {
 				return statusWidget(
 					"net",
 					"Network Speed",
-					<>
-						<ArrowUpDown size={12} strokeWidth={2} />
-						<span className="label">
-							↑<span className="net-speed">{formatBytes(netUpSpeed)}</span>{" "}
-							↓<span className="net-speed">{formatBytes(netDownSpeed)}</span>
+					integrated ? (
+						// Stacked like MyFinder's own two-value readouts: on one line the
+						// strip ran into the bar's tray icons.
+						<span className="net-stack">
+							<ArrowUp size={9} strokeWidth={2.6} />
+							<span>{formatBytes(netUpSpeed)}</span>
+							<ArrowDown size={9} strokeWidth={2.6} />
+							<span>{formatBytes(netDownSpeed)}</span>
 						</span>
-					</>
+					) : (
+						<>
+							<ArrowUpDown size={12} strokeWidth={2} />
+							<span className="label">
+								↑<span className="net-speed">{formatBytes(netUpSpeed)}</span>{" "}
+								↓<span className="net-speed">{formatBytes(netDownSpeed)}</span>
+							</span>
+						</>
+					)
 				);
 			default:
 				return null;
@@ -3185,7 +3271,7 @@ function App() {
 					const next = nextAgent(shownQuotaReadings, hoverAgent.id);
 					if (next !== undefined) setQuotaSelected(next);
 				}}
-				onMouseEnter={(e) => showStatusTooltip("quota-hover", e.currentTarget)}
+				onMouseEnter={(e) => !integrated && showStatusTooltip("quota-hover", e.currentTarget)}
 				onMouseLeave={hideStatusTooltip}
 			>
 				<AnimatePresence mode="popLayout" initial={false}>
@@ -3199,11 +3285,17 @@ function App() {
 							reduceMotion ? { duration: 0 } : { duration: 0.22, ease: [0.16, 1, 0.3, 1] }
 						}
 					>
-						<QuotaRingMark a={hoverAgent} />
+						{integrated ? (
+							<span className="quota-chip-mark">
+								<AgentMark id={hoverAgent.id} />
+							</span>
+						) : (
+							<QuotaRingMark a={hoverAgent} />
+						)}
 					</motion.span>
 				</AnimatePresence>
 				<AnimatePresence>
-					{statusTooltip?.id === "quota-hover" &&
+					{!integrated && statusTooltip?.id === "quota-hover" &&
 						(() => {
 							const placed = statusTooltipMotion(statusTooltip.side, statusTooltip.offset);
 							return (
@@ -3227,58 +3319,49 @@ function App() {
 	// place of the CPU/network widgets, the clock stays beside them, and the
 	// two controls past it expand the space or hold it on screen. Nothing
 	// renders below, so pinning it costs no extra height.
-	const quotaStripActive = bloomMode === "quotas" && quotaCompact && shownQuotaReadings.length > 0;
+	const quotaStripActive =
+		shownQuotaReadings.length > 0 &&
+		((bloomMode === "quotas" && quotaCompact) ||
+			(quotaPinned && (quotaCompact || bloomMode !== "quotas")));
 	// The strip and the collapsed badge share hoverQuotaAgent, which also
 	// drops a selection that is no longer shown, so both highlight one agent.
 	const stripSelectedId = hoverAgent?.id;
 	const stripRef = useRef<HTMLDivElement>(null);
 	const stripPad = useSlidingPad(stripRef, stripSelectedId, [
 		shownQuotaReadings.length,
-		quotaStripActive
+		quotaStripActive,
+		integrated
 	]);
-	const quotaStripMarks = quotaStripActive ? (
-		<div className="notch-quota-strip" data-testid="notch-quota-strip" ref={stripRef}>
-			<div className="qs-pad" {...stripPad.padProps} />
-			{shownQuotaReadings.map((a) => (
-				<button
-					key={a.id}
-					type="button"
-					className={`notch-quota-mark${a.id === stripSelectedId ? " selected" : ""}`}
-					tabIndex={-1}
-					onMouseDown={(e) => e.preventDefault()}
-					onClick={(e) => {
-						e.stopPropagation();
-						setQuotaSelected(a.id);
-					}}
-					onMouseEnter={(e) => showStatusTooltip(a.id, e.currentTarget, true)}
-					onMouseLeave={hideStatusTooltip}
-					aria-label={agentName(a.id)}
-					title={agentName(a.id)}
-					data-testid={`notch-quota-mark-${a.id}`}
-				>
-					<QuotaRingMark a={a} />
-					<AnimatePresence>
-						{statusTooltip?.id === a.id &&
-							(() => {
-								const placed = statusTooltipMotion(statusTooltip.side, statusTooltip.offset);
-								return (
-									<motion.div
-										className="status-tooltip quota-hover"
-										style={placed.style}
-										initial={placed.hidden}
-										animate={placed.shown}
-										exit={placed.hidden}
-										transition={{ duration: 0.15 }}
-									>
-										<QuotaHoverCard a={a} />
-									</motion.div>
-								);
-							})()}
-					</AnimatePresence>
-				</button>
-			))}
-		</div>
-	) : null;
+	const restingStripWidthRef = useRef<number>((() => {
+		const saved = Number(localStorage.getItem("bloom-resting-strip-width"));
+		return Number.isFinite(saved) && saved >= 120 ? saved : 280;
+	})());
+	// In MyFinder's bar the strip may only use the width between MyFinder's own
+	// menu and the clock. Its right edge stays where the resting strip ends, so
+	// the room is what lies between that edge and the measured menu, less the
+	// rest of the row, the hover controls and a gap.
+	const stripMenuRight =
+		integrated && myfinder.menuRight > 0
+			? (myfinder.menuRight / displayDpi - (window.screen.width - window.innerWidth) / 2) / scale
+			: 0;
+	const stripRoom =
+		stripMenuRight > 0
+			? (window.innerWidth / scale + restingStripWidthRef.current) / 2 -
+				stripMenuRight -
+				STRIP_MENU_GAP -
+				stripOther -
+				STRIP_CONTROLS_WIDTH
+			: Infinity;
+	const stripFit = useMemo(
+		() => fitQuotaStrip(shownQuotaReadings, stripRoom),
+		[shownQuotaReadings, stripRoom]
+	);
+	const stripAgents = integrated ? stripFit.shown : shownQuotaReadings;
+	const openQuotaPanel = () => {
+		setIsOpen(true);
+		setBloomMode("quotas");
+		handleQuotaCompact(false);
+	};
 	const quotaStripControls = quotaStripActive ? (
 		<span className="notch-quota-controls">
 			<button
@@ -3288,10 +3371,9 @@ function App() {
 				onMouseDown={(e) => e.preventDefault()}
 				onClick={(e) => {
 					e.stopPropagation();
-					handleQuotaCompact(false);
+					openQuotaPanel();
 				}}
 				aria-label="Expand quota space"
-				title="Expand"
 				data-testid="notch-quota-expand"
 			>
 				<Maximize2 size={12} />
@@ -3307,12 +3389,101 @@ function App() {
 				}}
 				aria-label={quotaPinned ? "Unpin quota space" : "Pin quota space"}
 				aria-pressed={quotaPinned}
-				title={quotaPinned ? "Unpin" : "Pin"}
 				data-testid="notch-quota-pin"
 			>
 				<Pin size={12} />
 			</button>
 		</span>
+	) : null;
+	const quotaStripMarks = quotaStripActive ? (
+		<div
+			className={`notch-quota-strip${integrated ? " quota-housing" : ""}`}
+			data-stage={integrated ? stripFit.stage : undefined}
+			data-testid="notch-quota-strip"
+			ref={stripRef}
+			// The housing between and around the agents opens the panel, like
+			// the body of the resting pill does.
+			onClick={
+				integrated
+					? (e) => {
+							if (e.target !== e.currentTarget) return;
+							e.stopPropagation();
+							openQuotaPanel();
+						}
+					: undefined
+			}
+		>
+			{!integrated && <div className="qs-pad" {...stripPad.padProps} />}
+			{integrated && stripFit.stage !== "dot" && quotaStripControls}
+			{stripAgents.map((a) => (
+				<button
+					key={a.id}
+					type="button"
+					className={`notch-quota-mark${integrated ? " quota-seg" : ""}${a.id === stripSelectedId ? " selected" : ""}`}
+					data-state={a.state}
+					tabIndex={-1}
+					onMouseDown={(e) => e.preventDefault()}
+					onClick={(e) => {
+						e.stopPropagation();
+						setQuotaSelected(a.id);
+					}}
+					onMouseEnter={(e) => showStatusTooltip(a.id, e.currentTarget, true)}
+					onMouseLeave={hideStatusTooltip}
+					aria-label={agentName(a.id)}
+					data-testid={`notch-quota-mark-${a.id}`}
+				>
+					<QuotaRingMark a={a} />
+					{integrated && stripShowsValue(a, stripFit.stage) && (
+						<span
+							className="quota-seg-value"
+							data-band={stripHeadline(a) === undefined ? undefined : band(stripHeadline(a)!)}
+						>
+							{stripHeadline(a) ?? "—"}
+							{stripHeadline(a) !== undefined && <span className="unit">%</span>}
+						</span>
+					)}
+					{integrated && stripFit.stage === "full" && stripSecond(a) !== undefined && (
+						<span className="quota-seg-second">{stripSecond(a)}</span>
+					)}
+					<AnimatePresence>
+						{statusTooltip?.id === a.id &&
+							(() => {
+								const placed = statusTooltipMotion(statusTooltip.side, statusTooltip.offset);
+								return (
+									<motion.div
+										className="status-tooltip quota-hover"
+										style={placed.style}
+										initial={placed.hidden}
+										animate={placed.shown}
+										exit={placed.hidden}
+										transition={{ duration: 0.15 }}
+										onUpdate={integrated ? () => reportNotchRect.current() : undefined}
+									>
+										<QuotaHoverCard a={a} />
+									</motion.div>
+								);
+							})()}
+					</AnimatePresence>
+				</button>
+			))}
+			{integrated && stripFit.hidden > 0 && (
+				<button
+					type="button"
+					className={stripFit.stage === "dot" ? "quota-dot" : "quota-seg quota-seg-more"}
+					data-band={worstBand(shownQuotaReadings)}
+					tabIndex={-1}
+					onMouseDown={(e) => e.preventDefault()}
+					onClick={(e) => {
+						e.stopPropagation();
+						openQuotaPanel();
+					}}
+					aria-label={`Open quota space. ${stripFit.hidden} more agents`}
+					data-testid="notch-quota-more"
+				>
+					{stripFit.stage === "dot" ? null : `+${stripFit.hidden}`}
+				</button>
+			)}
+		</div>
 	) : null;
 
 	// The 24-hour clock is ~16px narrower than the 12-hour one.
@@ -3320,19 +3491,18 @@ function App() {
 
 	// Calculate width dynamically based on enabled features
 	const getRestingWidth = () => {
-		if (bloomMode === "announcement" && announcement && !announcementDismissed) return 380;
 		if (isCalendarMode) return 480;
 		if (bloomMode === "shelf") return 380;
-		if (bloomMode === "command-center" && isOpen) return 350;
+		if (bloomMode === "command-center" && isOpen) return integrated ? 360 : 350;
 		// The quota space sizes to its ring row: the standalone widget's 386
 		// minimum, grown to the measured cell content for all seven agents.
 		// An active compact strip measures the notch row itself instead.
 		if (bloomMode === "quotas") {
 			if (quotaStripActive) return clusterWidth > 0 ? clusterWidth : 220;
-			return Math.max(386, Math.ceil(quotaSpaceWidth));
+			return integrated ? (quotaCompact ? 360 : 480) : Math.max(386, Math.ceil(quotaSpaceWidth));
 		}
 		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "overview") return 350;
-		if (isMusicMode && isOpen) return mediaLayout === "compact" ? 300 : 340;
+		if (isMusicMode && isOpen) return integrated ? 360 : mediaLayout === "compact" ? 300 : 340;
 		if ((showPowerPulse || showLowBatteryPulse || showUpdatePulse) && !isHovered) return 200;
 		if (!isOpen && (bloomMode === "status" || bloomMode === "music")) {
 			if (clusterWidth > 0) return clusterWidth;
@@ -3347,9 +3517,6 @@ function App() {
 			return isImpacted ? 28.9 : 44.2;
 		}
 		// Announcement card: body is line-clamped, so a fixed size fits both cases.
-		if (bloomMode === "announcement" && announcement && !announcementDismissed) {
-			return announcement.url ? 168 : 148;
-		}
 		// Sized to the calendar's week-row count plus the timer's fixed content.
 		if (bloomMode === "calendar") return calendarMonthRows >= 6 ? 305 : 273;
 		// Shelf expands on mode alone (no hover needed: there is no cursor
@@ -3359,19 +3526,25 @@ function App() {
 			if (shelfItems.length === 0) return 130;
 			return shelfOverflowing ? 190 : 176;
 		}
-		if (bloomMode === "command-center") return isOpen ? 230 : 36;
+		if (bloomMode === "command-center")
+			return isOpen ? (integrated ? finderBodyHeight || 306 : 230) : 36;
 		// A compact strip lives in the notch row and never grows below it. With
 		// no readings to draw the full panel, empty hint included, takes over
 		// and the space follows its measured content height (the window is
 		// resized to match by set_quota_panel_height inside the panel).
 		if (bloomMode === "quotas")
-			return quotaStripActive ? 36 : Math.max(Math.ceil(quotaSpaceHeight), 180);
+			return quotaStripActive ? 36 : Math.max(Math.ceil(quotaSpaceHeight), integrated && quotaCompact ? 120 : 180);
 		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "overview") return 300;
 		if (bloomMode === "status") return 36;
 		if (isMusicMode && isOpen) {
+			// MyFinder: the body measures its own content (player, lyrics,
+			// queue drawer), so the dropdown is exactly as tall as it needs.
+			if (integrated && finderBodyHeight > 0) return finderBodyHeight;
 			const hasProgressBar = (mediaInfo.duration_ms ?? 0) > 0;
 			let h = mediaLayout === "compact" ? (hasProgressBar ? 132 : 116) : 120;
 			if (mediaLayout === "compact") {
+				// A lyric sheet grows the island once, to its fixed 52 px viewport.
+				if ((mediaInfo.lyrics?.lines.length ?? 0) > 0) h += 58;
 				if (compactVolumeExpanded) h += 36;
 				// The stack reports its own whole height (cards plus any open
 				// drawer), so it replaces the single card's drawer growth.
@@ -3387,6 +3560,7 @@ function App() {
 						)
 					);
 			}
+			if (integrated) h += 76;
 			return h;
 		}
 		return 36;
@@ -3396,7 +3570,7 @@ function App() {
 	// strip needs room for its rows; a finished timer pulses wider like the
 	// battery events. Never narrower than the panel underneath wanted.
 	const getDynamicWidth = () => {
-		const base = getRestingWidth();
+		const base = Math.max(getRestingWidth(), !integrated && quotaStripActive ? clusterWidth : 0);
 		if (alertExpanded) return Math.max(base, quotaAlertActive ? 300 : 200);
 		return base;
 	};
@@ -3456,18 +3630,74 @@ function App() {
 		};
 	}, [isOpen, isMusicMode, mediaLayout, compactQueueExpanded, mediaInfo.duration_ms]);
 
+	const canRecordRestingWidth =
+		integrated &&
+		!quotaStripActive &&
+		bloomMode === "status" &&
+		!showCompactMusicIcons &&
+		!showPowerPulse &&
+		!showLowBatteryPulse &&
+		!showUpdatePulse &&
+		clusterWidth > 0;
+	if (canRecordRestingWidth) {
+		restingStripWidthRef.current = clusterWidth;
+	}
+	useEffect(() => {
+		if (canRecordRestingWidth) {
+			localStorage.setItem("bloom-resting-strip-width", String(clusterWidth));
+		}
+	}, [canRecordRestingWidth, clusterWidth]);
+
 	// The pill's target geometry: the animation springs toward it, and the
 	// window region below is cut from it, so the region is already at the
 	// final size while the pill animates.
-	const pillTargetY = !isReady ? 250 : isVisible ? (isHidden ? -100 : 0) : -150;
-	const pillTargetWidth = !isReady
+	const stripHeight = integrated ? fittedBarHeight(myfinder.height, displayDpi, scale) : 36;
+	const bodyTop = stripHeight + 8;
+	const suppressEmptyPinnedDropdown =
+		integrated &&
+		quotaCompact &&
+		quotaPinned &&
+		bloomMode === "quotas" &&
+		!hasQuotaSnapshot &&
+		shownQuotaReadings.length === 0;
+	const quotaDropdownSuppressed =
+		bloomMode === "quotas" && (quotaStripActive || suppressEmptyPinnedDropdown);
+	const finderPanelOpen =
+		integrated && ((isOpen && !quotaDropdownSuppressed) || quotaAlertActive);
+	const windowCssWidth = window.innerWidth / scale;
+	const stripWidth = Math.min(clusterWidth || 220, windowCssWidth - 16);
+	const centeredStripLeft = (windowCssWidth - stripWidth) / 2;
+	const desiredStripShiftLeft =
+		// Negative when the strip is narrower than the resting one: its right
+		// edge stays put either way, so it only ever gives width back on the
+		// menu's side.
+		integrated && quotaStripActive ? (stripWidth - restingStripWidthRef.current) / 2 : 0;
+	const stripShiftLeft = Math.min(desiredStripShiftLeft, Math.max(0, centeredStripLeft - 8));
+	const pillTargetY = !isReady ? 250 : isVisible ? (isHidden ? -100 : integrated ? bodyTop : 0) : -150;
+	const standaloneWidth = !isReady
 		? 34
 		: isExpanded && isVisible && !isHidden
 			? getDynamicWidth()
 			: isImpacted
 				? 39.1
 				: 30.6;
-	const pillTargetHeight = !isReady ? 34 : getDynamicHeight();
+	const pillTargetWidth = integrated ? Math.min(Math.max(320, getDynamicWidth()), window.innerWidth / scale - 32) : standaloneWidth;
+	const withoutStatusRow =
+		bloomMode === "music" || bloomMode === "quotas" || bloomMode === "command-center" || quotaAlertActive
+			? 0
+			: 36;
+	const pillTargetHeight = integrated
+		// +4: the panel's two 1px borders plus rounding. Its content is sized without
+		// them, so without the allowance panels overflowed by a pixel and drew a scrollbar.
+		? finderPanelOpen ? Math.min(Math.max(64, getDynamicHeight() - withoutStatusRow) + 4, window.innerHeight / scale - bodyTop - 24) : 0
+		: !isReady ? 34 : getDynamicHeight();
+	barConstraint.current = integrated ? {
+		// The bar row and the hanging badge are input and paint; the rest of the
+		// gap below stays outside the region (the native hover check bridges it),
+		// or it would show as a haze.
+		strip: { x: (centeredStripLeft - stripShiftLeft) * scale, y: 0, width: stripWidth * scale, height: bodyTop * scale },
+		boundary: bodyTop * scale
+	} : null;
 	// Shadow and the edge flares beside the pill.
 	pillTargetRef.current = notchPillBox(
 		window.innerWidth,
@@ -3475,8 +3705,9 @@ function App() {
 		pillTargetY,
 		pillTargetWidth,
 		pillTargetHeight,
-		24
+		integrated ? 16 : 24
 	);
+	if (integrated && !finderPanelOpen) pillTargetRef.current = null;
 
 	// Clip the notch window to what it draws (see window_region.rs): outside
 	// these rectangles the window takes no clicks, whatever its click-through
@@ -3485,8 +3716,274 @@ function App() {
 		if (windowLabel === "main") updateNotchRegion();
 	});
 
+	const statusRow = (
+<div className="main-row">
+												<AnimatePresence mode="wait">
+													{(showPowerPulse || showLowBatteryPulse || showUpdatePulse) &&
+													!isHovered ? (
+														showUpdatePulse ? (
+															<motion.div
+																key="update-pulse-view"
+																initial={{ opacity: 0, scale: 0.95, filter: "blur(4px)" }}
+																animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+																exit={{ opacity: 0, scale: 1.05, filter: "blur(4px)" }}
+																className="power-pulse-content"
+															>
+																<GreenDownArrowIcon />
+																<span className="label" style={{ color: "#32D74B" }}>
+																	Update Available
+																</span>
+															</motion.div>
+														) : (
+															<motion.div
+																key="pulse-view"
+																initial={{ opacity: 0, scale: 0.95, filter: "blur(4px)" }}
+																animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+																exit={{ opacity: 0, scale: 1.05, filter: "blur(4px)" }}
+																className="power-pulse-content"
+															>
+																{updateAvailable && <GreenDownArrowIcon />}
+																<BatteryIcon
+																	charging={isCharging}
+																	level={batteryLevel}
+																	threshold={lowBatteryThreshold}
+																/>
+																<span
+																	className="label"
+																	style={{ color: showLowBatteryPulse ? "#FF453A" : "inherit" }}
+																>
+																	{showLowBatteryPulse
+																		? "Low Battery"
+																		: isCharging
+																			? "Charging"
+																			: "On Battery"}{" "}
+																	• {batteryLevel}%
+																</span>
+															</motion.div>
+														)
+													) : (
+														<motion.div
+															key="standard-view"
+															ref={pillClusterRef}
+															className={`main-row-inner pill-cluster${quotaStripActive ? " has-quota-strip" : ""}`}
+															initial={{ opacity: 0 }}
+															animate={{ opacity: 1 }}
+															exit={{ opacity: 0 }}
+														>
+															{showCompactMusicIcons && settingsVisualizerEnabled && (
+																<div className="pill-activity">
+																	<Visualizer isPlaying={isPlaying} />
+																</div>
+															)}
+															{integrated && showShelfBubble && <button type="button" className="pill-activity-button"
+																tabIndex={-1} onMouseDown={(e) => e.preventDefault()} aria-label={`Open shelf: ${shelfItems.length} items`}
+																onClick={(e) => { e.stopPropagation(); openNotch("shelf"); }}><Inbox size={12} /><span>{shelfItems.length}</span></button>}
+															{integrated && showMusicBubble && <button type="button" className="pill-activity-button"
+																tabIndex={-1} onMouseDown={(e) => e.preventDefault()} aria-label="Open music"
+																onClick={(e) => { e.stopPropagation(); openNotch("music"); }}>{albumArtUrl ? <img src={albumArtUrl} alt="" /> : <Music size={14} />}</button>}
+															{integrated && hoverAgent && !quotaStripActive ? (
+																<QuotaChip a={hoverAgent}>{quotaBadge}</QuotaChip>
+															) : (
+																(quotaStripMarks ?? quotaBadge)
+															)}
+															{quotaStripMarks === null &&
+																!showCompactMusicIcons &&
+																statusWidgets.left.length > 0 && (
+																	<div className="passive-features-group">
+																		{statusWidgets.left.map(renderStatusWidget)}
+																	</div>
+																)}
+															<div className="time-center" ref={timeCenterRef}>
+																<div className="time-flip-container" onClick={cycleTimePanel}>
+																	<AnimatePresence initial={false}>
+																		{timerSeconds > 0 || isTimerFinished ? (
+																			<motion.span
+																				key="timer"
+																				className={`time compact-timer ${isTimerFinished ? "timer-finished" : ""}`}
+																				initial={{ rotateX: -90, opacity: 0 }}
+																				animate={{ rotateX: 0, opacity: 1 }}
+																				exit={{ rotateX: 90, opacity: 0 }}
+																				transition={{ type: "spring", stiffness: 600, damping: 30 }}
+																			>
+																				{isTimerFinished && (
+																					<BellRing
+																						size={13}
+																						strokeWidth={2.5}
+																						className="timer-bell"
+																					/>
+																				)}
+																				{formatTimerTime(timerSeconds)}
+																			</motion.span>
+																		) : (
+																			<motion.span
+																				key="clock"
+																				className="time"
+																				initial={{ rotateX: -90, opacity: 0 }}
+																				animate={{ rotateX: 0, opacity: 1 }}
+																				exit={{ rotateX: 90, opacity: 0 }}
+																				transition={{ type: "spring", stiffness: 600, damping: 30 }}
+																			>
+																				{time.split(" ")[0]}
+																				{time.includes(" ") && <span className="unit"> {time.split(" ")[1]}</span>}
+																			</motion.span>
+																		)}
+																	</AnimatePresence>
+																</div>
+															</div>
+															{!integrated && quotaStripControls}
+															{showCompactMusicIcons &&
+															(settingsAlbumArtEnabled || showMusicOnStatusHover) ? (
+																<AnimatePresence mode="wait">
+																	<motion.div
+																		key="album-art"
+																		className="album-art-glow-wrapper"
+																		initial={{ opacity: 0, scale: 0.8 }}
+																		animate={{ opacity: 1, scale: 1 }}
+																		exit={{ opacity: 0, y: -20, scale: 0.8, filter: "blur(8px)" }}
+																		transition={{ duration: 0.12 }}
+																	>
+																		{settingsAlbumArtEnabled &&
+																			albumArtUrl &&
+																			settingsCompactGlowEnabled && (
+																				<img
+																					src={albumArtUrl}
+																					alt=""
+																					className="album-art-glow-bg"
+																					draggable={false}
+																				/>
+																			)}
+																		<button
+																			className={`album-art album-art-activity${!isPlaying ? " paused" : ""}`}
+																			aria-label="Open music"
+																			onClick={(e) => {
+																				e.stopPropagation();
+																				openNotch("music");
+																			}}
+																			onContextMenu={(e) => {
+																				e.preventDefault();
+																				e.stopPropagation();
+																				skipPrevious();
+																			}}
+																		>
+																			<div className="album-art-inner">
+																				<AnimatePresence mode="wait" initial={false}>
+																					{settingsAlbumArtEnabled && albumArtUrl ? (
+																						<motion.img
+																							key={`compact-art-${albumArtKey}`}
+																							src={albumArtUrl}
+																							alt="Art"
+																							draggable={false}
+																							initial={{ rotateY: 90, opacity: 0 }}
+																							animate={{ rotateY: 0, opacity: 1 }}
+																							exit={{ rotateY: -90, opacity: 0 }}
+																							transition={{ duration: 0.25, ease: "easeInOut" }}
+																							style={{
+																								width: "100%",
+																								height: "100%",
+																								objectFit: "cover"
+																							}}
+																						/>
+																					) : (
+																						<motion.div
+																							key="compact-placeholder"
+																							className="album-art-placeholder"
+																							initial={{ rotateY: 90, opacity: 0 }}
+																							animate={{ rotateY: 0, opacity: 1 }}
+																							exit={{ rotateY: -90, opacity: 0 }}
+																							transition={{ duration: 0.25, ease: "easeInOut" }}
+																						>
+																							<MusicNoteIcon className="music-placeholder-svg-small" />
+																						</motion.div>
+																					)}
+																				</AnimatePresence>
+																			</div>
+																		</button>
+																	</motion.div>
+																</AnimatePresence>
+															) : quotaStripMarks === null && !showCompactMusicIcons && statusWidgets.right.length > 0 ? (
+																<div className="passive-features-group">
+																	{statusWidgets.right.map(renderStatusWidget)}
+																</div>
+															) : null}
+															{updateAvailable && showUpdateIndicator && (
+																<div className="live-dot" />
+															)}
+														</motion.div>
+													)}
+												</AnimatePresence>
+											</div>
+	);
+
+	const renderIntegratedChrome = (title: string, active: "music" | "command-center") => (
+		<>
+			<div className="qs-header">
+				<span className="qs-menu-title">{title}</span>
+				<span className="qs-header-actions">
+					<button
+						type="button"
+						className="qs-icon-btn"
+						tabIndex={-1}
+						onMouseDown={(e) => e.preventDefault()}
+						onClick={(e) => {
+							e.stopPropagation();
+							closeQuotaSpace();
+						}}
+						aria-label="Close"
+					>
+						<X size={12} />
+					</button>
+				</span>
+			</div>
+			<div className="qs-menu-nav navigation" aria-label="Panels">
+				<button
+					type="button"
+					className="qs-menu-nav-tab"
+					tabIndex={-1}
+					onMouseDown={(e) => e.preventDefault()}
+					aria-pressed="false"
+					onClick={(e) => {
+						e.stopPropagation();
+						if (quotaPinned && quotaCompact) {
+							handleQuotaCompact(false);
+						}
+						setBloomMode("quotas");
+					}}
+				>
+					Quotas
+				</button>
+				<button
+					type="button"
+					className="qs-menu-nav-tab"
+					tabIndex={-1}
+					onMouseDown={(e) => e.preventDefault()}
+					aria-pressed={active === "music"}
+					disabled={!(settingsMusicModeEnabled && mediaInfo.has_media)}
+					onClick={(e) => {
+						e.stopPropagation();
+						setBloomMode("music");
+					}}
+				>
+					Music
+				</button>
+				<button
+					type="button"
+					className="qs-menu-nav-tab"
+					tabIndex={-1}
+					onMouseDown={(e) => e.preventDefault()}
+					aria-pressed={active === "command-center"}
+					onClick={(e) => {
+						e.stopPropagation();
+						setBloomMode("command-center");
+					}}
+				>
+					Controls
+				</button>
+			</div>
+		</>
+	);
+
 	return (
-		<div className="screen" style={{ overflow: "hidden" }}>
+		<div className={`screen${integrated ? ` myfinder-integrated ${finderMaterial.light ? "myfinder-light" : "myfinder-dark"}` : ""}`} style={{ overflow: "hidden", ...(integrated ? finderMaterial.style : {}) } as React.CSSProperties}>
 			{/* Screen Corners (Top) */}
 			<AnimatePresence>
 				{screenFree && settingsCornersEnabled && (
@@ -3508,6 +4005,8 @@ function App() {
 			</AnimatePresence>
 
 			<div
+				onMouseEnter={integrated ? () => { releaseDeferredRef.current = false; cancelFinderLeave(); setIsNotchHovered(true); setIsHovered(true); } : undefined}
+				onMouseLeave={integrated ? releaseFinderHoverSoon : undefined}
 				style={{
 					zoom: scale,
 					width: "100%",
@@ -3516,9 +4015,26 @@ function App() {
 					position: "relative"
 				}}
 			>
+				{integrated && (
+					<motion.div
+						ref={finderStripRef}
+						className="myfinder-status"
+						style={{ width: stripWidth, height: bodyTop, x: "-50%", marginLeft: -stripShiftLeft, "--myfinder-bar-height": `${stripHeight}px`, "--myfinder-native-height": `${myfinder.height / (displayDpi * scale)}px` } as React.ComponentProps<typeof motion.div>["style"]}
+						initial={false}
+						animate={{ y: isReady && isVisible && !isHidden ? 0 : -stripHeight - 12, opacity: isReady && isVisible && !isHidden ? 1 : 0 }}
+						transition={{ duration: reduceMotion ? 0 : 0.14 }}
+						onUpdate={() => reportNotchRect.current()}
+						onMouseEnter={() => { releaseDeferredRef.current = false; setIsNotchHovered(true); setIsHovered(true); }}
+						onClick={() => { if (!finderPanelOpen) openNotch(nextOpeningPanel()); else closeQuotaSpace(); }}
+						onWheel={handleWheel}
+					>
+						{statusRow}
+					</motion.div>
+				)}
+
 				<motion.div
 					ref={bloomRef}
-					className={`bloom ${isHovered ? "expanded" : ""} ${isImpacted ? "is-impacted" : ""} ${isDragHovering ? "drag-hover" : ""} ${isOpen && !quotaStripActive ? "is-open" : ""}`}
+					className={`bloom ${integrated ? "myfinder-panel" : ""} ${isHovered ? "expanded" : ""} ${isImpacted ? "is-impacted" : ""} ${isDragHovering ? "drag-hover" : ""} ${isOpen && !quotaDropdownSuppressed ? "is-open" : ""}`}
 					onMouseEnter={() => setIsNotchHovered(true)}
 					onPointerDown={compactQueueExpanded ? suppressNextHoverRelease : undefined}
 					onMouseLeave={() => {
@@ -3543,17 +4059,17 @@ function App() {
 						y: pillTargetY,
 						width: pillTargetWidth,
 						height: pillTargetHeight,
-						opacity: isVisible ? 1 : 0,
+						opacity: isVisible && (!integrated || finderPanelOpen) ? 1 : 0,
 						borderTopLeftRadius: isImpacted ? 0 : 18,
 						borderTopRightRadius: isImpacted ? 0 : 18,
-						borderBottomLeftRadius: isCalendarMode ? 28 : (isOpen && !quotaStripActive ? 24 : 18),
-						borderBottomRightRadius: isCalendarMode ? 28 : (isOpen && !quotaStripActive ? 24 : 18),
+						borderBottomLeftRadius: isCalendarMode ? 28 : (isOpen && !quotaDropdownSuppressed ? 24 : 18),
+						borderBottomRightRadius: isCalendarMode ? 28 : (isOpen && !quotaDropdownSuppressed ? 24 : 18),
 						filter: isVisible ? "blur(0px)" : "blur(8px)",
-						pointerEvents: isVisible ? "auto" : "none"
+						pointerEvents: isVisible && (!integrated || finderPanelOpen) ? "auto" : "none"
 					}}
 					onClick={(e) => {
 						e.stopPropagation();
-						if (!isOpen) openNotch(openingPanel());
+						if (!isOpen) openNotch(nextOpeningPanel());
 					}}
 					onHoverStart={() => {
 						releaseDeferredRef.current = false;
@@ -3561,9 +4077,10 @@ function App() {
 						// Hovering the shelf cancels its post-drop auto-close.
 						if (bloomMode === "shelf") clearShelfCollapse();
 					}}
-					onHoverEnd={releaseNotchHover}
-					style={{ originY: 0 }}
-					transition={{
+					onHoverEnd={integrated ? undefined : releaseNotchHover}
+					style={{ originY: 0, ...(integrated ? { overflow: "auto" } : {}) }}
+					onUpdate={() => { if (integrated) reportNotchRect.current(); }}
+					transition={integrated ? { duration: reduceMotion ? 0 : 0.2, ease: [0.22, 1, 0.36, 1] } : {
 						width: { type: "spring", stiffness: 400, damping: 31 },
 						height:
 							isMusicMode && mediaLayout === "compact"
@@ -3578,9 +4095,9 @@ function App() {
 						default: { type: "spring", stiffness: 500, damping: 30, mass: 1 }
 					}}
 				>
-					<EdgeSurface edge="top" flares={isImpacted} />
+					{!integrated && <EdgeSurface edge="top" flares={isImpacted} />}
 					<AnimatePresence>
-						{isMusicMode && settingsAmbienceEnabled && glowArt && isOpen && !isCalendarMode && (
+						{!integrated && isMusicMode && settingsAmbienceEnabled && glowArt && isOpen && !isCalendarMode && (
 							<motion.div
 								className="notch-ambient-glow"
 								initial={{ opacity: 0 }}
@@ -3637,10 +4154,16 @@ function App() {
 									{isOpen && isMusicMode && !isCalendarMode ? (
 										<motion.div
 											key="expanded-music"
-											className="expanded-music-container"
+											className={integrated ? "myfinder-panel-body" : "expanded-music-container"}
+											ref={integrated ? finderBodyMeasureRef : undefined}
 											style={{ transformOrigin: "50% 0%" }}
 											{...panelHandoff}
 										>
+											{integrated && renderIntegratedChrome("Music", "music")}
+											<div
+												className={integrated ? "expanded-music-container" : undefined}
+												style={integrated ? undefined : { display: "contents" }}
+											>
 											{mediaLayout === "compact" ? (
 												mediaCards.length >= 2 ? (
 													<MediaStack
@@ -3923,6 +4446,7 @@ function App() {
 													</div>
 												</div>
 											)}
+											</div>
 										</motion.div>
 									) : (
 										<motion.div
@@ -3933,190 +4457,7 @@ function App() {
 											transition={{ duration: 0.2 }}
 											style={{ width: "100%" }}
 										>
-											<div className="main-row">
-												<AnimatePresence mode="wait">
-													{(showPowerPulse || showLowBatteryPulse || showUpdatePulse) &&
-													!isHovered ? (
-														showUpdatePulse ? (
-															<motion.div
-																key="update-pulse-view"
-																initial={{ opacity: 0, scale: 0.95, filter: "blur(4px)" }}
-																animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-																exit={{ opacity: 0, scale: 1.05, filter: "blur(4px)" }}
-																className="power-pulse-content"
-															>
-																<GreenDownArrowIcon />
-																<span className="label" style={{ color: "#32D74B" }}>
-																	Update Available
-																</span>
-															</motion.div>
-														) : (
-															<motion.div
-																key="pulse-view"
-																initial={{ opacity: 0, scale: 0.95, filter: "blur(4px)" }}
-																animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-																exit={{ opacity: 0, scale: 1.05, filter: "blur(4px)" }}
-																className="power-pulse-content"
-															>
-																{updateAvailable && <GreenDownArrowIcon />}
-																<BatteryIcon
-																	charging={isCharging}
-																	level={batteryLevel}
-																	threshold={lowBatteryThreshold}
-																/>
-																<span
-																	className="label"
-																	style={{ color: showLowBatteryPulse ? "#FF453A" : "inherit" }}
-																>
-																	{showLowBatteryPulse
-																		? "Low Battery"
-																		: isCharging
-																			? "Charging"
-																			: "On Battery"}{" "}
-																	• {batteryLevel}%
-																</span>
-															</motion.div>
-														)
-													) : (
-														<motion.div
-															key="standard-view"
-															ref={pillClusterRef}
-															className="main-row-inner pill-cluster"
-															initial={{ opacity: 0 }}
-															animate={{ opacity: 1 }}
-															exit={{ opacity: 0 }}
-														>
-															{showCompactMusicIcons && settingsVisualizerEnabled && (
-																<div className="pill-activity">
-																	<Visualizer isPlaying={isPlaying} />
-																</div>
-															)}
-															{quotaStripMarks ?? quotaBadge}
-															{quotaStripMarks === null &&
-																!showCompactMusicIcons &&
-																statusWidgets.left.length > 0 && (
-																	<div className="passive-features-group">
-																		{statusWidgets.left.map(renderStatusWidget)}
-																	</div>
-																)}
-															<div className="time-center" ref={timeCenterRef}>
-																<div className="time-flip-container" onClick={cycleTimePanel}>
-																	<AnimatePresence initial={false}>
-																		{timerSeconds > 0 || isTimerFinished ? (
-																			<motion.span
-																				key="timer"
-																				className={`time compact-timer ${isTimerFinished ? "timer-finished" : ""}`}
-																				initial={{ rotateX: -90, opacity: 0 }}
-																				animate={{ rotateX: 0, opacity: 1 }}
-																				exit={{ rotateX: 90, opacity: 0 }}
-																				transition={{ type: "spring", stiffness: 600, damping: 30 }}
-																			>
-																				{isTimerFinished && (
-																					<BellRing
-																						size={13}
-																						strokeWidth={2.5}
-																						className="timer-bell"
-																					/>
-																				)}
-																				{formatTimerTime(timerSeconds)}
-																			</motion.span>
-																		) : (
-																			<motion.span
-																				key="clock"
-																				className="time"
-																				initial={{ rotateX: -90, opacity: 0 }}
-																				animate={{ rotateX: 0, opacity: 1 }}
-																				exit={{ rotateX: 90, opacity: 0 }}
-																				transition={{ type: "spring", stiffness: 600, damping: 30 }}
-																			>
-																				{time}
-																			</motion.span>
-																		)}
-																	</AnimatePresence>
-																</div>
-															</div>
-															{quotaStripControls}
-															{showCompactMusicIcons &&
-															(settingsAlbumArtEnabled || showMusicOnStatusHover) ? (
-																<AnimatePresence mode="wait">
-																	<motion.div
-																		key="album-art"
-																		className="album-art-glow-wrapper"
-																		initial={{ opacity: 0, scale: 0.8 }}
-																		animate={{ opacity: 1, scale: 1 }}
-																		exit={{ opacity: 0, y: -20, scale: 0.8, filter: "blur(8px)" }}
-																		transition={{ duration: 0.12 }}
-																	>
-																		{settingsAlbumArtEnabled &&
-																			albumArtUrl &&
-																			settingsCompactGlowEnabled && (
-																				<img
-																					src={albumArtUrl}
-																					alt=""
-																					className="album-art-glow-bg"
-																					draggable={false}
-																				/>
-																			)}
-																		<button
-																			className={`album-art album-art-activity${!isPlaying ? " paused" : ""}`}
-																			aria-label="Open music"
-																			onClick={(e) => {
-																				e.stopPropagation();
-																				openNotch("music");
-																			}}
-																			onContextMenu={(e) => {
-																				e.preventDefault();
-																				e.stopPropagation();
-																				skipPrevious();
-																			}}
-																		>
-																			<div className="album-art-inner">
-																				<AnimatePresence mode="wait" initial={false}>
-																					{settingsAlbumArtEnabled && albumArtUrl ? (
-																						<motion.img
-																							key={`compact-art-${albumArtKey}`}
-																							src={albumArtUrl}
-																							alt="Art"
-																							draggable={false}
-																							initial={{ rotateY: 90, opacity: 0 }}
-																							animate={{ rotateY: 0, opacity: 1 }}
-																							exit={{ rotateY: -90, opacity: 0 }}
-																							transition={{ duration: 0.25, ease: "easeInOut" }}
-																							style={{
-																								width: "100%",
-																								height: "100%",
-																								objectFit: "cover"
-																							}}
-																						/>
-																					) : (
-																						<motion.div
-																							key="compact-placeholder"
-																							className="album-art-placeholder"
-																							initial={{ rotateY: 90, opacity: 0 }}
-																							animate={{ rotateY: 0, opacity: 1 }}
-																							exit={{ rotateY: -90, opacity: 0 }}
-																							transition={{ duration: 0.25, ease: "easeInOut" }}
-																						>
-																							<MusicNoteIcon className="music-placeholder-svg-small" />
-																						</motion.div>
-																					)}
-																				</AnimatePresence>
-																			</div>
-																		</button>
-																	</motion.div>
-																</AnimatePresence>
-															) : !showCompactMusicIcons && statusWidgets.right.length > 0 ? (
-																<div className="passive-features-group">
-																	{statusWidgets.right.map(renderStatusWidget)}
-																</div>
-															) : null}
-															{updateAvailable && showUpdateIndicator && (
-																<div className="live-dot" />
-															)}
-														</motion.div>
-													)}
-												</AnimatePresence>
-											</div>
+											{!integrated && statusRow}
 										</motion.div>
 									)}
 								</AnimatePresence>
@@ -4167,7 +4508,7 @@ function App() {
 								    instead; with no readings it leaves this panel, and its
 								    empty hint, on screen. */}
 								<AnimatePresence>
-									{bloomMode === "quotas" && !quotaStripActive && (
+									{bloomMode === "quotas" && !quotaStripActive && !suppressEmptyPinnedDropdown && (
 										<motion.div
 											key="quotas-view"
 											// The island is the width contract: `.qs` reports its
@@ -4178,13 +4519,20 @@ function App() {
 										>
 											<div ref={quotaSpaceMeasureRef} className="quota-viewport">
 												<QuotaPanel
+													menu={integrated}
+													compact={integrated && quotaCompact}
+													// bar + gap above the panel, then 24 of room below it plus its 1px borders and rounding.
+													menuReserve={(bodyTop + 32) * scale}
 													readings={shownQuotaReadings}
 													selected={quotaSelected}
 													onSelect={setQuotaSelected}
 													pinned={quotaPinned}
 													onPin={handleQuotaPin}
 													onCompact={() => handleQuotaCompact(true)}
+													onExpand={() => handleQuotaCompact(false)}
 													onClose={closeQuotaSpace}
+													onModeChange={(mode) => setBloomMode(mode)}
+													musicAvailable={settingsMusicModeEnabled && mediaInfo.has_media}
 													emptyHint={
 														quotaHiddenAgents.length > 0 && shownQuotaReadings.length === 0
 															? "All agents are hidden in Settings."
@@ -4233,11 +4581,17 @@ function App() {
 								<AnimatePresence>
 									{bloomMode === "command-center" && (
 										<motion.div
-											className="command-center-content-minimal"
+											className={integrated ? "myfinder-panel-body" : "command-center-content-minimal"}
+											ref={integrated ? finderBodyMeasureRef : undefined}
 											onClick={(e) => e.stopPropagation()}
 											style={{ transformOrigin: "50% 0%" }}
 											{...panelHandoff}
 										>
+											{integrated && renderIntegratedChrome("Controls", "command-center")}
+											<div
+												className={integrated ? "command-center-content-minimal" : undefined}
+												style={integrated ? undefined : { display: "contents" }}
+											>
 											{/* Pills Grid */}
 											<div className="cc-pills-grid">
 												{/* Wi-Fi Pill */}
@@ -4276,27 +4630,6 @@ function App() {
 													>
 														<ChevronRight />
 													</button>
-												</div>
-
-												{/* Dock Mode Pill */}
-												<div
-													className={`cc-pill-tile ${dockMode === "fixed" ? "active" : ""}`}
-													onClick={toggleDockModeSetting}
-													title="Cycle dock mode: Fixed / Smart / Peek"
-												>
-													<div className="cc-pill-icon-wrapper">
-														<DockIcon />
-													</div>
-													<div className="cc-pill-info">
-														<span className="cc-pill-title">Dock Mode</span>
-														<span className="cc-pill-status">
-															{dockMode === "fixed"
-																? "Fixed"
-																: dockMode === "smart"
-																	? "Smart"
-																	: "Peek"}
-														</span>
-													</div>
 												</div>
 
 												{/* Bluetooth Pill */}
@@ -4479,43 +4812,7 @@ function App() {
 													<span className="cc-classic-percentage">{currentBrightness}%</span>
 												</div>
 											</div>
-										</motion.div>
-									)}
-								</AnimatePresence>
-
-								{/* Announcement Card */}
-								<AnimatePresence>
-									{bloomMode === "announcement" && announcement && !announcementDismissed && (
-										<motion.div
-											className={`announcement-content severity-${announcement.severity}`}
-											onClick={(e) => e.stopPropagation()}
-											style={{ transformOrigin: "50% 0%" }}
-											{...panelHandoff}
-										>
-											<div className="announcement-header">
-												<div className="announcement-heading">
-													<Megaphone size={14} className="announcement-icon" />
-													<span className="announcement-title">{announcement.title}</span>
-												</div>
-												<button
-													className="announcement-close"
-													onClick={dismissAnnouncement}
-													title="Dismiss"
-												>
-													<X size={13} strokeWidth={2.2} />
-												</button>
 											</div>
-											{announcement.body && (
-												<p className="announcement-body">{announcement.body}</p>
-											)}
-											{announcement.url && (
-												<button
-													className="announcement-link"
-													onClick={() => openUrl(announcement.url!)}
-												>
-													Learn more
-												</button>
-											)}
 										</motion.div>
 									)}
 								</AnimatePresence>
@@ -4781,7 +5078,7 @@ function App() {
 				</motion.div>
 				{/* The shelf's items, as a bubble on the left of the collapsed pill */}
 				<AnimatePresence onExitComplete={() => reportNotchRect.current()}>
-					{showShelfBubble && (
+					{showShelfBubble && !integrated && (
 						<motion.button
 							key="shelf-bubble"
 							ref={shelfBubbleRef}
@@ -4813,7 +5110,7 @@ function App() {
 				</AnimatePresence>
 				{/* Music in its own bubble while a timer holds the collapsed pill */}
 				<AnimatePresence onExitComplete={() => reportNotchRect.current()}>
-					{showMusicBubble && (
+					{showMusicBubble && !integrated && (
 						<motion.button
 							key="music-bubble"
 							ref={musicBubbleRef}
@@ -4969,27 +5266,6 @@ function MoonIcon() {
 			strokeLinejoin="round"
 		>
 			<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-		</svg>
-	);
-}
-
-function DockIcon() {
-	return (
-		<svg
-			width="18"
-			height="18"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2.5"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			<rect x="2" y="14" width="20" height="8" rx="2" />
-			<line x1="6" y1="18" x2="6.01" y2="18" strokeWidth="3.5" strokeLinecap="round" />
-			<line x1="10" y1="18" x2="10.01" y2="18" strokeWidth="3.5" strokeLinecap="round" />
-			<line x1="14" y1="18" x2="14.01" y2="18" strokeWidth="3.5" strokeLinecap="round" />
-			<line x1="18" y1="18" x2="18.01" y2="18" strokeWidth="3.5" strokeLinecap="round" />
 		</svg>
 	);
 }

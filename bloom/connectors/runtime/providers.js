@@ -55,6 +55,7 @@ function spotifyAttempt(spicetify, session, allowRetry) {
 		session,
 		revision,
 		current_id: text(current.uid, 256),
+		current_uri: text(current.uri, 256),
 		title,
 		artist: text(current.metadata?.artist_name ?? item?.metadata?.artist_name),
 		is_playing: !!player.isPlaying?.(),

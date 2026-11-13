@@ -1,9 +1,12 @@
+use crate::state::*;
+use crate::types::*;
+use crate::utils::*;
 use std::path::Path;
 use windows::core::Interface;
 use std::sync::mpsc::{channel, sync_channel, Sender, SyncSender};
 use std::sync::{
     atomic::{
-        AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU32, AtomicU8, AtomicUsize, Ordering,
+        AtomicBool, AtomicI32, AtomicI64, AtomicU32, AtomicUsize, Ordering,
     },
     Mutex, OnceLock,
 };
@@ -18,216 +21,16 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetWindowLongW, GetWindowThreadProcessId, IsWindowVisible, SetWindowsHookExW,
-    GWL_EXSTYLE, MSLLHOOKSTRUCT, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_RBUTTONDOWN,
+    GWL_EXSTYLE, MSLLHOOKSTRUCT, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_MOUSEMOVE,
     WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 };
 use wmi::{COMLibrary, WMIConnection};
 
-static KEYBOARD_HOOK_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
-/// Physical Win key state, tracked so Win+1-9 can be claimed while the Win key
-/// itself keeps flowing to the shell (a lone Win tap must still open Start).
-static WIN_KEY_DOWN: AtomicBool = AtomicBool::new(false);
-/// Digit (1-9) of the currently held Win+Number combo, 0 when none. Key
-/// auto-repeat re-fires the keydown; only the first press may toggle an app.
-static WIN_NUMBER_HELD: AtomicU8 = AtomicU8::new(0);
-/// Virtual key Microsoft documents as "unassigned", used as the mask key.
-/// See `send_start_menu_mask`.
-const MASK_VK: u16 = 0xE8;
-
-/// Raw handle of the installed keyboard hook, 0 while none is installed.
-static KEYBOARD_HOOK: AtomicIsize = AtomicIsize::new(0);
-
-/// Win+1-9 is the only feature that needs a global keyboard hook: Explorer
-/// already registers those hotkeys, so `RegisterHotKey` can't claim them.
-/// Volume and brightness keys are left to Windows, and Bloom's overlays follow
-/// the resulting changes instead. The hook only exists while Win+1-9 is in use
-/// (the dock replaces the taskbar and the setting is on); the rest of the time
-/// Bloom doesn't see the keyboard at all.
-pub fn setup_keyboard_hook(app_handle: AppHandle) {
-    let _ = KEYBOARD_HOOK_APP_HANDLE.set(app_handle.clone());
-    std::thread::spawn(move || {
-        // Exiting removes the hook with the process; never touch it mid-shutdown.
-        while !SHUTTING_DOWN.load(Ordering::Relaxed) {
-            let wanted = NATIVE_TASKBAR_HIDDEN.load(Ordering::Relaxed) && dock_win_number_enabled();
-            if wanted != (KEYBOARD_HOOK.load(Ordering::Relaxed) != 0) {
-                // A low-level hook runs on the thread that installed it, which
-                // needs a message loop, so install and remove it on the main thread.
-                let _ = app_handle.run_on_main_thread(move || set_keyboard_hook(wanted));
-            }
-            std::thread::sleep(Duration::from_millis(500));
-        }
-    });
-}
-
-fn set_keyboard_hook(enabled: bool) {
-    use windows::Win32::UI::WindowsAndMessaging::{UnhookWindowsHookEx, HHOOK, WH_KEYBOARD_LL};
-    let current = KEYBOARD_HOOK.load(Ordering::Relaxed);
-    unsafe {
-        if enabled && current == 0 {
-            if let Ok(hook) = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_proc), None, 0) {
-                KEYBOARD_HOOK.store(hook.0 as isize, Ordering::Relaxed);
-            }
-        } else if !enabled && current != 0 {
-            let _ = UnhookWindowsHookEx(HHOOK(current as *mut _));
-            KEYBOARD_HOOK.store(0, Ordering::Relaxed);
-            WIN_KEY_DOWN.store(false, Ordering::Relaxed);
-            WIN_NUMBER_HELD.store(0, Ordering::Relaxed);
-        }
-    }
-}
-
-/// Maps the top-row digit keys `1`-`9` to the zero-based dock slot.
-fn win_number_index(vk: u16) -> Option<u8> {
-    match vk {
-        0x31..=0x39 => Some((vk - 0x31) as u8),
-        _ => None,
-    }
-}
-
-/// The dock's Win+Number replacement can be turned off in Settings > Dock.
-fn dock_win_number_enabled() -> bool {
-    let Some(app) = KEYBOARD_HOOK_APP_HANDLE.get() else {
-        return true;
-    };
-    crate::utils::get_setting_str(app, "bloom-dock-win-number-enabled")
-        .map(|v| v != "false")
-        .unwrap_or(true)
-}
-
-/// Whether one of Bloom's HUD overlays is enabled (`bloom-volume-overlay-enabled`,
-/// `bloom-brightness-overlay-enabled`). With an overlay off, the matching keys
-/// and the native flyout are left to Windows instead of being taken over.
 fn overlay_enabled(app: &AppHandle, key: &str) -> bool {
     crate::utils::get_setting_str(app, key)
         .map(|v| v != "false")
         .unwrap_or(true)
 }
-
-/// Physical Win state straight from the OS. The tracked flag can go stale when
-/// a keyup is never delivered (secure desktop, keyboard unplugged, hook
-/// timeout); without this check a stale flag would swallow digits forever.
-fn win_key_physically_down() -> bool {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LWIN, VK_RWIN};
-    unsafe {
-        (GetAsyncKeyState(VK_LWIN.0 as i32) as u16 & 0x8000) != 0
-            || (GetAsyncKeyState(VK_RWIN.0 as i32) as u16 & 0x8000) != 0
-    }
-}
-
-/// Explorer opens the Start menu when it only sees a Win keydown and keyup.
-/// Swallowing a Win+Number combo would look exactly like that on Win release,
-/// so a tap of an unassigned key is injected first — the same trick as
-/// AutoHotkey's `#MenuMaskKey` — making the shell treat Win as a real modifier.
-fn send_start_menu_mask() {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
-    };
-    let mask = VIRTUAL_KEY(MASK_VK);
-    let inputs = [
-        INPUT {
-            r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: mask,
-                    wScan: 0,
-                    dwFlags: Default::default(),
-                    time: 0,
-                    dwExtraInfo: 0,
-                },
-            },
-        },
-        INPUT {
-            r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: mask,
-                    wScan: 0,
-                    dwFlags: KEYEVENTF_KEYUP,
-                    time: 0,
-                    dwExtraInfo: 0,
-                },
-            },
-        },
-    ];
-    unsafe {
-        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
-    }
-}
-
-/// Hands the slot to the dock window, whose click handler already knows how to
-/// focus a running window or launch a pinned app.
-fn emit_dock_win_number(index: u8) {
-    let Some(app) = KEYBOARD_HOOK_APP_HANDLE.get().cloned() else {
-        return;
-    };
-    // Never block the input pipeline on WebView IPC.
-    tauri::async_runtime::spawn(async move {
-        let _ = app.emit_to("dock", "dock-win-number", index);
-    });
-}
-
-unsafe extern "system" fn keyboard_hook_proc(
-    code: i32,
-    wparam: windows::Win32::Foundation::WPARAM,
-    lparam: windows::Win32::Foundation::LPARAM,
-) -> windows::Win32::Foundation::LRESULT {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{VIRTUAL_KEY, VK_LWIN, VK_RWIN};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        KBDLLHOOKSTRUCT, LLKHF_INJECTED, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
-    };
-    if code >= 0 {
-        let kb = *(lparam.0 as *const KBDLLHOOKSTRUCT);
-        let vk_code = VIRTUAL_KEY(kb.vkCode as u16);
-        let is_down = wparam.0 == WM_KEYDOWN as usize || wparam.0 == WM_SYSKEYDOWN as usize;
-        let is_up = wparam.0 == WM_KEYUP as usize || wparam.0 == WM_SYSKEYUP as usize;
-
-        // Only physical presses drive the Win+Number replacement; injected
-        // events (our own Start taps and mask key) must not re-enter it.
-        if (kb.flags.0 & LLKHF_INJECTED.0) == 0 {
-            if vk_code == VK_LWIN || vk_code == VK_RWIN {
-                if is_down {
-                    WIN_KEY_DOWN.store(true, Ordering::Relaxed);
-                    // A fresh Win press always starts a fresh combo, even if the
-                    // previous digit's keyup was missed.
-                    WIN_NUMBER_HELD.store(0, Ordering::Relaxed);
-                } else if is_up {
-                    WIN_KEY_DOWN.store(false, Ordering::Relaxed);
-                    WIN_NUMBER_HELD.store(0, Ordering::Relaxed);
-                }
-            } else if WIN_KEY_DOWN.load(Ordering::Relaxed) {
-                if let Some(index) = win_number_index(vk_code.0) {
-                    let slot = index + 1;
-                    if is_up {
-                        let _ = WIN_NUMBER_HELD.compare_exchange(
-                            slot,
-                            0,
-                            Ordering::Relaxed,
-                            Ordering::Relaxed,
-                        );
-                    } else if is_down {
-                        if !win_key_physically_down() {
-                            WIN_KEY_DOWN.store(false, Ordering::Relaxed);
-                            WIN_NUMBER_HELD.store(0, Ordering::Relaxed);
-                        } else if NATIVE_TASKBAR_HIDDEN.load(Ordering::Relaxed)
-                            && dock_win_number_enabled()
-                        {
-                            if WIN_NUMBER_HELD.swap(slot, Ordering::Relaxed) != slot {
-                                send_start_menu_mask();
-                                emit_dock_win_number(index);
-                            }
-                            return windows::Win32::Foundation::LRESULT(1);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    windows::Win32::UI::WindowsAndMessaging::CallNextHookEx(None, code, wparam, lparam)
-}
-
-use crate::state::*;
-use crate::types::*;
-use crate::utils::*;
 
 pub fn setup_taskbar_hook() {
     unsafe {
@@ -310,6 +113,23 @@ pub fn setup_window_change_hook(app_handle: AppHandle) {
             0,
             WINEVENT_OUTOFCONTEXT,
         );
+        let finder_location = SetWinEventHook(
+            EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, None,
+            Some(myfinder_event_proc), 0, 0, WINEVENT_OUTOFCONTEXT,
+        );
+        Box::leak(Box::new(finder_location));
+        // MyFinder redraws its menu for each foreground app, and the menu's
+        // width decides how much of the bar Bloom may use.
+        let finder_menu = SetWinEventHook(
+            windows::Win32::UI::WindowsAndMessaging::EVENT_SYSTEM_FOREGROUND,
+            windows::Win32::UI::WindowsAndMessaging::EVENT_SYSTEM_FOREGROUND,
+            None,
+            Some(myfinder_menu_proc),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT,
+        );
+        Box::leak(Box::new(finder_menu));
         // Re-pin the notch whenever anything moves it off the monitor top:
         // the cadence pin only runs while update_main_interaction is active,
         // so a single unobserved move would otherwise leave it displaced.
@@ -344,10 +164,15 @@ pub fn setup_window_change_hook(app_handle: AppHandle) {
         // (each incarnation lands on the work-area top again), so keep a slow
         // poller pinning whatever visible frame exists rather than one shot.
         std::thread::spawn(|| loop {
-            std::thread::sleep(Duration::from_secs(2));
+            crate::myfinder::register_owner();
             let Some(app) = WINDOW_CHANGE_APP_HANDLE.get() else {
+                std::thread::park_timeout(Duration::from_secs(2));
                 continue;
             };
+            if let Some(monitor) = primary_monitor_rc() {
+                crate::myfinder::reconcile(app, monitor);
+            }
+            std::thread::park_timeout(crate::myfinder::next_wait());
             let Some(main_win) = app.get_webview_window("main") else {
                 continue;
             };
@@ -355,7 +180,7 @@ pub fn setup_window_change_hook(app_handle: AppHandle) {
                 continue;
             };
             let mut rc = windows::Win32::Foundation::RECT::default();
-            let off_target = unsafe {
+            let off_target = {
                 use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
                 if GetWindowRect(frame, &mut rc).is_ok() {
                     match main_notch_target(&main_win) {
@@ -372,6 +197,25 @@ pub fn setup_window_change_hook(app_handle: AppHandle) {
             }
         });
     }
+}
+
+unsafe extern "system" fn myfinder_event_proc(
+    _hook: windows::Win32::UI::Accessibility::HWINEVENTHOOK,
+    _event: u32, hwnd: HWND, object: i32, child: i32, _thread: u32, _time: u32,
+) {
+    if object == 0 && child == 0 { crate::myfinder::event(hwnd); }
+}
+
+unsafe extern "system" fn myfinder_menu_proc(
+    _hook: windows::Win32::UI::Accessibility::HWINEVENTHOOK,
+    _event: u32,
+    _hwnd: HWND,
+    _object: i32,
+    _child: i32,
+    _thread: u32,
+    _time: u32,
+) {
+    crate::myfinder::menu_may_change();
 }
 
 unsafe extern "system" fn main_window_location_proc(
@@ -437,6 +281,7 @@ unsafe extern "system" fn window_change_event_proc(
     if id_object != 0 || id_child != 0 {
         return;
     }
+    crate::myfinder::event(hwnd);
 
     // A top-level window appeared/disappeared (or focus moved): capture UI
     // state may have changed. Cheap flag; the worker thread does the scan.
@@ -502,126 +347,6 @@ unsafe extern "system" fn window_change_event_proc(
     }
 }
 
-pub fn setup_thumbnail_capture(_app_handle: AppHandle) {
-    unsafe {
-        use windows::Win32::UI::Accessibility::SetWinEventHook;
-        use windows::Win32::UI::WindowsAndMessaging::{
-            EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART,
-            WINEVENT_OUTOFCONTEXT,
-        };
-
-        let hook = SetWinEventHook(
-            EVENT_SYSTEM_MINIMIZESTART,
-            EVENT_SYSTEM_MINIMIZEEND,
-            None,
-            Some(thumbnail_capture_proc),
-            0,
-            0,
-            WINEVENT_OUTOFCONTEXT,
-        );
-        Box::leak(Box::new(hook));
-
-        let focus_hook = SetWinEventHook(
-            EVENT_SYSTEM_FOREGROUND,
-            EVENT_SYSTEM_FOREGROUND,
-            None,
-            Some(focus_event_proc),
-            0,
-            0,
-            WINEVENT_OUTOFCONTEXT,
-        );
-        Box::leak(Box::new(focus_hook));
-    }
-}
-
-unsafe extern "system" fn focus_event_proc(
-    _hook: windows::Win32::UI::Accessibility::HWINEVENTHOOK,
-    _event: u32,
-    hwnd: HWND,
-    _id_object: i32,
-    _id_child: i32,
-    _event_thread: u32,
-    _ms_event_time: u32,
-) {
-    if hwnd.0.is_null() {
-        return;
-    }
-    // Foreground moved — e.g. Snipping Tool opened/closed or got minimised.
-    CAPTURE_RECHECK.store(true, Ordering::Relaxed);
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongW, IsWindow, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
-    };
-
-    if !IsWindow(Some(hwnd)).as_bool() {
-        return;
-    }
-    let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
-    if (ex_style & WS_EX_TOOLWINDOW.0) != 0 {
-        return;
-    }
-
-    let my_pid = std::process::id();
-    let mut pid = 0u32;
-    windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(hwnd, Some(&mut pid));
-    if pid == my_pid {
-        return;
-    }
-
-    let hwnd_raw = hwnd.0 as isize;
-    if let Some(map) = crate::state::FOCUS_TIMESTAMPS.get() {
-        if let Ok(mut guard) = map.lock() {
-            guard.insert(hwnd_raw, crate::utils::get_now_ms());
-        }
-    }
-
-    // Keep the thumbnail cache warm for the focused window so that hovering a
-    // later-minimized window uses the cached image instead of restoring it.
-    std::thread::spawn(move || {
-        use windows::Win32::UI::WindowsAndMessaging::{GetWindowTextW, IsIconic, IsWindow};
-
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        let hwnd = HWND(hwnd_raw as *mut _);
-        unsafe {
-            if !IsWindow(Some(hwnd)).as_bool() || IsIconic(hwnd).as_bool() {
-                return;
-            }
-        }
-
-        // Skip fullscreen windows (games, video players): capturing them can hitch.
-        if crate::utils::is_window_fullscreen(hwnd) {
-            return;
-        }
-
-        let mut text = [0u16; 2];
-        unsafe {
-            if GetWindowTextW(hwnd, &mut text) == 0 {
-                return;
-            }
-        }
-
-        // Refresh at most once per window every two seconds
-        if let Some(cache) = crate::state::THUMBNAIL_CACHE.get() {
-            if let Ok(guard) = cache.lock() {
-                if let Some((_, ts)) = guard.get(&hwnd_raw) {
-                    if crate::utils::get_now_ms() - ts < 2000 {
-                        return;
-                    }
-                }
-            }
-        }
-
-        if THUMB_CAPTURE_IN_FLIGHT.swap(true, Ordering::Relaxed) {
-            return;
-        }
-        let _guard = ThumbnailCaptureGuard;
-
-        if let Some(img) = crate::utils::capture_hwnd_to_base64(hwnd, 320, 200) {
-            cache_thumbnail(hwnd_raw, img);
-        }
-    });
-}
-
-static THUMB_CAPTURE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
 const MAX_CACHED_THUMBNAILS: usize = 15;
 
@@ -660,83 +385,6 @@ pub fn cache_thumbnail(hwnd: isize, image: String) {
     use windows::Win32::UI::WindowsAndMessaging::IsWindow;
     trim_thumbnail_cache(&mut guard, hwnd, |key| unsafe {
         IsWindow(Some(HWND(key as *mut _))).as_bool()
-    });
-}
-
-struct ThumbnailCaptureGuard;
-
-impl Drop for ThumbnailCaptureGuard {
-    fn drop(&mut self) {
-        THUMB_CAPTURE_IN_FLIGHT.store(false, Ordering::Relaxed);
-    }
-}
-
-unsafe extern "system" fn thumbnail_capture_proc(
-    _hook: windows::Win32::UI::Accessibility::HWINEVENTHOOK,
-    event: u32,
-    hwnd: HWND,
-    _id_object: i32,
-    _id_child: i32,
-    _event_thread: u32,
-    _ms_event_time: u32,
-) {
-    if hwnd.0.is_null() {
-        return;
-    }
-
-    // Only the restore event is useful here. On MINIMIZESTART the window is
-    // mid-animation and PrintWindow can capture a black frame, which would
-    // overwrite a good cached thumbnail; the focus hook keeps the cache warm
-    // before a window is minimized.
-    if event != windows::Win32::UI::WindowsAndMessaging::EVENT_SYSTEM_MINIMIZEEND {
-        return;
-    }
-
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongW, IsWindow, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
-    };
-
-    if !IsWindow(Some(hwnd)).as_bool() {
-        return;
-    }
-    let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
-    if (ex_style & WS_EX_TOOLWINDOW.0) != 0 {
-        return;
-    }
-
-    let my_pid = std::process::id();
-    let mut pid = 0u32;
-    windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(hwnd, Some(&mut pid));
-    if pid == my_pid {
-        return;
-    }
-
-    let mut text = [0u16; 512];
-    let len = windows::Win32::UI::WindowsAndMessaging::GetWindowTextW(hwnd, &mut text);
-    if len == 0 {
-        return;
-    }
-
-    let hwnd_raw = hwnd.0 as isize;
-
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(150));
-
-        // Skip if another capture refreshed this window very recently
-        if let Some(cache) = crate::state::THUMBNAIL_CACHE.get() {
-            if let Ok(guard) = cache.lock() {
-                if let Some((_, ts)) = guard.get(&hwnd_raw) {
-                    if crate::utils::get_now_ms() - ts < 300 {
-                        return;
-                    }
-                }
-            }
-        }
-
-        let hwnd = HWND(hwnd_raw as *mut _);
-        if let Some(img) = crate::utils::capture_hwnd_to_base64(hwnd, 320, 200) {
-            cache_thumbnail(hwnd_raw, img);
-        }
     });
 }
 
@@ -1101,6 +749,7 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                 bool,
                 bool,
                 Option<String>,
+                Option<crate::media_queue::Lyrics>,
                 i64,
                 i64,
                 String,
@@ -1370,6 +1019,7 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                             duration_ms,
                             seek_enabled,
                             position_updated_at: now_ms,
+                            lyrics: None,
                         };
                         let album=(props.AlbumTitle().map(|s|s.to_string()).unwrap_or_default(),
                             props.AlbumArtist().map(|s|s.to_string()).unwrap_or_default());
@@ -1402,6 +1052,7 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                         duration_ms: 0,
                         seek_enabled: false,
                         position_updated_at: 0,
+                        lyrics: None,
                     });
                     // The native SMTC app stays the volume target even when a
                     // connector owns the track (YouTube in Brave -> Brave).
@@ -1435,6 +1086,7 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                     if !art_gate.is_provisional(){native_art_cache.remember(&current.title,&current.artist,current.artwork.as_deref());}
                     if let Some(target)=connector{
                         current.title=target.snapshot.title;current.artist=target.snapshot.artist;
+                        current.lyrics=crate::media_bridge::lyrics_for(&target.generation,&target.snapshot.current_id);
                         current.target_generation=target.generation;current.is_playing=target.snapshot.is_playing;current.has_media=true;
                         current.position_ms=target.snapshot.position_ms;current.duration_ms=target.snapshot.duration_ms;
                         current.seek_enabled=target.snapshot.seek_enabled;current.position_updated_at=crate::media_bridge::now();
@@ -1517,15 +1169,19 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                         last_emitted_list=Some(list);
                     }
                     let art_str = current.artwork.as_ref().and_then(|a| a.first()).cloned();
-                    if last_emitted_info.as_ref().is_none_or(|(t, a, p, h, art, pos, dur, generation)| {
+                    // A sheet arriving after the track's first emit must still
+                    // reach the notch, so its identity joins the debounce.
+                    let lyrics_key=current.lyrics.clone();
+                    if last_emitted_info.as_ref().is_none_or(|(t, a, p, h, art, lyr, pos, dur, generation)| {
                         t != &current.title || a != &current.artist || p != &current.is_playing || h != &current.has_media || art != &art_str ||
+                        lyr != &lyrics_key ||
                         generation!=&current.target_generation || dur!=&current.duration_ms ||
                         // For position: emit if >1s difference (avoid spamming on every poll)
                         (*pos - current.position_ms).abs() > 1000
                     }) {
                         let _ = handle_system.emit("media-update", current.clone());
                         ANY_MEDIA_PLAYING.store(current.is_playing, Ordering::Relaxed);
-                        last_emitted_info = Some((current.title, current.artist, current.is_playing, current.has_media, art_str, current.position_ms, current.duration_ms,current.target_generation));
+                        last_emitted_info = Some((current.title, current.artist, current.is_playing, current.has_media, art_str, lyrics_key, current.position_ms, current.duration_ms,current.target_generation));
                     }
                 }
                 std::thread::sleep(std::time::Duration::from_millis(64));
@@ -1603,12 +1259,10 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
         };
         let mut last_visible = true;
         let mut last_notch_hidden = false;
-        let mut last_dock_overlap: Option<bool> = None;
         let mut last_notch_overlap: Option<bool> = None;
-        let mut last_dock_maximized: Option<bool> = None;
         let mut last_fg_maximized = false;
         let mut last_hwnd = HWND(std::ptr::null_mut());
-        let mut last_emit = Instant::now();
+        let last_emit = Instant::now();
         let mut is_known_shell = false;
         let my_process_id = std::process::id();
         let mut last_monitor_update = Instant::now() - Duration::from_secs(5);
@@ -1725,9 +1379,7 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                     hwnd = HWND(std::ptr::null_mut());
                 }
 
-                let mut should_overlap = false;
                 let mut should_notch_overlap = false;
-                let mut should_maximized = false;
                 let mut current_is_fs = false;
 
                 // Cheap check every tick: the foreground hwnd doesn't change when
@@ -1770,7 +1422,6 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
 
                 if !hwnd.is_invalid() {
                     if is_known_shell {
-                        should_overlap = false;
                         current_is_fs = false;
                     } else {
                         // Current hwnd is now guaranteed to be visible, non-iconic and non-cloaked
@@ -1839,32 +1490,13 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                                         && !is_maximized_standard;
 
                                     if is_primary && (current_is_fs || is_maximized) {
-                                        should_overlap = true;
                                         should_notch_overlap = true;
                                         // Standard maximized windows leave the dock's
                                         // reserved strip empty on both sides, so the dock
                                         // can stretch to a full taskbar. True fullscreen
                                         // windows cover the screen and should not.
-                                        should_maximized = is_maximized && !current_is_fs;
                                     } else if is_primary {
-                                        should_overlap = false;
-                                        if let Ok(dock_rect_lock) = DOCK_RECT.lock() {
-                                            if let Some(dr) = *dock_rect_lock {
-                                                let scale = cached_scale;
-                                                let d_left = (dr.x as f64 * scale) as i32;
-                                                let d_right =
-                                                    d_left + (dr.width as f64 * scale) as i32;
-                                                let res_h = (56.0 * scale) as i32;
-                                                let trigger_y = screen_rect.bottom - res_h;
 
-                                                if rect.left < d_right - 4
-                                                    && rect.right > d_left + 4
-                                                    && rect.bottom > trigger_y + 4
-                                                {
-                                                    should_overlap = true;
-                                                }
-                                            }
-                                        }
 
                                         if let Ok(notch_rect_lock) = NOTCH_RECT.lock() {
                                             if let Some(nr) = *notch_rect_lock {
@@ -1887,59 +1519,24 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                                 }
                             }
                         } else {
-                            should_overlap = false;
                             current_is_fs = false;
                         }
                     }
                 } else {
                     last_hwnd = hwnd;
-                    should_overlap = false;
                     current_is_fs = false;
                     is_known_shell = false;
                 }
 
-                // Only report dock overlap when the dock window is actually visible.
-                // On autostart, the overlap thread starts before init_dock shows the window,
-                // and without this guard it emits dock-overlap:true which hides the dock
-                // right after init_dock emits dock-overlap:false.
-                let dock_visible = handle_visibility
-                    .get_webview_window("dock")
-                    .is_some_and(|w| w.is_visible().unwrap_or(false));
-                let effective_dock_overlap = should_overlap && dock_visible;
-
-                // Update overlap state
-                CURRENT_DOCK_OVERLAP.store(
-                    if effective_dock_overlap { 1 } else { 0 },
-                    Ordering::Relaxed,
-                );
                 CURRENT_NOTCH_OVERLAP
                     .store(if should_notch_overlap { 1 } else { 0 }, Ordering::Relaxed);
                 CURRENT_FOREGROUND_FULLSCREEN.store(current_is_fs, Ordering::Relaxed);
-
-                if Some(effective_dock_overlap) != last_dock_overlap
-                    || last_emit.elapsed() >= Duration::from_secs(3)
-                {
-                    let _ = handle_visibility.emit("dock-overlap", effective_dock_overlap);
-                    last_dock_overlap = Some(effective_dock_overlap);
-                    last_emit = Instant::now();
-                }
 
                 if Some(should_notch_overlap) != last_notch_overlap
                     || last_emit.elapsed() >= Duration::from_secs(3)
                 {
                     let _ = handle_visibility.emit("notch-overlap", should_notch_overlap);
                     last_notch_overlap = Some(should_notch_overlap);
-                }
-
-                // Adaptive dock signal: a standard maximized foreground window.
-                // Unlike dock-overlap this is not guarded by dock visibility, so
-                // init_dock can emit the current value when the dock is enabled.
-                CURRENT_FOREGROUND_MAXIMIZED.store(should_maximized, Ordering::Relaxed);
-                if Some(should_maximized) != last_dock_maximized
-                    || last_emit.elapsed() >= Duration::from_secs(3)
-                {
-                    let _ = handle_visibility.emit("dock-maximized", should_maximized);
-                    last_dock_maximized = Some(should_maximized);
                 }
 
                 // Update full-screen visibility (hides TopBar/Corners)
@@ -2126,7 +1723,7 @@ pub fn set_native_osd_suppressed(suppress: bool) {
     use windows::Win32::Foundation::COLORREF;
     use windows::Win32::UI::WindowsAndMessaging::{
         GetLayeredWindowAttributes, SetLayeredWindowAttributes, SetWindowLongW, LWA_ALPHA,
-        WS_EX_LAYERED, WS_EX_TRANSPARENT,
+        WS_EX_LAYERED,
     };
     for hwnd in native_osd_windows() {
         unsafe {
@@ -2331,12 +1928,9 @@ static MOUSE_HOOK_UPDATES: OnceLock<SyncSender<()>> = OnceLock::new();
 static MOUSE_HOOK_CURSOR: AtomicI64 = AtomicI64::new(0);
 static MOUSE_HOOK_LAST_EVENT_MS: AtomicI64 = AtomicI64::new(0);
 static MH_LAST_MAIN_IGNORE: AtomicI32 = AtomicI32::new(-1);
-static MH_LAST_DOCK_IGNORE: AtomicI32 = AtomicI32::new(-1);
 static MH_LAST_OV_IGNORE: AtomicI32 = AtomicI32::new(-1);
-static MH_LAST_EDGE_HOVER: AtomicI32 = AtomicI32::new(-1);
 static MH_LAST_TOP_EDGE_HOVER: AtomicI32 = AtomicI32::new(-1);
 static MH_LAST_CONTROLS_EDGE_HOVER: AtomicI32 = AtomicI32::new(-1);
-static MH_DOCK_EXPIRY_MS: AtomicI64 = AtomicI64::new(0);
 static MH_TOPBAR_EXPIRY_MS: AtomicI64 = AtomicI64::new(0);
 static MH_CONTROLS_EXPIRY_MS: AtomicI64 = AtomicI64::new(0);
 static MH_LAST_MONITOR_UPDATE_MS: AtomicI64 = AtomicI64::new(0);
@@ -2399,20 +1993,6 @@ const TOP_EDGE_POLL_MS: u64 = 40;
 static MH_TOP_EDGE_ENTER_MS: AtomicI64 = AtomicI64::new(0);
 static MH_TOP_EDGE_ARMED: AtomicBool = AtomicBool::new(false);
 static MH_LAST_TOPMOST_ASSERT_MS: AtomicI64 = AtomicI64::new(0);
-
-/// Hover-intent ("pressure") gate for the bottom edge, the dock-side mirror of
-/// the top-edge gate. Contact with the bottom band only starts a dwell clock;
-/// the edge is armed — and only then reveals the dock or claims cursor input —
-/// after the cursor has rested in the band for the configured delay. A
-/// pass-through along the bottom strip never arms it. The delay is user-tunable
-/// via `bloom-dock-edge-delay` (ms); `0` restores the old instant behavior.
-const BOTTOM_EDGE_BAND_PX: f64 = 8.0;
-const BOTTOM_EDGE_DWELL_MS: i64 = 200;
-/// The mouse hook only fires on WM_MOUSEMOVE, so a pending dwell is completed
-/// by a watchdog that re-checks at this cadence.
-const BOTTOM_EDGE_POLL_MS: u64 = 40;
-static MH_DOCK_EDGE_ENTER_MS: AtomicI64 = AtomicI64::new(0);
-static MH_DOCK_EDGE_ARMED: AtomicBool = AtomicBool::new(false);
 
 /// Physical bounds `(x, y, width, height)` of the expanded per-app volume
 /// mixer (notch + panel), if it is open. The frontend reports the card in
@@ -2613,9 +2193,6 @@ fn apply_capture_ui_state(app: &AppHandle, active: bool) {
         }
     }
     if active {
-        if let Some(hwnd) = app.get_webview_window("dock").and_then(|w| w.hwnd().ok()) {
-            set_click_through(hwnd, true);
-        }
         if let Some(hwnd) = app
             .get_webview_window("overlay")
             .and_then(|w| w.hwnd().ok())
@@ -2625,14 +2202,11 @@ fn apply_capture_ui_state(app: &AppHandle, active: bool) {
     }
     // Force the mouse hook to re-evaluate hit-testing on the next move.
     MH_LAST_MAIN_IGNORE.store(-1, Ordering::Relaxed);
-    MH_LAST_DOCK_IGNORE.store(-1, Ordering::Relaxed);
     MH_LAST_OV_IGNORE.store(-1, Ordering::Relaxed);
     // Cancel any pending top/bottom-edge dwell so they cannot arm while Bloom
     // is click-through for the capture tool.
     MH_TOP_EDGE_ENTER_MS.store(0, Ordering::Relaxed);
     MH_TOP_EDGE_ARMED.store(false, Ordering::Relaxed);
-    MH_DOCK_EDGE_ENTER_MS.store(0, Ordering::Relaxed);
-    MH_DOCK_EDGE_ARMED.store(false, Ordering::Relaxed);
 }
 
 pub fn setup_mouse_hook(app_handle: AppHandle) {
@@ -2641,7 +2215,6 @@ pub fn setup_mouse_hook(app_handle: AppHandle) {
         return;
     }
     setup_volume_mixer_watchdog(app_handle.clone());
-    setup_dock_edge_watchdog(app_handle.clone());
     setup_top_edge_watchdog(app_handle.clone());
     std::thread::Builder::new()
         .name("bloom-cursor-worker".into())
@@ -2859,9 +2432,10 @@ fn update_main_interaction(
     // about showing the notch — the hit-testing continuity below is separate
     // and must stay immediate. Fullscreen retracts even a fixed notch, so the
     // dwell is the only way back to it there.
-    let edge_armed = if !fg_fs
+    let finder_hidden = crate::myfinder::hidden();
+    let edge_armed = if finder_hidden || (!fg_fs
         && notch_mode_is_fixed(get_setting_str(app_handle, "bloom-notch-mode").as_deref())
-    {
+    ) {
         MH_TOP_EDGE_ENTER_MS.store(0, Ordering::Relaxed);
         MH_TOP_EDGE_ARMED.store(false, Ordering::Relaxed);
         false
@@ -2888,7 +2462,21 @@ fn update_main_interaction(
     let mut is_click_interactive = false;
     let main_rect_val = MAIN_WINDOW_RECT.lock().ok().and_then(|g| *g);
 
-    if let Some((win_pos, _)) = main_rect_val {
+    let finder = crate::myfinder::get_myfinder_state();
+    if finder.available {
+        // Use the same split silhouette as native clipping. A bounding box
+        // would claim MyFinder's neighbouring menu items while panels open.
+        if let Some((position, _)) = main_rect_val {
+            let inside = crate::window_region::main_contains(cursor.x - position.x, cursor.y - position.y);
+            is_click_interactive = inside && (NOTCH_IS_VISIBLE.load(Ordering::Relaxed) || (drag_held && !finder_hidden));
+            if inside && NOTCH_IS_VISIBLE.load(Ordering::Relaxed) {
+                is_notch_hovered = true;
+                MH_TOPBAR_EXPIRY_MS.store(now + 500, Ordering::Relaxed);
+            }
+        }
+    }
+
+    if let Some((win_pos, _)) = main_rect_val.filter(|_| !finder.available) {
         if let Ok(region) = NOTCH_RECT.try_lock() {
             if let Some(r) = *region {
                 let pad_x = (20.0 * scale) as i32;
@@ -3011,252 +2599,6 @@ fn setup_top_edge_watchdog(app_handle: AppHandle) {
     });
 }
 
-/// Bottom-edge hover-intent delay in milliseconds. `0` disables the gate so the
-/// dock reveals the moment the band is touched (the pre-fix behavior).
-fn dock_edge_dwell_ms(app_handle: &AppHandle) -> i64 {
-    crate::utils::get_setting_str(app_handle, "bloom-dock-edge-delay")
-        .and_then(|s| s.parse::<i64>().ok())
-        .unwrap_or(BOTTOM_EDGE_DWELL_MS)
-        .clamp(0, 2000)
-}
-
-/// True once the cursor has stayed inside the bottom band long enough to count
-/// as a deliberate reveal. Mere contact does not arm: a pass along the bottom
-/// strip on the way to a maximized window's bottom controls must not reveal the
-/// dock. Leaving the band disarms and restarts the clock.
-///
-/// The mouse hook only fires on movement, so `setup_dock_edge_watchdog` also
-/// calls this while a dwell is pending so it can complete on a stationary
-/// cursor.
-fn dock_edge_armed_for(
-    app_handle: &AppHandle,
-    cursor: windows::Win32::Foundation::POINT,
-    now: i64,
-    scale: f64,
-) -> bool {
-    let (mon_x, mon_y) = MH_CACHED_MON_POS
-        .lock()
-        .ok()
-        .and_then(|g| *g)
-        .unwrap_or((0, 0));
-    let (mon_w, mon_h) = MH_CACHED_MON_SIZE
-        .lock()
-        .ok()
-        .and_then(|g| *g)
-        .map(|s| (s.0 as i32, s.1 as i32))
-        .unwrap_or((1920, 1080));
-
-    let in_band = cursor.y >= (mon_y + mon_h - (BOTTOM_EDGE_BAND_PX * scale) as i32)
-        && cursor.x >= mon_x
-        && cursor.x <= (mon_x + mon_w);
-
-    if !in_band {
-        MH_DOCK_EDGE_ENTER_MS.store(0, Ordering::Relaxed);
-        MH_DOCK_EDGE_ARMED.store(false, Ordering::Relaxed);
-        return false;
-    }
-    if MH_DOCK_EDGE_ARMED.load(Ordering::Relaxed) {
-        return true;
-    }
-    let dwell_ms = dock_edge_dwell_ms(app_handle);
-    if dwell_ms <= 0 {
-        MH_DOCK_EDGE_ARMED.store(true, Ordering::Relaxed);
-        return true;
-    }
-    let enter = MH_DOCK_EDGE_ENTER_MS.load(Ordering::Relaxed);
-    if enter == 0 {
-        MH_DOCK_EDGE_ENTER_MS.store(now, Ordering::Relaxed);
-        return false;
-    }
-    if now - enter >= dwell_ms {
-        MH_DOCK_EDGE_ARMED.store(true, Ordering::Relaxed);
-        return true;
-    }
-    false
-}
-
-/// Hover + click-through state for the dock window. Shared by the mouse hook
-/// (on movement) and the bottom-edge watchdog (to finish a stationary dwell).
-fn update_dock_interaction(
-    app_handle: &AppHandle,
-    cursor: windows::Win32::Foundation::POINT,
-    now: i64,
-    fg_fs: bool,
-) {
-    if fg_fs {
-        // Fullscreen foreground app or capture overlay: the dock must not
-        // intercept input (e.g. a Snipping Tool selection ending at the
-        // bottom edge), so keep it click-through.
-        MH_DOCK_EDGE_ENTER_MS.store(0, Ordering::Relaxed);
-        MH_DOCK_EDGE_ARMED.store(false, Ordering::Relaxed);
-        if let Some(hwnd) = app_handle
-            .get_webview_window("dock")
-            .and_then(|w| w.hwnd().ok())
-        {
-            set_click_through(hwnd, true);
-        }
-        MH_LAST_DOCK_IGNORE.store(1, Ordering::Relaxed);
-        if MH_LAST_EDGE_HOVER.swap(0, Ordering::Relaxed) != 0 {
-            let _ = app_handle.emit("dock-edge-hover", false);
-        }
-        return;
-    }
-
-    let Some(dock_win) = app_handle.get_webview_window("dock") else {
-        return;
-    };
-    if !dock_win.is_visible().unwrap_or(false) {
-        return;
-    }
-
-    let (mon_x, mon_y) = MH_CACHED_MON_POS
-        .lock()
-        .ok()
-        .and_then(|g| *g)
-        .unwrap_or((0, 0));
-    let (mon_w, mon_h) = MH_CACHED_MON_SIZE
-        .lock()
-        .ok()
-        .and_then(|g| *g)
-        .map(|s| (s.0 as i32, s.1 as i32))
-        .unwrap_or((1920, 1080));
-
-    let mut is_click_interactive = false;
-    let mut is_hovered = false;
-    let mut dock_span: Option<(i32, i32)> = None;
-
-    let dock_rect_val = DOCK_WINDOW_RECT.lock().ok().and_then(|g| *g);
-
-    if let Some((win_pos, win_size)) = dock_rect_val {
-        let in_window = cursor.x >= win_pos.x
-            && cursor.x <= (win_pos.x + win_size.width as i32)
-            && cursor.y >= win_pos.y
-            && cursor.y <= (win_pos.y + win_size.height as i32);
-
-        if in_window {
-            if let Ok(region) = DOCK_RECT.try_lock() {
-                if let Some(r) = *region {
-                    let scale = dock_win.scale_factor().unwrap_or(1.0);
-                    let pad_x = (5.0 * scale) as i32;
-                    let pad_y_top = (8.0 * scale) as i32;
-                    let pad_y_bottom = (5.0 * scale) as i32;
-                    // Hysteresis keeps the dock interactive a little past
-                    // its bounds once grabbed, so removing the edge-forced
-                    // interactivity doesn't reintroduce boundary flicker.
-                    let hyst = if MH_LAST_DOCK_IGNORE.load(Ordering::Relaxed) == 0 {
-                        (10.0 * scale) as i32
-                    } else {
-                        0
-                    };
-                    let rx = win_pos.x + (r.x as f64 * scale) as i32 - pad_x - hyst;
-                    let ry = win_pos.y + (r.y as f64 * scale) as i32 - pad_y_top - hyst;
-                    let rw = (r.width as f64 * scale) as i32 + (pad_x * 2) + (hyst * 2);
-                    let rh =
-                        (r.height as f64 * scale) as i32 + pad_y_top + pad_y_bottom + (hyst * 2);
-                    if cursor.x >= rx
-                        && cursor.x <= (rx + rw)
-                        && cursor.y >= ry
-                        && cursor.y <= (ry + rh)
-                    {
-                        is_click_interactive = true;
-                    }
-                    dock_span = Some((rx, rx + rw));
-                }
-            }
-
-            if !is_click_interactive && MENU_IS_OPEN.load(Ordering::Relaxed) {
-                if let Ok(rect) = MENU_RECT.try_lock() {
-                    if let Some(r) = *rect {
-                        let scale = dock_win.scale_factor().unwrap_or(1.0);
-                        let rx = win_pos.x + (r.x as f64 * scale) as i32 - (5.0 * scale) as i32;
-                        let ry = win_pos.y + (r.y as f64 * scale) as i32 - (5.0 * scale) as i32;
-                        let rw = (r.width as f64 * scale) as i32 + (10.0 * scale) as i32;
-                        let rh = (r.height as f64 * scale) as i32 + (10.0 * scale) as i32;
-                        if cursor.x >= rx
-                            && cursor.x <= (rx + rw)
-                            && cursor.y >= ry
-                            && cursor.y <= (ry + rh)
-                        {
-                            is_click_interactive = true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Hot-edge detection (Bottom edge). Only a dwelled (armed) edge, a dock
-    // hover, or a recent hover reveals the dock — a pass through the band does
-    // not.
-    let in_dock_hover = DOCK_IS_HOVERED.load(Ordering::Relaxed);
-    let scale = dock_win.scale_factor().unwrap_or(1.0);
-    let edge_armed = dock_edge_armed_for(app_handle, cursor, now, scale);
-    let at_bottom_edge = cursor.y >= (mon_y + mon_h - (BOTTOM_EDGE_BAND_PX * scale) as i32)
-        && cursor.x >= mon_x
-        && cursor.x <= (mon_x + mon_w);
-
-    if edge_armed || in_dock_hover {
-        is_hovered = true;
-        MH_DOCK_EXPIRY_MS.store(now + 500, Ordering::Relaxed);
-    }
-
-    // Approaching along the bottom edge keeps the dock interactive while near
-    // its horizontal span, so the reveal can't be clicked through mid-animation.
-    // Only an armed edge may claim the strip; the corners and a mere pass stay
-    // click-through.
-    if at_bottom_edge && edge_armed {
-        if let Some((span_left, span_right)) = dock_span {
-            let edge_pad = (60.0 * scale) as i32;
-            if cursor.x >= span_left - edge_pad && cursor.x <= span_right + edge_pad {
-                is_click_interactive = true;
-            }
-        }
-    }
-
-    let final_dock_hover = is_hovered || now < MH_DOCK_EXPIRY_MS.load(Ordering::Relaxed);
-    let prev = MH_LAST_EDGE_HOVER.load(Ordering::Relaxed);
-    let new_val = if final_dock_hover { 1 } else { 0 };
-    if prev != new_val {
-        let _ = app_handle.emit("dock-edge-hover", final_dock_hover);
-        MH_LAST_EDGE_HOVER.store(new_val, Ordering::Relaxed);
-    }
-
-    // An open menu or popup takes clicks only over itself (MENU_RECT above);
-    // a press anywhere else closes it through the mouse hook.
-    let should_ignore = !is_click_interactive;
-    let prev_ignore = MH_LAST_DOCK_IGNORE.load(Ordering::Relaxed);
-    let new_ignore = if should_ignore { 1 } else { 0 };
-    if prev_ignore != new_ignore {
-        if let Ok(hwnd) = dock_win.hwnd() {
-            re_assert_topmost(hwnd);
-        }
-        MH_LAST_DOCK_IGNORE.store(new_ignore, Ordering::Relaxed);
-    }
-    // Every update, as for the notch: writes only when the style differs, and
-    // repairs a style tao rewrote.
-    if let Ok(hwnd) = dock_win.hwnd() {
-        set_click_through(hwnd, should_ignore);
-    }
-}
-
-/// Keeps dock hit-testing fresh while the cursor is stationary: completes a
-/// pending bottom-edge dwell and catches boundary crossings the movement-only
-/// hook misses (so the click-through flip always happens).
-fn setup_dock_edge_watchdog(app_handle: AppHandle) {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_millis(BOTTOM_EDGE_POLL_MS));
-        if CAPTURE_UI_ACTIVE.load(Ordering::Relaxed) || SHUTTING_DOWN.load(Ordering::Relaxed) {
-            continue;
-        }
-        let mut pt = windows::Win32::Foundation::POINT::default();
-        if unsafe { windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut pt) }.is_err() {
-            continue;
-        }
-        let fg_fs = CURRENT_FOREGROUND_FULLSCREEN.load(Ordering::Relaxed);
-        update_dock_interaction(&app_handle, pt, now_ms(), fg_fs);
-    });
-}
-
 unsafe extern "system" fn mouse_hook_proc(
     code: i32,
     wparam: WPARAM,
@@ -3274,56 +2616,7 @@ unsafe extern "system" fn mouse_hook_proc(
     if code >= 0 && wparam.0 == WM_LBUTTONDOWN as usize {
         START_OPEN_AT_PRESS.store(crate::commands::is_start_menu_open(), Ordering::Relaxed);
     }
-    // A dock menu or the Add App popup closes when you press outside it. The
-    // dock window's region keeps it from catching that press, so the dock
-    // can't see it; tell it here. The flag is cleared now, so it can't be left
-    // set even if the dock webview never answers.
-    if code >= 0
-        && (wparam.0 == WM_LBUTTONDOWN as usize || wparam.0 == WM_RBUTTONDOWN as usize)
-        && MENU_IS_OPEN.load(Ordering::Relaxed)
-    {
-        let point = (*(lparam.0 as *const MSLLHOOKSTRUCT)).pt;
-        if !dock_takes_press(point) {
-            MENU_IS_OPEN.store(false, Ordering::Relaxed);
-            if let Some(app) = WINDOW_CHANGE_APP_HANDLE.get().cloned() {
-                // Off the hook thread: a low-level hook must return quickly.
-                std::thread::spawn(move || {
-                    let _ = app.emit("dock-dismiss-menu", ());
-                });
-            }
-        }
-    }
     CallNextHookEx(None, code, wparam, lparam)
-}
-
-/// Whether the dock window takes a press at `point`: it isn't click-through
-/// and the point is inside its window region. Such a press reaches the dock,
-/// which closes its menus itself.
-unsafe fn dock_takes_press(point: windows::Win32::Foundation::POINT) -> bool {
-    use windows::Win32::Foundation::RECT;
-    use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, GetWindowRgn, PtInRegion};
-    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
-
-    let hwnd = HWND(DOCK_HWND.load(Ordering::Relaxed) as *mut _);
-    if hwnd.0.is_null() || GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TRANSPARENT.0 != 0 {
-        return false;
-    }
-    let mut bounds = RECT::default();
-    if GetWindowRect(hwnd, &mut bounds).is_err() {
-        return false;
-    }
-    let region = CreateRectRgn(0, 0, 0, 0);
-    // No region yet means the whole window.
-    let inside = if GetWindowRgn(hwnd, region).0 == 0 {
-        point.x >= bounds.left
-            && point.x < bounds.right
-            && point.y >= bounds.top
-            && point.y < bounds.bottom
-    } else {
-        PtInRegion(region, point.x - bounds.left, point.y - bounds.top).as_bool()
-    };
-    let _ = DeleteObject(region.into());
-    inside
 }
 
 fn process_mouse_position(app_handle: &AppHandle, cursor: windows::Win32::Foundation::POINT) {
@@ -3342,13 +2635,7 @@ fn process_mouse_position(app_handle: &AppHandle, cursor: windows::Win32::Founda
                 set_click_through(hwnd, true);
             }
             MH_LAST_MAIN_IGNORE.store(1, Ordering::Relaxed);
-            if let Some(hwnd) = app_handle
-                .get_webview_window("dock")
-                .and_then(|w| w.hwnd().ok())
-            {
-                set_click_through(hwnd, true);
-            }
-            MH_LAST_DOCK_IGNORE.store(1, Ordering::Relaxed);
+
             if MH_LAST_OV_IGNORE.load(Ordering::Relaxed) != 1 {
                 if let Some(hwnd) = app_handle
                     .get_webview_window("overlay")
@@ -3358,9 +2645,7 @@ fn process_mouse_position(app_handle: &AppHandle, cursor: windows::Win32::Founda
                 }
                 MH_LAST_OV_IGNORE.store(1, Ordering::Relaxed);
             }
-            if MH_LAST_EDGE_HOVER.swap(0, Ordering::Relaxed) != 0 {
-                let _ = app_handle.emit("dock-edge-hover", false);
-            }
+
             if MH_LAST_TOP_EDGE_HOVER.swap(0, Ordering::Relaxed) != 0 {
                 let _ = app_handle.emit("notch-edge-hover", false);
             }
@@ -3386,9 +2671,6 @@ fn process_mouse_position(app_handle: &AppHandle, cursor: windows::Win32::Founda
         let mon_h = cached_size.1 as i32;
 
         let fg_fs = CURRENT_FOREGROUND_FULLSCREEN.load(Ordering::Relaxed);
-
-        // --- Dock Interaction ---
-        update_dock_interaction(app_handle, cursor, now, fg_fs);
 
         // --- Main (TopBar) Interaction ---
         update_main_interaction(app_handle, cursor, now, fg_fs);
@@ -4008,188 +3290,6 @@ pub fn apply_main_appbar_mode(app: &AppHandle, reserve: bool) {
     }
 }
 
-pub fn register_dock_appbar(window: tauri::WebviewWindow) {
-    if !crate::dock_lifecycle::notch_startup_plan().open_dock_window {
-        return;
-    }
-    register_dock_appbar_inner(window, 0);
-}
-
-static DOCK_APPBAR_LOCK: Mutex<()> = Mutex::new(());
-
-fn lock_dock_appbar() -> std::sync::MutexGuard<'static, ()> {
-    DOCK_APPBAR_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-pub fn disable_dock_appbar(window: tauri::WebviewWindow) {
-    let _guard = lock_dock_appbar();
-    let _ = window.hide();
-    if let Ok(hwnd) = window.hwnd() {
-        unregister_appbar_native(hwnd);
-    }
-    DOCK_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
-}
-
-fn register_dock_appbar_inner(window: tauri::WebviewWindow, attempt: i32) {
-    // Registration retries may outlive a settings change that disabled the dock.
-    if !crate::utils::dock_enabled() {
-        return;
-    }
-    if let Ok(Some(monitor)) = window.app_handle().primary_monitor() {
-        let m_size = monitor.size();
-        let m_pos = monitor.position();
-        let Ok(hwnd) = window.hwnd() else {
-            return;
-        };
-        let scale = monitor.scale_factor();
-        let bloom_scale = crate::utils::get_bloom_scale(window.app_handle());
-
-        // ph = full physical window height. outer_size() can return 0 before the
-        // window has rendered. Never guess a value — bail and let the retry wrapper handle it.
-        let ph = window.outer_size().map(|s| s.height as i32).unwrap_or(0);
-        if ph <= 0 {
-            if attempt < 10 {
-                let w = window.clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                    register_dock_appbar_inner(w, attempt + 1);
-                });
-            }
-            return;
-        }
-
-        let pr = ((56.0 * bloom_scale) * scale) as i32;
-
-        // Serialize with disable_dock_appbar, then check the setting again.
-        // A pending registration must not outlive a dock-disable request.
-        let _guard = lock_dock_appbar();
-        if !crate::utils::dock_enabled() {
-            return;
-        }
-
-        unsafe {
-            use windows::Win32::Foundation::RECT;
-            use windows::Win32::UI::Shell::{
-                SHAppBarMessage, ABE_BOTTOM, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS,
-                APPBARDATA,
-            };
-            use windows::Win32::UI::WindowsAndMessaging::{
-                GetWindowLongPtrW, GetWindowRect, RegisterWindowMessageW, SetWindowLongPtrW,
-                SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER,
-                WS_EX_NOACTIVATE as WS_EX_NA, WS_EX_TOOLWINDOW,
-            };
-
-            // Set extended styles (ToolWindow and NoActivate)
-            let mut ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as usize;
-            ex_style |= (WS_EX_TOOLWINDOW.0 | WS_EX_NA.0) as usize;
-            let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style as isize);
-
-            let callback_message = RegisterWindowMessageW(windows::core::w!("BloomDockAppBar"));
-            if callback_message == 0 {
-                return;
-            }
-            let mut abd = APPBARDATA {
-                cbSize: std::mem::size_of::<APPBARDATA>() as u32,
-                hWnd: hwnd,
-                uCallbackMessage: callback_message,
-                ..Default::default()
-            };
-
-            if !DOCK_APPBAR_REGISTERED.load(Ordering::Relaxed) {
-                let _ = SHAppBarMessage(ABM_REMOVE, &mut abd);
-                let registered = SHAppBarMessage(ABM_NEW, &mut abd);
-                crate::diagnostics::record(
-                    "dock_appbar",
-                    &format!("registration_result={registered}"),
-                );
-                if registered == 0 {
-                    eprintln!("Bloom: dock AppBar registration failed");
-                    return;
-                }
-                DOCK_APPBAR_REGISTERED.store(true, Ordering::Relaxed);
-            }
-
-            abd.uEdge = ABE_BOTTOM;
-            abd.rc = RECT {
-                left: m_pos.x,
-                top: m_pos.y + m_size.height as i32 - pr,
-                right: m_pos.x + m_size.width as i32,
-                bottom: m_pos.y + m_size.height as i32,
-            };
-
-            SHAppBarMessage(ABM_QUERYPOS, &mut abd);
-            SHAppBarMessage(ABM_SETPOS, &mut abd);
-
-            // Critical: Force the window to the actual bottom of the screen,
-            // ignoring what ABM_SETPOS might have tried to "correct" (like stacking on invisible taskbar)
-            let final_y = m_pos.y + m_size.height as i32 - ph;
-            let final_width = abd.rc.right - abd.rc.left;
-            if final_width <= 0 {
-                return;
-            }
-
-            let mut current_rect = RECT::default();
-            let mut already_positioned = false;
-            if GetWindowRect(hwnd, &mut current_rect).is_ok() {
-                let current_width = current_rect.right - current_rect.left;
-                let current_height = current_rect.bottom - current_rect.top;
-                if current_rect.left == abd.rc.left
-                    && current_rect.top == final_y
-                    && current_width == final_width
-                    && current_height == ph
-                {
-                    already_positioned = true;
-                }
-            }
-
-            if !already_positioned
-                && SetWindowPos(
-                    hwnd,
-                    None,
-                    abd.rc.left,
-                    final_y,
-                    final_width,
-                    ph,
-                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                )
-                .is_err()
-            {
-                return;
-            }
-            let mut placed = RECT::default();
-            if GetWindowRect(hwnd, &mut placed).is_err()
-                || placed.left != abd.rc.left
-                || placed.top != final_y
-                || placed.right - placed.left != final_width
-                || placed.bottom - placed.top != ph
-            {
-                return;
-            }
-
-            // Re-assert topmost — same reason as register_appbar.
-            re_assert_topmost(hwnd);
-
-            // Always ensure the window is visible — show() is idempotent
-            if !window.is_visible().unwrap_or(false) && window.show().is_err() {
-                return;
-            }
-            if window.is_visible().unwrap_or(false) && set_taskbar_visibility(false, false) {
-                NATIVE_TASKBAR_HIDDEN.store(true, Ordering::Relaxed);
-            }
-        }
-    } else {
-        let w = window.clone();
-        tauri::async_runtime::spawn(async move {
-            for _ in 0..10 {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                if let Ok(Some(_monitor)) = w.app_handle().primary_monitor() {
-                    register_dock_appbar(w);
-                    break;
-                }
-            }
-        });
-    }
-}
 
 /// True when a top-level dialog is a Windows property sheet, detected by its
 /// tab-control child. This is locale-independent, unlike matching the
@@ -4440,19 +3540,6 @@ fn reposition_all_windows(app_handle: &AppHandle) {
         return;
     }
     reconcile_main_appbar(app_handle);
-    // Only reposition the dock if it's enabled in settings.
-    // Without this guard, power events (plug/unplug, wake) would re-show
-    // a dock that the user had previously disabled.
-    if crate::utils::dock_enabled() {
-        if let Some(dock_win) = app_handle.get_webview_window("dock") {
-            if get_setting_str(app_handle, "bloom-dock-mode").as_deref() == Some("fixed") {
-                register_dock_appbar(dock_win);
-            } else {
-                // Auto-hide mode: reposition dock at bottom of screen
-                reposition_autohide_dock(app_handle, dock_win);
-            }
-        }
-    }
     if NATIVE_TASKBAR_HIDDEN.load(Ordering::Relaxed) {
         set_taskbar_visibility(false, false);
     }
@@ -4463,69 +3550,7 @@ fn reposition_all_windows(app_handle: &AppHandle) {
             re_assert_topmost(frame_hwnd(hwnd));
         }
     }
-    if let Some(dock_win) = app_handle.get_webview_window("dock") {
-        if let Ok(hwnd) = dock_win.hwnd() {
-            re_assert_topmost(hwnd);
-        }
-    }
-}
 
-fn reposition_autohide_dock(app_handle: &AppHandle, dock_win: tauri::WebviewWindow) {
-    let dock_clone = dock_win.clone();
-    let ah = app_handle.clone();
-    tauri::async_runtime::spawn(async move {
-        for _attempt in 0..5 {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            if !crate::utils::dock_enabled() {
-                return;
-            }
-            let hwnd_val = match dock_clone.hwnd() {
-                Ok(h) => h.0 as isize,
-                Err(_) => continue,
-            };
-            let ph = match dock_clone.outer_size() {
-                Ok(s) => s.height as i32,
-                Err(_) => continue,
-            };
-            if ph <= 10 {
-                continue;
-            }
-            let monitor_info = dock_clone.primary_monitor().ok().flatten().map(|m| {
-                let s = m.size();
-                let p = m.position();
-                (s.width as i32, s.height as i32, p.x, p.y)
-            });
-            if let Some((m_w, m_h, m_x, m_y)) = monitor_info {
-                let final_y = m_y + m_h - ph;
-                unsafe {
-                    use windows::Win32::Foundation::HWND;
-                    use windows::Win32::UI::WindowsAndMessaging::{
-                        SetWindowPos, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER,
-                    };
-                    let _ = SetWindowPos(
-                        HWND(hwnd_val as *mut _),
-                        None,
-                        m_x,
-                        final_y,
-                        m_w,
-                        ph,
-                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                    );
-                }
-                if let Ok(hwnd) = dock_clone.hwnd() {
-                    re_assert_topmost(hwnd);
-                }
-                if crate::utils::dock_enabled() {
-                    let _ = dock_clone.show();
-                }
-                break;
-            }
-        }
-        if NATIVE_TASKBAR_HIDDEN.load(Ordering::Relaxed) {
-            set_taskbar_visibility(false, false);
-        }
-        sync_overlays(&ah);
-    });
 }
 
 static TASKBAR_CREATED_MESSAGE: AtomicU32 = AtomicU32::new(0);
@@ -4604,7 +3629,6 @@ unsafe extern "system" fn display_monitor_proc(
         // Explorer has rebuilt its AppBar list. A primary-monitor DPI change
         // can send the same broadcast, so re-register in either case.
         MAIN_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
-        DOCK_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
         if let Some(app_handle) = DISPLAY_MONITOR_HANDLE.get() {
             let ah = app_handle.clone();
             tauri::async_runtime::spawn(async move {
@@ -4764,7 +3788,6 @@ mod tests {
         controls_card_physical_rect, is_helper_name, is_launchable_entry, is_primary_monitor,
         is_start_menu_process_path, notch_mode_is_fixed, notch_mode_reserves_work_area,
         notch_top_left, pack_cursor, right_edge_band, trim_thumbnail_cache, unpack_cursor,
-        win_number_index,
     };
 
     #[test]
@@ -4837,17 +3860,6 @@ mod tests {
         assert_eq!(cache.len(), 15);
         assert!(cache.contains_key(&19));
         assert!((0..5).all(|key| !cache.contains_key(&key)));
-    }
-
-    #[test]
-    fn win_number_maps_top_row_digits_only() {
-        assert_eq!(win_number_index(0x31), Some(0));
-        assert_eq!(win_number_index(0x35), Some(4));
-        assert_eq!(win_number_index(0x39), Some(8));
-        // 0, letters and numpad digits are not dock slots
-        assert_eq!(win_number_index(0x30), None);
-        assert_eq!(win_number_index(0x41), None);
-        assert_eq!(win_number_index(0x61), None);
     }
 
     #[test]

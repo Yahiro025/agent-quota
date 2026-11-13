@@ -2,7 +2,7 @@
 // reconnection; the backend assigns a new target generation for that connection.
 export function startConnector(
 	config,
-	{ inventory, perform, Socket = WebSocket, schedule = setTimeout, cancel = clearTimeout }
+	{ inventory, perform, onPublished, Socket = WebSocket, schedule = setTimeout, cancel = clearTimeout }
 ) {
 	let stopped = false,
 		socket,
@@ -37,12 +37,14 @@ export function startConnector(
 		};
 		async function publish() {
 			try {
-				const data = await inventory();
+				const data = await inventory(send);
 				if (!Array.isArray(data.snapshots) || data.snapshots.length > 16) {
 					ws.close(1009);
 					return;
 				}
 				send({ op: "inventory", ...data, pull: true });
+				// Attached data must follow the inventory that establishes its identity.
+				if (current() && ws.readyState === 1) onPublished?.(send, data);
 			} catch {
 				send({ op: "inventory", snapshots: [], unknown_playing: true, pull: true });
 			}

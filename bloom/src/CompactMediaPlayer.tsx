@@ -1,9 +1,12 @@
+import { formatTime, formatRemaining } from "./media/time";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { Visualizer } from "./App";
 import { ListMusic } from "lucide-react";
 import { QueueDrawer } from "./media/QueueDrawer";
+import { LyricsSection } from "./media/LyricsSection";
+import type { Lyrics } from "./media/lyrics";
 import {
 	PlayIcon,
 	PauseIcon,
@@ -27,6 +30,7 @@ interface MediaInfo {
 	duration_ms?: number;
 	seek_enabled?: boolean;
 	position_updated_at?: number;
+	lyrics?: Lyrics;
 }
 
 interface CompactMediaPlayerProps {
@@ -97,22 +101,6 @@ export function TitleMarquee({ title }: { title: string }) {
 			</span>
 		</div>
 	);
-}
-
-function formatTime(ms: number): string {
-	if (ms <= 0) return "0:00";
-	const totalSeconds = Math.floor(ms / 1000);
-	const minutes = Math.floor(totalSeconds / 60);
-	const seconds = totalSeconds % 60;
-	return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function formatRemaining(elapsed: number, duration: number): string {
-	const remaining = Math.max(0, duration - elapsed);
-	const totalSeconds = Math.floor(remaining / 1000);
-	const minutes = Math.floor(totalSeconds / 60);
-	const seconds = totalSeconds % 60;
-	return `-${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 export function CompactMediaPlayer({
@@ -402,6 +390,13 @@ export function CompactMediaPlayer({
 					</motion.div>
 				)}
 			</AnimatePresence>
+			{mediaInfo.lyrics && mediaInfo.lyrics.lines.length > 0 && (
+				<LyricsSection
+					lyrics={mediaInfo.lyrics}
+					generation={mediaInfo.target_generation ?? ""}
+					positionMs={displayPosition}
+				/>
+			)}
 			{queueExpanded && (
 				<QueueDrawer
 					generation={mediaInfo.target_generation ?? ""}

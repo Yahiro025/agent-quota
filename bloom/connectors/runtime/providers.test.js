@@ -38,6 +38,7 @@ test("Spotify wire data preserves occurrence IDs and int64 revisions without acc
 		["a2", "a2", "spotify:track:a"]
 	]);
 	expect(q.current_id).toBe("current");
+	expect(q.current_uri).toBe("spotify:track:current");
 	expect(q.queue_available).toBe(true);
 	expect(JSON.stringify(q)).not.toContain("private-do-not-export");
 });

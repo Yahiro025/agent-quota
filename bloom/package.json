@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:app": "node scripts/dev-app.mjs",
     "build": "tsc && vite build",
     "e2e": "playwright test",
     "preview": "vite preview",

@@ -22,7 +22,10 @@ use tauri::{AppHandle, Emitter};
 
 /// `hello` opens every session: the helper answers `ready`, then one
 /// snapshot of its current book, then starts a refresh of every agent.
-const HELLO: &[u8] = b"{\"v\":1,\"op\":\"hello\"}\n";
+pub fn hello_line(hidden: &[String]) -> String {
+    let hidden = serde_json::json!(hidden);
+    format!("{{\"v\":1,\"op\":\"hello\",\"hidden\":{hidden}}}\n")
+}
 
 /// Tauri event carrying the readings array to the frontend.
 const EVENT_SNAPSHOT: &str = "quota-snapshot";
@@ -150,11 +153,11 @@ pub fn hidden_ids(value: &Value) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(&raw).unwrap_or_default()
 }
 
-/// The hidden ids already stored in settings, for the first agents line of a
-/// helper lifetime. Missing or malformed settings poll every agent.
-pub fn hidden_from_setting(raw: Option<&str>) -> Vec<String> {
-    raw.and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
-        .unwrap_or_default()
+fn current_hidden_ids() -> Vec<String> {
+    let value = crate::state::SETTINGS_CACHE.get()
+        .and_then(|cache| cache.lock().ok()?.get(HIDDEN_AGENTS_KEY).cloned())
+        .unwrap_or(Value::Null);
+    hidden_ids(&value)
 }
 
 /// One agents request line. It always carries the whole hidden set, so a
@@ -164,16 +167,18 @@ pub fn agents_line(hidden: &[String]) -> String {
     format!("{{\"v\":1,\"op\":\"agents\",\"hidden\":{hidden}}}\n")
 }
 
-/// Writes one agents line to the running helper's stdin. A dead or restarting
+/// Sends the current hidden list to the running helper. A dead or restarting
 /// helper is a no-op; the next spawn reads the same setting from disk.
-pub fn write_agents(value: &Value) -> Result<(), String> {
+pub fn sync_hidden_agents() -> Result<(), String> {
     let Ok(mut slot) = HELPER_STDIN.lock() else {
         return Err("quota helper stdin lock poisoned".to_string());
     };
     let Some(stdin) = slot.as_mut() else {
         return Ok(());
     };
-    let line = agents_line(&hidden_ids(value));
+    // Read after acquiring the pipe lock: a delayed settings event must not
+    // restore an older hidden list over a newer saved value.
+    let line = agents_line(&current_hidden_ids());
     stdin
         .write_all(line.as_bytes())
         .and_then(|()| stdin.flush())
@@ -276,10 +281,8 @@ fn helper_exe() -> PathBuf {
 /// then reap. A kill is only sent on abnormal ends — after `bye` the child
 /// is already on its way out and killing it could interrupt its cleanup.
 fn run_once(exe: &Path, app: &AppHandle, state: &mut HelperState) -> std::io::Result<()> {
-    let hidden = hidden_from_setting(
-        crate::utils::get_setting_str(app, HIDDEN_AGENTS_KEY).as_deref(),
-    );
-    let agents = agents_line(&hidden);
+    let hidden = current_hidden_ids();
+    let agents = hello_line(&hidden);
     let mut child = helper_command(exe).spawn()?;
     let result = pump(&mut child, app, state, &agents);
     if result.is_err() {
@@ -297,7 +300,7 @@ fn open_pipe(child: &mut Child, agents: &str) -> std::io::Result<Option<ChildStd
     let Some(mut stdin) = child.stdin.take() else {
         return Ok(None);
     };
-    stdin.write_all(HELLO)?;
+    // One hello installs visibility before starting any reads.
     stdin.write_all(agents.as_bytes())?;
     stdin.flush()?;
     match HELPER_STDIN.lock() {
@@ -323,6 +326,8 @@ fn pump(
     // back in _keep_open, which must live until the read loop ends —
     // dropping it earlier would close the pipe and make the helper exit.
     let _keep_open = open_pipe(child, agents)?;
+    // A save between spawn and parking stdin must reach this lifetime too.
+    let _ = sync_hidden_agents();
     let Some(stdout) = child.stdout.take() else {
         return Ok(());
     };
@@ -372,6 +377,15 @@ mod tests {
         let replaced = place_helper(&dir, b"two").unwrap();
         assert_eq!(std::fs::read(&replaced).unwrap(), b"two");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hello_installs_visibility_in_the_first_message() {
+        let line = hello_line(&["claude".into(), "quoted\"id".into()]);
+        let value: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(value["op"], "hello");
+        assert_eq!(value["hidden"], serde_json::json!(["claude", "quoted\"id"]));
+        assert_eq!(line.lines().count(), 1);
     }
 
     #[test]
@@ -485,7 +499,7 @@ mod tests {
 
         // Healthy lock: the pipe moves into HELPER_STDIN for refresh.
         let mut child = spawn();
-        assert!(open_pipe(&mut child, &agents_line(&[])).unwrap().is_none());
+        assert!(open_pipe(&mut child, &hello_line(&[])).unwrap().is_none());
         assert!(HELPER_STDIN.lock().unwrap().is_some());
         *HELPER_STDIN.lock().unwrap() = None;
         let _ = child.kill();
@@ -498,7 +512,7 @@ mod tests {
             panic!("poison the helper stdin lock");
         }));
         let mut child = spawn();
-        let mut stdin = open_pipe(&mut child, &agents_line(&[]))
+        let mut stdin = open_pipe(&mut child, &hello_line(&[]))
             .unwrap()
             .expect("poisoned lock returns the pipe to hold");
         stdin.write_all(b"echo alive\r\n").unwrap();

@@ -277,10 +277,6 @@ export function detailRows(a: QuotaAgent, now: Date, clock: boolean): QuotaMetri
 	return [];
 }
 
-export function failedCount(readings: QuotaAgent[]): number {
-	return readings.filter((a) => a.state === "failed").length;
-}
-
 export function anyBusy(readings: QuotaAgent[]): boolean {
 	return readings.some((a) => a.busy === true);
 }
@@ -290,15 +286,6 @@ export function defaultSelection(readings: QuotaAgent[]): string | undefined {
 	return (
 		readings.find((a) => urgent(a) || a.state === "failed")?.id ?? readings[0]?.id
 	);
-}
-
-// One reset instant as a countdown or wall-clock string; a past instant
-// reads "now" rather than a negative countdown.
-export function formatReset(at: string, now: Date, clock: boolean): string {
-	const instant = new Date(at);
-	if (Number.isNaN(instant.getTime())) return "";
-	if (instant.getTime() <= now.getTime()) return "now";
-	return clock ? clockText(instant) : countdownText(instant, now);
 }
 
 // `resets in …` text for a detail row: whole hours drop the trailing "0m",
@@ -325,13 +312,7 @@ const sameLocalDay = (a: Date, b: Date): boolean =>
 // detailResetLabel in main.go: resetText fills in when no instant arrives;
 // a passed instant shows its wall-clock date rather than "in -3m".
 const detailResetText = (row: QuotaDetail, now: Date, clock: boolean): string => {
-	const instant = row.resetAt ? new Date(row.resetAt) : undefined;
-	if (!instant || Number.isNaN(instant.getTime())) {
-		return row.resetText ? "resets " + row.resetText : "";
-	}
-	if (instant.getTime() <= now.getTime()) return "resets now";
-	if (clock) return "resets " + wallClock(instant, now);
-	return "resets in " + detailCountdown(instant, now);
+    return isoResetText(row.resetAt, now, clock) || (row.resetText ? "resets " + row.resetText : "");
 };
 
 // A reset5h ISO instant as the same reset sentence a detail row gets; the

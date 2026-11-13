@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, type ComponentType } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useSettingsSync } from "./useSettingsSync";
 import { listen } from "@tauri-apps/api/event";
 import {
 	Sun,
@@ -90,7 +91,7 @@ function getWeatherIcon(condition: string, isDay = true): ComponentType<LucidePr
 	}
 }
 
-async function fetchWeatherForCoords(
+export async function fetchWeatherForCoords(
 	latitude: number,
 	longitude: number,
 	unit: string
@@ -106,7 +107,7 @@ async function fetchWeatherForCoords(
 
 	const data = await response.json();
 
-	if (!data?.current?.temperature_2m) {
+	if (typeof data?.current?.temperature_2m !== "number" || !Number.isFinite(data.current.temperature_2m)) {
 		throw new Error("Invalid weather API response shape");
 	}
 
@@ -276,28 +277,13 @@ export function useWeather(enabled: boolean) {
 			.catch(() => {});
 	}, []);
 
-	// Listen for temp unit changes
-	useEffect(() => {
-		const unlisten = listen<{ key: string; value: any }>("settings-changed", (event) => {
-			const { key, value } = event.payload;
-			if (key === "temp-unit") {
-				setTempUnit(value ? "fahrenheit" : "celsius");
-			}
-		});
-		const unlistenExternal = listen<{ key: string; value: any }>(
-			"settings-external-changed",
-			(event) => {
-				const { key, value } = event.payload;
-				if (key === "bloom-temp-unit") {
-					setTempUnit(String(value));
-				}
-			}
-		);
-		return () => {
-			unlisten.then((fn) => fn());
-			unlistenExternal.then((fn) => fn());
-		};
-	}, []);
+    useSettingsSync({
+        "bloom-temp-unit": (value) => setTempUnit(value === "fahrenheit" ? "fahrenheit" : "celsius"),
+        "bloom-weather-city": (value) => setCityName(String(value ?? ""))
+    }, [], (key) => {
+        if (key === "bloom-temp-unit") setTempUnit("celsius");
+        if (key === "bloom-weather-city") setCityName("");
+    });
 
 	// Listen for instant refresh from Settings (direct Tauri event with coords)
 	useEffect(() => {
@@ -315,19 +301,6 @@ export function useWeather(enabled: boolean) {
 			unlisten.then((fn) => fn());
 		};
 	}, [enabled, doFetch]);
-
-	// Listen for city name changes from Settings
-	useEffect(() => {
-		const unlisten = listen<{ key: string; value: any }>("settings-changed", (event) => {
-			const { key, value } = event.payload;
-			if (key === "weather-city") {
-				setCityName(String(value || ""));
-			}
-		});
-		return () => {
-			unlisten.then((fn) => fn());
-		};
-	}, []);
 
 	// Initial fetch + 30-min interval
 	useEffect(() => {

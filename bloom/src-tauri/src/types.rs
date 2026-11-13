@@ -20,6 +20,8 @@ pub struct AudioVisualizationData {
     pub frequencies: Vec<f32>,
 }
 
+use crate::media_queue::Lyrics;
+
 #[derive(Serialize, Clone)]
 pub struct MediaInfo {
     #[serde(default)]
@@ -40,6 +42,8 @@ pub struct MediaInfo {
     pub seek_enabled: bool,
     #[serde(default)]
     pub position_updated_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lyrics: Option<Lyrics>,
 }
 
 pub enum SystemCommand {
