@@ -13,3 +13,8 @@ agentquota.exe
 .superpowers/
 .gstack/
 .debug-launch/
+# Local agent tool state (session logs and imported preferences)
+.qoder/
+.commandcode/
+# Stale build output; the helper builds to agentquota.exe
+agent-quota.exe
