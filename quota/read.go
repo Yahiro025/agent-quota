@@ -385,10 +385,14 @@ func Claude(now time.Time) Reading {
 	}
 	r := claudeOAuth(now)
 	if r.OK() {
+		recordClaudeReadingSnapshot(r, now)
 		return r
 	}
 	if fresh, ok := claudeSnapshotReading(now); ok {
 		return fresh
+	}
+	if cached, ok := claudeCachedReading(now); ok {
+		return cached
 	}
 	if strings.Contains(r.Detail, "sign-in has expired") {
 		r.Detail = "Claude Code’s sign-in has expired — Claude quota updates next time Claude Code runs."

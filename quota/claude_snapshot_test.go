@@ -237,3 +237,143 @@ func TestPollerRefreshOneReadsOnlyRequestedEnabledProvider(t *testing.T) {
 	}
 	p.mu.Unlock()
 }
+
+func TestClaudeFallsBackToCachedUsageUtilizationInClaudeJson(t *testing.T) {
+	base := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	claudeHome := filepath.Join(t.TempDir(), "claude-home")
+	t.Setenv("CLAUDE_CONFIG_DIR", claudeHome)
+	if err := os.MkdirAll(claudeHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Exact state when Claude Code invalid_grant clears accessToken/refreshToken.
+	clearedCreds := `{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":0,"subscriptionType":"pro"}}`
+	if err := os.WriteFile(filepath.Join(claudeHome, ".credentials.json"), []byte(clearedCreds), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fetchedAt := base.Add(-2 * time.Hour)
+	expiredFive := base.Add(-30 * time.Minute).Format(time.RFC3339Nano)
+	activeWeek := base.Add(96 * time.Hour).Format(time.RFC3339Nano)
+	claudeJSON := fmt.Sprintf(`{
+		"oauthAccount":{"accountUuid":"acc-1","organizationType":"claude_pro"},
+		"cachedUsageUtilization":{
+			"fetchedAtMs":%d,
+			"accountUuid":"acc-1",
+			"utilization":{
+				"five_hour":{"utilization":45,"resets_at":%q},
+				"seven_day":{"utilization":2,"resets_at":%q}
+			}
+		}
+	}`, fetchedAt.UnixMilli(), expiredFive, activeWeek)
+	if err := os.WriteFile(filepath.Join(claudeHome, ".claude.json"), []byte(claudeJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got := Claude(base)
+	if !got.OK() {
+		t.Fatalf("Claude() failed despite cachedUsageUtilization in .claude.json: %#v", got)
+	}
+	if *got.Used != 2 {
+		t.Fatalf("Used = %v, want 2 (expired 5h window should roll to 0): %#v", *got.Used, got)
+	}
+	if got.Plan != "Pro" {
+		t.Fatalf("Plan = %q, want Pro", got.Plan)
+	}
+	if !got.ObservedAt.Equal(fetchedAt) {
+		t.Fatalf("ObservedAt = %v, want %v", got.ObservedAt, fetchedAt)
+	}
+	if len(got.Windows) != 2 || got.Windows[0].Used != 0 || got.Windows[1].Used != 2 {
+		t.Fatalf("Windows = %#v, want [5h:0, week:2]", got.Windows)
+	}
+
+	// Also works from backups/.claude.json.backup.* when .claude.json is absent.
+	_ = os.Remove(filepath.Join(claudeHome, ".claude.json"))
+	_ = os.Remove(filepath.Join(claudeHome, ".credentials.json"))
+	backupDir := filepath.Join(claudeHome, "backups")
+	if err := os.MkdirAll(backupDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, ".claude.json.backup.1794149984830"), []byte(claudeJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gotBackup := Claude(base)
+	if !gotBackup.OK() || *gotBackup.Used != 2 || gotBackup.Plan != "Pro" {
+		t.Fatalf("Claude() failed to read backup config: %#v", gotBackup)
+	}
+}
+
+func TestClaudeFallsBackToPersistedSnapshotsAndChoosesNewestSource(t *testing.T) {
+	base := time.Date(2026, 11, 8, 10, 0, 0, 0, time.UTC)
+	claudeHome := filepath.Join(t.TempDir(), "claude-home")
+	t.Setenv("CLAUDE_CONFIG_DIR", claudeHome)
+	if err := os.MkdirAll(claudeHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	expiredCreds := fmt.Sprintf(`{"claudeAiOauth":{"accessToken":"tok","expiresAt":%d,"subscriptionType":"max"}}`, base.Add(-time.Hour).UnixMilli())
+	if err := os.WriteFile(filepath.Join(claudeHome, ".credentials.json"), []byte(expiredCreds), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	fiveReset := base.Add(time.Hour).Unix()
+	weekReset := base.Add(48 * time.Hour).Unix()
+	// Snapshot has 5h=44%, week=22% at base.
+	if !CaptureClaudeSnapshot(snapshotInput("session-1", 44, fiveReset, weekReset, "100"), base) {
+		t.Fatal("failed to capture initial snapshot")
+	}
+
+	// 2 hours later: snapshot is > 5m old and 5h window has expired, while week window (22%) is still active.
+	later := base.Add(2 * time.Hour)
+	got := Claude(later)
+	if !got.OK() || *got.Used != 22 {
+		t.Fatalf("Claude(later) = %#v, want OK with 22%% from weekly window after 5h reset passed", got)
+	}
+	if got.Plan != "Max" {
+		t.Fatalf("Plan = %q, want Max", got.Plan)
+	}
+	if len(got.Windows) != 2 || got.Windows[0].Used != 0 || got.Windows[1].Used != 22 {
+		t.Fatalf("Windows = %#v, want [5h:0, week:22]", got.Windows)
+	}
+
+	// Write a newer .claude.json cachedUsageUtilization at base + 90m (week = 55%).
+	fetchedAt := base.Add(90 * time.Minute)
+	claudeJSON := fmt.Sprintf(`{
+		"cachedUsageUtilization":{
+			"fetchedAtMs":%d,
+			"utilization":{
+				"five_hour":{"utilization":12,"resets_at":%q},
+				"seven_day":{"utilization":55,"resets_at":%q}
+			}
+		}
+	}`, fetchedAt.UnixMilli(), later.Add(time.Hour).Format(time.RFC3339Nano), later.Add(40*time.Hour).Format(time.RFC3339Nano))
+	if err := os.WriteFile(filepath.Join(claudeHome, ".claude.json"), []byte(claudeJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gotNewerConfig := Claude(later)
+	if !gotNewerConfig.OK() || *gotNewerConfig.Used != 55 {
+		t.Fatalf("Claude(later) with newer .claude.json = %#v, want 55%%", gotNewerConfig)
+	}
+
+	// Capture an even newer snapshot at base + 110m (5h = 64%, week = 32%).
+	if !CaptureClaudeSnapshot(snapshotInput("session-2", 64, later.Add(2*time.Hour).Unix(), weekReset, "200"), base.Add(110*time.Minute)) {
+		t.Fatal("failed to capture newer snapshot")
+	}
+	gotNewerSnap := Claude(later)
+	if !gotNewerSnap.OK() || *gotNewerSnap.Used != 64 {
+		t.Fatalf("Claude(later) with newer snapshot = %#v, want 64%%", gotNewerSnap)
+	}
+
+	// Persisting an OAuth reading at base + 115m (5h = 78%, week = 40%) makes it the newest fallback.
+	oauthReading := ParseClaudeUsage(
+		fmt.Sprintf(`{"five_hour":{"utilization":78,"resets_at":%q},"seven_day":{"utilization":40,"resets_at":%q}}`,
+			later.Add(3*time.Hour).Format(time.RFC3339Nano),
+			later.Add(40*time.Hour).Format(time.RFC3339Nano)),
+		sp("max"),
+		base.Add(115*time.Minute),
+	)
+	if !recordClaudeReadingSnapshot(oauthReading, base.Add(115*time.Minute)) {
+		t.Fatal("failed to record OAuth reading snapshot")
+	}
+	gotOAuthSnap := Claude(later)
+	if !gotOAuthSnap.OK() || *gotOAuthSnap.Used != 78 {
+		t.Fatalf("Claude(later) with recorded OAuth snapshot = %#v, want 78%%", gotOAuthSnap)
+	}
+}

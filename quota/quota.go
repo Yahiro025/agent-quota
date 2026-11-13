@@ -922,6 +922,7 @@ func ParseClaudeUsage(text string, plan *string, now time.Time) Reading {
 		}
 		if reset != nil && !reset.After(now) {
 			used = 0
+			reset = nil
 		}
 		// The 5h instant is kept no matter which window ends up on top: Detail
 		// shows the fuller window's reset, so the pill needs its own copy.
@@ -933,10 +934,10 @@ func ParseClaudeUsage(text string, plan *string, now time.Time) Reading {
 	if len(windows) == 0 {
 		return Fail("Anthropic didn’t report plan usage.")
 	}
-	// MaxBy: the first of equals.
+	// MaxBy: the first of equals, preferring an active reset when both are equal.
 	top := windows[0]
 	for _, w := range windows[1:] {
-		if w.used > top.used {
+		if w.used > top.used || (w.used == top.used && top.reset == nil && w.reset != nil) {
 			top = w
 		}
 	}
