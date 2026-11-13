@@ -1,7 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod battery;
-mod bluetooth;
 mod commands;
 mod diagnostics;
 mod excluded;
@@ -18,7 +16,6 @@ mod tray;
 mod types;
 mod updater;
 mod utils;
-mod wifi;
 mod window_region;
 mod myfinder;
 
@@ -119,9 +116,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             hide_native_osd,
             open_settings_window,
-            open_wifi_settings,
             open_sound_settings,
-            open_notification_center,
 
             set_ignore_cursor_events,
             set_window_height,
@@ -179,7 +174,6 @@ fn main() {
             restart_bloom,
             get_volume,
             get_volume_state,
-            get_brightness,
             set_volume,
             get_audio_sessions,
             set_app_volume,
@@ -190,20 +184,9 @@ fn main() {
             load_settings,
             settings_file_readable,
             capture_window_thumbnail,
-            get_wifi_status,
-            set_wifi_state,
-            get_bluetooth_state,
-            set_bluetooth_state,
-            open_bluetooth_settings,
-            open_airplane_mode_settings,
             set_brightness,
-            get_battery_saver_state,
-            open_battery_saver_settings,
-            open_focus_assist_settings,
-            battery::get_battery_details,
             get_system_accent_color,
             get_cpu_usage,
-            get_ram_usage,
             get_disk_space,
             get_network_speed,
             export_settings_to_file,
@@ -212,18 +195,6 @@ fn main() {
             updater::check_for_updates,
             updater::install_update,
             updater::get_update_state,
-            wifi::wifi_list_networks,
-            wifi::wifi_scan,
-            wifi::wifi_connect,
-            wifi::wifi_disconnect,
-            wifi::wifi_forget,
-            wifi::wifi_open_settings,
-            bluetooth::bluetooth_list_devices,
-            bluetooth::bluetooth_set_connected,
-            bluetooth::bluetooth_discovery,
-            bluetooth::bluetooth_pair,
-            bluetooth::bluetooth_pairing_respond,
-            bluetooth::bluetooth_unpair
         ])
         .setup(|app| {
             init_taskbar_marker(app.handle());
@@ -345,8 +316,6 @@ fn main() {
             setup_audio_visualization(app.handle().clone());
             setup_settings_watcher(app.handle().clone());
             diagnostics::record("services_ready", "hooks and settings watcher initialized");
-            wifi::setup_wifi_notifications(app.handle().clone());
-            bluetooth::setup_bluetooth_notifications(app.handle().clone());
 
             // Quota helper supervisor: returns at once on its own thread, so
             // setup never blocks on agentquota.exe being present.

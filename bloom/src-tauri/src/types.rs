@@ -86,13 +86,6 @@ pub struct VolumeChangeEvent {
     pub is_muted: bool,
 }
 
-#[derive(Clone, Serialize)]
-pub struct WifiStatus {
-    pub enabled: bool,
-    pub connected: bool,
-    /// The connected network's name, for the controls tile.
-    pub ssid: Option<String>,
-}
 
 #[derive(Clone, Serialize)]
 pub struct AudioSessionInfo {

@@ -10,7 +10,7 @@ use crate::services::{
 };
 use crate::state::*;
 use crate::types::{
-    AppInfo, AudioSessionInfo, BrightnessChangeEvent, IntRect, VolumeChangeEvent, WifiStatus,
+    AppInfo, AudioSessionInfo, BrightnessChangeEvent, IntRect, VolumeChangeEvent,
 };
 use crate::utils::*;
 use std::collections::HashMap;
@@ -2017,23 +2017,6 @@ pub fn sync_overlay_position(app: AppHandle) {
 }
 
 #[tauri::command]
-pub fn open_wifi_settings() {
-    unsafe {
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::Shell::ShellExecuteA;
-        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        let _ = ShellExecuteA(
-            Some(HWND(std::ptr::null_mut())),
-            windows::core::PCSTR(c"open".as_ptr() as *const u8),
-            windows::core::PCSTR(c"ms-availablenetworks:".as_ptr() as *const u8),
-            windows::core::PCSTR::null(),
-            windows::core::PCSTR::null(),
-            SW_SHOWNORMAL,
-        );
-    }
-}
-
-#[tauri::command]
 pub fn open_sound_settings() {
     unsafe {
         use windows::Win32::Foundation::HWND;
@@ -2043,23 +2026,6 @@ pub fn open_sound_settings() {
             Some(HWND(std::ptr::null_mut())),
             windows::core::PCSTR(c"open".as_ptr() as *const u8),
             windows::core::PCSTR(c"ms-settings:sound".as_ptr() as *const u8),
-            windows::core::PCSTR::null(),
-            windows::core::PCSTR::null(),
-            SW_SHOWNORMAL,
-        );
-    }
-}
-
-#[tauri::command]
-pub fn open_notification_center() {
-    unsafe {
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::Shell::ShellExecuteA;
-        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        let _ = ShellExecuteA(
-            Some(HWND(std::ptr::null_mut())),
-            windows::core::PCSTR(c"open".as_ptr() as *const u8),
-            windows::core::PCSTR(c"ms-actioncenter:".as_ptr() as *const u8),
             windows::core::PCSTR::null(),
             windows::core::PCSTR::null(),
             SW_SHOWNORMAL,
@@ -2758,57 +2724,6 @@ pub async fn capture_window_thumbnail(
 // ── Radio helpers — Windows Runtime Windows.Devices.Radios ───────────────────
 // Replaces PowerShell -ExecutionPolicy Bypass scripts for WiFi/Bluetooth state.
 
-fn get_radio_state_sync(kind: windows::Devices::Radios::RadioKind) -> Result<bool, String> {
-    use windows::Devices::Radios::{Radio, RadioState};
-    unsafe {
-        let _ = windows::Win32::System::Com::CoInitializeEx(
-            None,
-            windows::Win32::System::Com::COINIT_MULTITHREADED,
-        );
-    }
-    let radios = Radio::GetRadiosAsync()
-        .and_then(|op| op.get())
-        .map_err(|e| e.to_string())?;
-    for i in 0..radios.Size().unwrap_or(0) {
-        if let Ok(radio) = radios.GetAt(i) {
-            if radio.Kind().ok() == Some(kind) {
-                return Ok(radio.State().ok() == Some(RadioState::On));
-            }
-        }
-    }
-    Ok(false)
-}
-
-fn set_radio_state_sync(
-    kind: windows::Devices::Radios::RadioKind,
-    enabled: bool,
-) -> Result<(), String> {
-    use windows::Devices::Radios::{Radio, RadioState};
-    unsafe {
-        let _ = windows::Win32::System::Com::CoInitializeEx(
-            None,
-            windows::Win32::System::Com::COINIT_MULTITHREADED,
-        );
-    }
-    let radios = Radio::GetRadiosAsync()
-        .and_then(|op| op.get())
-        .map_err(|e| e.to_string())?;
-    for i in 0..radios.Size().unwrap_or(0) {
-        if let Ok(radio) = radios.GetAt(i) {
-            if radio.Kind().ok() == Some(kind) {
-                let target = if enabled {
-                    RadioState::On
-                } else {
-                    RadioState::Off
-                };
-                let _ = radio.SetStateAsync(target).and_then(|op| op.get());
-                return Ok(());
-            }
-        }
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub fn get_volume() -> f32 {
     crate::state::CURRENT_VOLUME.load(std::sync::atomic::Ordering::Relaxed) as f32 / 100.0
@@ -2858,93 +2773,7 @@ pub async fn get_volume_state() -> Result<VolumeChangeEvent, String> {
     .map_err(|e| e.to_string())?
 }
 
-#[tauri::command]
-pub fn get_brightness() -> u32 {
-    crate::state::CURRENT_BRIGHTNESS.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Wi-Fi radio and association state, so the notch quick settings tile can show
-/// Off / On / the connected network. The radio state alone only says Wi-Fi is
-/// on, so the WLAN API supplies the association.
-#[tauri::command]
-pub async fn get_wifi_status() -> Result<WifiStatus, String> {
-    tauri::async_runtime::spawn_blocking(|| -> Result<WifiStatus, String> {
-        let enabled = get_radio_state_sync(windows::Devices::Radios::RadioKind::WiFi)?;
-        let ssid = if enabled {
-            crate::wifi::connected_ssid()
-        } else {
-            None
-        };
-        Ok(WifiStatus {
-            enabled,
-            connected: ssid.is_some(),
-            ssid,
-        })
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub async fn set_wifi_state(enabled: bool) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        set_radio_state_sync(windows::Devices::Radios::RadioKind::WiFi, enabled)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub async fn get_bluetooth_state() -> Result<bool, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        get_radio_state_sync(windows::Devices::Radios::RadioKind::Bluetooth)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub async fn set_bluetooth_state(enabled: bool) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        set_radio_state_sync(windows::Devices::Radios::RadioKind::Bluetooth, enabled)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
 // Settings openers — use ShellExecuteA directly instead of spawning powershell
-
-#[tauri::command]
-pub fn open_bluetooth_settings() {
-    unsafe {
-        use windows::Win32::UI::Shell::ShellExecuteA;
-        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        let _ = ShellExecuteA(
-            None,
-            windows::core::PCSTR(c"open".as_ptr() as *const u8),
-            windows::core::PCSTR(c"ms-settings:bluetooth".as_ptr() as *const u8),
-            windows::core::PCSTR::null(),
-            windows::core::PCSTR::null(),
-            SW_SHOWNORMAL,
-        );
-    }
-}
-
-#[tauri::command]
-pub fn open_airplane_mode_settings() {
-    unsafe {
-        use windows::Win32::UI::Shell::ShellExecuteA;
-        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        let _ = ShellExecuteA(
-            None,
-            windows::core::PCSTR(c"open".as_ptr() as *const u8),
-            windows::core::PCSTR(c"ms-settings:network-airplanemode".as_ptr() as *const u8),
-            windows::core::PCSTR::null(),
-            windows::core::PCSTR::null(),
-            SW_SHOWNORMAL,
-        );
-    }
-}
 
 #[tauri::command]
 pub fn set_brightness(app: AppHandle, brightness: u32) {
@@ -2957,65 +2786,6 @@ pub fn set_brightness(app: AppHandle, brightness: u32) {
     );
     if let Some(tx) = crate::state::BRIGHTNESS_SENDER.get() {
         let _ = tx.send(val);
-    }
-}
-
-#[tauri::command]
-pub async fn get_battery_saver_state() -> Result<bool, String> {
-    // Uses Windows Runtime PowerManager — no PowerShell required.
-    tauri::async_runtime::spawn_blocking(|| {
-        unsafe {
-            let _ = windows::Win32::System::Com::CoInitializeEx(
-                None,
-                windows::Win32::System::Com::COINIT_MULTITHREADED,
-            );
-        }
-        use windows::System::Power::{EnergySaverStatus, PowerManager};
-        match PowerManager::EnergySaverStatus() {
-            Ok(status) => Ok(status == EnergySaverStatus::On),
-            Err(_) => Ok(false), // No battery / not supported on this device
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub fn open_battery_saver_settings() {
-    unsafe {
-        use windows::Win32::UI::Shell::ShellExecuteA;
-        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        let _ = ShellExecuteA(
-            None,
-            windows::core::PCSTR(c"open".as_ptr() as *const u8),
-            windows::core::PCSTR(c"ms-settings:batterysaver".as_ptr() as *const u8),
-            windows::core::PCSTR::null(),
-            windows::core::PCSTR::null(),
-            SW_SHOWNORMAL,
-        );
-    }
-}
-
-// Focus assist is a Windows setting, so Bloom only opens the quiet-hours
-// page and does not pretend to mirror its on/off state.
-pub fn focus_assist_uri() -> &'static str {
-    "ms-settings:quiethours"
-}
-
-#[tauri::command]
-pub fn open_focus_assist_settings() {
-    unsafe {
-        use windows::Win32::UI::Shell::ShellExecuteA;
-        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        let uri = std::ffi::CString::new(focus_assist_uri()).unwrap();
-        let _ = ShellExecuteA(
-            None,
-            windows::core::PCSTR(c"open".as_ptr() as *const u8),
-            windows::core::PCSTR(uri.as_ptr() as *const u8),
-            windows::core::PCSTR::null(),
-            windows::core::PCSTR::null(),
-            SW_SHOWNORMAL,
-        );
     }
 }
 
@@ -3057,18 +2827,6 @@ pub fn get_cpu_usage() -> Result<u32, String> {
         }
         let usage = ((total - idle_delta) * 100) / total;
         Ok(usage as u32)
-    }
-}
-
-#[tauri::command]
-pub fn get_ram_usage() -> Result<f32, String> {
-    unsafe {
-        let mut mem = windows::Win32::System::SystemInformation::MEMORYSTATUSEX::default();
-        mem.dwLength =
-            std::mem::size_of::<windows::Win32::System::SystemInformation::MEMORYSTATUSEX>() as u32;
-        windows::Win32::System::SystemInformation::GlobalMemoryStatusEx(&mut mem)
-            .map_err(|e| format!("GlobalMemoryStatusEx failed: {e}"))?;
-        Ok(mem.dwMemoryLoad as f32)
     }
 }
 
@@ -4002,10 +3760,3 @@ pub async fn activate_tray_icon(tray_id: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?
 }
 
-#[cfg(test)]
-mod focus_assist_tests {
-    #[test]
-    fn focus_assist_uri_is_quiet_hours() {
-        assert_eq!(super::focus_assist_uri(), "ms-settings:quiethours");
-    }
-}
