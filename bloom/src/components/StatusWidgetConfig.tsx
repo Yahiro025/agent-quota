@@ -19,10 +19,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-	CloudSun,
-	BatteryFull,
 	Cpu,
-	MemoryStick,
 	HardDrive,
 	ArrowUpDown,
 	X,
@@ -45,17 +42,14 @@ interface WidgetDef {
 }
 
 const WIDGET_DEFS: WidgetDef[] = [
-	{ id: "weather", label: "Weather", icon: CloudSun, color: "#60a5fa" },
-	{ id: "battery", label: "Battery", icon: BatteryFull, color: "#4ade80" },
 	{ id: "cpu", label: "CPU", icon: Cpu, color: "#f97316" },
-	{ id: "ram", label: "RAM", icon: MemoryStick, color: "#a78bfa" },
 	{ id: "disk", label: "Disk", icon: HardDrive, color: "#38bdf8" },
 	{ id: "net", label: "Net", icon: ArrowUpDown, color: "#2dd4bf" }
 ];
 
 const DEFAULT_CONFIG: WidgetConfig = {
-	left: ["weather"],
-	right: ["battery"]
+	left: ["cpu"],
+	right: ["net"]
 };
 
 const MAX_PER_ZONE = 2;
@@ -196,13 +190,21 @@ interface StatusWidgetConfigProps {
 	onChange: (config: WidgetConfig) => void;
 }
 
+// A saved layout can still name widgets Bloom no longer has (weather,
+// battery, RAM). Dropping them here keeps the chip lookup total.
+const knownWidgets = (config: WidgetConfig | undefined): WidgetConfig => {
+	const keep = (ids: string[]) => ids.filter((id) => WIDGET_DEFS.some((w) => w.id === id));
+	const source = config || DEFAULT_CONFIG;
+	return { left: keep(source.left ?? []), right: keep(source.right ?? []) };
+};
+
 export function StatusWidgetConfig({ value, onChange }: StatusWidgetConfigProps) {
-	const [config, setConfig] = useState<WidgetConfig>(() => value || DEFAULT_CONFIG);
+	const [config, setConfig] = useState<WidgetConfig>(() => knownWidgets(value));
 	const [activeId, setActiveId] = useState<string | null>(null);
 	const draggedFromZone = useRef<"left" | "right" | null>(null);
 
 	useEffect(() => {
-		setConfig(value || DEFAULT_CONFIG);
+		setConfig(knownWidgets(value));
 	}, [value]);
 
 	const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));

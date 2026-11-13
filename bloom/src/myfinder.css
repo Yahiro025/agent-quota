@@ -269,11 +269,14 @@
 	border-radius: 11px;
 	color: #f4f2f6b3;
 }
-.myfinder-status .quota-housing .notch-quota-ctl.active {
-	color: #f4f2f6;
-	background: #ffffff24;
+.myfinder-status .quota-housing .notch-quota-controls:has(.active),
+.myfinder-status:hover .quota-housing .notch-quota-controls,
+.myfinder-status .pill-cluster:hover .quota-housing .notch-quota-controls {
+	max-width: 48px;
+	opacity: 1;
 }
 @media (hover: hover) {
+	.myfinder-status:hover .quota-housing .notch-quota-controls,
 	.myfinder-status .pill-cluster:hover .quota-housing .notch-quota-controls {
 		max-width: 48px;
 		opacity: 1;
@@ -351,7 +354,6 @@
    MyFinder that row is the bar itself, so reserving it left a blank band above the
    content and 36px too little room below. */
 .myfinder-panel .calendar-timer-content,
-.myfinder-panel .calendar-timer-content.split-view,
 .myfinder-panel .shelf-content {
 	top: 0;
 	height: 100%;
@@ -502,16 +504,6 @@
 	padding: 8px 0 0;
 	box-sizing: border-box;
 }
-.myfinder-panel .command-center-content-minimal,
-.myfinder-panel .myfinder-panel-body .command-center-content-minimal {
-	position: relative;
-	top: auto;
-	left: auto;
-	height: auto;
-	flex: 0 0 auto;
-	padding: 6px 4px 12px;
-	border-radius: 0;
-}
 .myfinder-panel .expanded-music-container,
 .myfinder-panel .myfinder-panel-body .expanded-music-container {
 	position: relative;
@@ -521,21 +513,15 @@
 	height: auto;
 	padding: 4px 4px 12px;
 }
-.myfinder-light .slider-track-premium,
-.myfinder-light .cc-classic-slider-track {
+.myfinder-light .slider-track-premium {
 	background: rgba(0, 0, 0, 0.12);
 }
-.myfinder-light .slider-track-premium:hover,
-.myfinder-light .cc-classic-slider-row:hover .cc-classic-slider-track {
+.myfinder-light .slider-track-premium:hover {
 	background: rgba(0, 0, 0, 0.18);
 }
 .myfinder-light .cmp-art-placeholder {
 	background: rgba(0, 0, 0, 0.08);
 	color: rgba(0, 0, 0, 0.45);
-}
-.myfinder-light .cc-circular-btn.active:hover {
-	background: rgba(32, 36, 40, 0.88);
-	color: #ffffff;
 }
 
 /* One grid for the list, subgrid per row: the bar, percent and reset columns
@@ -992,4 +978,9 @@
 		animation: none !important;
 		transition: none !important;
 	}
+}
+
+/* The timer panel: the shared header and tabs, then the timer itself. */
+.myfinder-panel-body > .timer-column {
+	padding: 4px 16px 16px;
 }

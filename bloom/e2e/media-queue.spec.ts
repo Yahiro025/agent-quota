@@ -53,12 +53,9 @@ test.beforeEach(async ({ page }) => {
 	await expect(page.locator(".bloom")).toBeVisible();
 	await page.waitForTimeout(1000);
 	await emit(page);
-	// The installed Bloom uses a waveform in the resting pill. Open the player
-	// through Overview, which also works when a source has no artwork.
-	const clock = page.locator(".time-flip-container");
-	await clock.click();
-	for (let i=0;i<4 && (await page.getByRole("button",{name:"Music",exact:true}).count())===0;i++) await clock.click();
-	await page.getByRole("button",{name:"Music",exact:true}).click();
+	// The resting pill shows the player's art (or its placeholder) as the
+	// button that opens the music view.
+	await page.getByRole("button", { name: "Open music" }).click();
 	await expect(page.locator(".cmp")).toBeVisible();
 });
 test("drawer preserves transport, selects one occurrence, and isolates scrolling", async ({

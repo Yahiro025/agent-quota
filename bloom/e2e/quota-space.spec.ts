@@ -62,14 +62,18 @@ const invokes = (page: Page): Promise<{ cmd: string; args: any }[]> =>
 
 const quotaSpace = (page: Page) => page.getByTestId("quota-space");
 
-// Click the island, then cycle panels until the quota space mounts. The
+// Click the resting pill row, then cycle panels until the quota space mounts.
+// The agent badge at the row's left end only cycles agents, so the click goes
+// to the last item in the row, a status widget. The
 // remembered default may already be quotas, so this never assumes a count.
 const openQuotaSpace = async (page: Page) => {
-	await page.locator("div.bloom").click();
+	const row = page.locator(".pill-cluster > :last-child");
 	const qs = quotaSpace(page);
+	// One panel leaves before the next mounts, so wait out that handoff after
+	// each click; clicking again too early cycles past the quota space.
 	for (let i = 0; i < 4 && (await qs.count()) === 0; i++) {
-		await page.locator(".time-flip-container").click();
-		await page.waitForTimeout(250);
+		await row.click();
+		await qs.waitFor({ state: "visible", timeout: 1000 }).catch(() => {});
 	}
 	await expect(qs).toBeVisible();
 };
@@ -228,7 +232,7 @@ test("compact moves the marks into the notch row", async ({ page }) => {
 	await expect(strip).toBeVisible();
 	await expect(strip.locator("[data-testid^='notch-quota-mark-']")).toHaveCount(5);
 	await expect(page.getByTestId("notch-quota-mark-cursor")).toHaveClass(/selected/);
-	await expect(page.locator(".time-center")).toBeVisible();
+	await expect(page.getByTestId("notch-quota-expand")).toBeVisible();
 	await expect
 		.poll(async () => (await page.locator("div.bloom").boundingBox())!.height)
 		.toBeLessThan(before.height);
@@ -496,7 +500,7 @@ test.describe("seven-agent density", () => {
 		await page.waitForTimeout(1200);
 		// Cycle to the next panel; the quota space must unmount and report a
 		// zero height so the window can shrink back.
-		const next = page.locator(".time-flip-container");
+		const next = page.locator(".pill-cluster > :last-child");
 		for (let i = 0; i < 4 && (await quotaSpace(page).count()) > 0; i++) {
 			await next.click();
 			await page.waitForTimeout(400);
@@ -676,7 +680,7 @@ test.describe("display bounds", () => {
 });
 
 /* The collapsed notch's hover badge: one compact ring tile for the pinned
-   agent (or the busiest reading when nothing is pinned), beside the clock. */
+   agent (or the busiest reading when nothing is pinned), beside the status widgets. */
 test.describe("hover quota badge", () => {
 	// Close the space the beforeEach opened, then hover the collapsed pill.
 	const hoverCollapsed = async (page: Page) => {
@@ -685,12 +689,16 @@ test.describe("hover quota badge", () => {
 		await page.locator("div.bloom").hover();
 	};
 
-	test("shows the busiest agent's dual-ring mark beside the clock", async ({ page }) => {
+	test("shows the busiest agent's dual-ring mark beside the status widgets", async ({ page }) => {
 		await hoverCollapsed(page);
 		const badge = page.getByTestId("notch-hover-quota");
 		await expect(badge).toBeVisible();
-		// The clock stays centered and visible beside it.
-		await expect(page.locator(".time-center")).toBeVisible();
+		// Default CPU and Net widgets remain visible beside it.
+		const widgets = page.locator(".pill-cluster .passive-feature");
+		await expect(widgets).toHaveCount(2);
+		const badgeBox = (await badge.boundingBox())!;
+		const cpuBox = (await widgets.nth(0).boundingBox())!;
+		expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(cpuBox.x + 0.5);
 
 		// Cursor is the fixture's highest-used agent at 71%.
 		await expect(badge).toHaveAttribute("aria-label", "Cursor. Show next agent");
@@ -819,8 +827,8 @@ test.describe("hover quota badge", () => {
 		expect(await active()).toBe(before);
 	});
 
-	// Resting cluster order: waveform, quota, the clock, then album art.
-	test("shows waveform, quota, the clock and album art in resting order without overlap", async ({
+	// Resting cluster order: waveform, quota, then album art (no clock).
+	test("shows waveform, quota and album art in resting order without overlap", async ({
 		page
 	}) => {
 		await page.evaluate(() =>
@@ -840,24 +848,21 @@ test.describe("hover quota badge", () => {
 
 		const visualizer = page.locator(".visualizer-horizontal");
 		const badge = page.getByTestId("notch-hover-quota");
-		const time = page.locator(".time-center");
 		const art = page.locator(".album-art-activity");
 		await expect(visualizer).toBeVisible();
 		await expect(badge).toBeVisible();
-		await expect(time).toBeVisible();
+		await expect(page.locator(".time-center")).toHaveText("");
 		await expect(art).toBeVisible();
 		await expect(page.locator(".passive-feature")).toHaveCount(0);
 
 		const pillBox = await box(page, "div.bloom");
 		const visualizerBox = (await visualizer.boundingBox())!;
 		const badgeBox = (await badge.boundingBox())!;
-		const timeBox = (await time.boundingBox())!;
 		const artBox = (await art.boundingBox())!;
 
 		expect(visualizerBox.x).toBeGreaterThanOrEqual(pillBox.x - 0.5);
 		expect(visualizerBox.x + visualizerBox.width).toBeLessThanOrEqual(badgeBox.x + 0.5);
-		expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(timeBox.x + 0.5);
-		expect(timeBox.x + timeBox.width).toBeLessThanOrEqual(artBox.x + 0.5);
+		expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(artBox.x + 0.5);
 		expect(artBox.x + artBox.width).toBeLessThanOrEqual(pillBox.x + pillBox.width + 0.5);
 	});
 });
@@ -1013,19 +1018,18 @@ test.describe("motion polish verification", () => {
 			return await quotaWrapper.evaluate((el) => getComputedStyle(el).filter);
 		}, { timeout: 2000 }).toBe("none");
 
-		// Cycle to Command Center panel
-		const time = page.locator(".time-flip-container");
-		// Quota space -> qp-body -> calendar-timer-content -> command-center-content-minimal
-		for (let i = 0; i < 5; i++) {
-			await time.click();
-			if ((await page.locator(".cc-pills-grid").count()) > 0) break;
+		// Cycle to Timer panel
+		const row = page.locator(".pill-cluster > :last-child");
+		// Quota space -> qp-body -> calendar-timer-content
+		for (let i = 0; i < 4; i++) {
+			await row.click();
+			if ((await page.locator(".calendar-timer-content").count()) > 0) break;
 			await page.waitForTimeout(200);
 		}
-		const ccGrid = page.locator(".cc-pills-grid");
-		await expect(ccGrid).toBeVisible();
-		const ccWrapper = ccGrid.locator("..");
+		const timerPanel = page.locator(".calendar-timer-content");
+		await expect(timerPanel).toBeVisible();
 		await expect.poll(async () => {
-			return await ccWrapper.evaluate((el) => getComputedStyle(el).filter);
+			return await timerPanel.evaluate((el) => getComputedStyle(el).filter);
 		}, { timeout: 2000 }).toBe("none");
 	});
 

@@ -4,7 +4,7 @@ import "../components/QuickPanel.css";
 // The overview lists the notch's live activities; it is never the panel a
 // click opens. Opening still uses the remembered panel or this default,
 // declared once so the check "overview is not the default" has a source.
-export const DEFAULT_PANEL = "calendar";
+export const DEFAULT_PANEL = "timer";
 export const defaultPanel = (): string => DEFAULT_PANEL;
 
 // Row labels in display order. Each input already answers "is it on":

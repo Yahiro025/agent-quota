@@ -75,7 +75,7 @@ describe("QuotaPanel", () => {
 		expect(html).toContain('data-testid="quota-groups-toggle"');
 		expect(html).toContain('data-testid="quota-nav-quotas"');
 		expect(html).toContain('data-testid="quota-nav-music"');
-		expect(html).toContain('data-testid="quota-nav-controls"');
+		expect(html).toContain('data-testid="quota-nav-timer"');
 		// Music tab is disabled when musicAvailable={false}
 		const musicBtn = html.match(/<button\b[^>]*data-testid="quota-nav-music"[^>]*>/)?.[0] ?? "";
 		expect(musicBtn).toContain('disabled=""');
