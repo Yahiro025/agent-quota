@@ -37,3 +37,12 @@ The docked presentation that places a two-line readout inside the primary bottom
 
 **Top bar**:
 An application bar or taskbar reserved along the top edge of the primary display (such as MyDockFinder) that shrinks the desktop work area below the physical top edge of the monitor.
+
+### Media
+
+**Lyrics**:
+The words of the currently playing track. Synced lyrics carry a time for each line; unsynced lyrics have none. Bloom has lyrics only for Spotify tracks.
+_Avoid_: captions, subtitles
+
+**Lyrics section**:
+The compact area in the notch that shows the playing track's lyrics. It exists only while the track has lyrics.

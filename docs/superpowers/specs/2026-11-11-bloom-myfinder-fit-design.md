@@ -1,6 +1,14 @@
 # Bloom fitted into MyFinder
 
-Status: written specification for user review. Product implementation has not started.
+Status: implementation authorized by the user's “nice, implement it” after reviewing the integrated MyFinder material concept. Code and automated checks are complete; live native interaction verification and installation are pending.
+
+## Latest approved material (supersedes earlier black-housing references)
+
+The final accepted concept is a transparent centre status strip using MyFinder's foreground contrast, with a matching, lightly translucent menu beneath it. The resting black housing and opaque-black menu requirements in the original review below are superseded for MyFinder integration. Standalone Bloom keeps its existing theme. MyFinder still owns the full-width bar; Bloom does not paint a replacement bar or change MyFinder preferences.
+
+The implementation observes MyFinder's validated native window and a few visible material pixels outside Bloom's centre footprint. It retains only transient RGB values, with no captured image or derived settings file. When sampling is unavailable it retains the last valid material for the same window/process/monitor, or a neutral light fallback. Native visibility, cloaking, zero alpha, and an off-screen bar position gate idle Bloom. Real auto-hide/reveal behavior must still be checked on the installed MyFinder build.
+
+The user explicitly requested implementation of this reviewed concept; the earlier review/plan approval gates at the end of this historical specification are resolved by that instruction. Implementation notes and verification are recorded in `docs/superpowers/plans/2026-11-11-bloom-myfinder-fit.md`.
 
 ## Intent and approved direction
 
