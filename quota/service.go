@@ -79,6 +79,8 @@ func (s *Service) Handle(line string) (events []ServiceEvent, done bool) {
 	}
 	switch req.Op {
 	case "hello":
+		// Install startup visibility before any reader can start.
+		s.visible.SetHidden(req.Hidden)
 		events = []ServiceEvent{
 			{V: ServiceVersion, Op: "ready", Agents: slices.Clone(ItemAll[:])},
 			s.Snapshot(),

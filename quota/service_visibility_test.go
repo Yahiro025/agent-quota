@@ -1,8 +1,11 @@
 package quota
 
 import (
+	"io"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // The parent sends the hidden set with every visibility change, so an empty
@@ -105,5 +108,23 @@ func TestAgentsRequestHidesAndResumes(t *testing.T) {
 	}
 	if !vis.On(ItemClaude) {
 		t.Fatal("claude did not come back")
+	}
+}
+
+// Bloom includes visibility in hello so no hidden read can start first.
+func TestStartupVisibilityPrecedesFirstRead(t *testing.T) {
+	visible := NewVisibility()
+	reads := make(chan string, len(ItemAll))
+	poller := NewPoller(func(id string) Reading { reads <- id; return newReading(1, "ok") }, visible.On, func() {})
+	service := NewServiceWith(poller, visible)
+	hidden := strings.Join(ItemAll[:], `","`)
+	input := `{"v":1,"op":"hello","hidden":["` + hidden + `"]}` + "\n"
+	if err := Serve(strings.NewReader(input), io.Discard, service); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case id := <-reads:
+		t.Fatalf("hidden agent read at startup: %s", id)
+	case <-time.After(20 * time.Millisecond):
 	}
 }
