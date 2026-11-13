@@ -20,7 +20,7 @@ Usage is read from each agent's own local credentials and CLIs, then shown in th
 
 ## Operating Context
 
-Windows desktop. Bloom replaces the taskbar and draws a centered notch at the top of the primary monitor. The user works in Cursor and the other agents at the same time. Quota readings arrive from a helper process. The clock stays inside the notch; Cursor already owns the far corner of its own window.
+Windows desktop. Bloom replaces the taskbar and draws a centered notch at the top of the primary monitor. The user works in Cursor and the other agents at the same time. Quota readings arrive from a helper process. Bloom no longer draws a clock because MyDockFinder's bar already shows one.
 
 ## Capabilities and Constraints
 

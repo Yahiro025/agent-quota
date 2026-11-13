@@ -49,14 +49,9 @@ Watch it transform.
 <!-- SHOWCASE: GIF — music mode reacting to a song -->
 <!-- ![Music Visualizer](your-music-gif-url) -->
 
-**Command Center** — WiFi, Bluetooth, Do Not Disturb, volume, brightness. Everything you usually dig through settings for.
+**Status** — CPU, disk, and network stats. Your desktop, summarized.
 
-<!-- SHOWCASE: GIF — command center toggling controls -->
-<!-- ![Command Center](your-command-center-gif-url) -->
-
-**Status** — Battery, weather. Your desktop, summarized.
-
-**Calendar** — A month view with a Pomodoro timer. Focus without switching apps.
+**Timer** — A Pomodoro timer. Focus without switching apps.
 
 Each transition is spring-loaded.
 Width, height, border-radius, position — all animate independently.

@@ -46,29 +46,16 @@ Edit `settings.json` with any text editor while Bloom is running. Changes are ap
 | `bloom-notch-edge-delay` | milliseconds `"0"`–`"2000"`      | `"200"`   | In smart/peek mode, how long the cursor must rest against the top screen edge before the notch peeks. `"0"` reveals instantly. |
 | `bloom-quota-compact`    | `"true"` / `"false"`             | `"false"` | Draw the quota space as a strip of agent marks in the notch row, instead of the full panel below it.                            |
 
-### Weather
-
-| Key                              | Type                         | Default     | Description                                                                        |
-| -------------------------------- | ---------------------------- | ----------- | ---------------------------------------------------------------------------------- |
-| `bloom-weather-enabled`          | `"true"` / `"false"`         | `"true"`    | Show weather widget in the notch status bar.                                       |
-| `bloom-weather-city`             | string                       | `""`        | Manually set city name for weather. Empty string = auto-detect via IP geolocation. |
-| `bloom-weather-lat`              | number string                | (auto)      | Latitude coordinate for weather. Set automatically when a city is selected.        |
-| `bloom-weather-lon`              | number string                | (auto)      | Longitude coordinate for weather. Set automatically when a city is selected.       |
-| `bloom-weather-cached-temp`      | number string                | (none)      | Cached temperature value shown before next API fetch.                              |
-| `bloom-weather-cached-condition` | string                       | (none)      | Cached weather condition text (e.g. "Partly Cloudy").                              |
-| `bloom-temp-unit`                | `"celsius"` / `"fahrenheit"` | `"celsius"` | Temperature display unit.                                                          |
-
 ### Modules
 
-| Key                         | Type                              | Default  | Description                                                                                              |
-| --------------------------- | --------------------------------- | -------- | -------------------------------------------------------------------------------------------------------- |
-| `bloom-calendar-enabled`    | `"true"` / `"false"`              | `"true"` | Enable calendar/timer mode in the notch.                                                                 |
-| `bloom-music-mode-enabled`  | `"true"` / `"false"`              | `"true"` | Enable interactive music media widget.                                                                   |
-| `bloom-music-compact-notch` | `"true"` / `"false"`              | `"true"` | Show compact music display (visualizer + artwork) in collapsed notch.                                    |
-| `bloom-notch-remember-panel` | `"true"` / `"false"` | `"true"` | Click opens the last-used panel when on; when off, click opens `bloom-notch-default-panel`. |
-| `bloom-notch-default-panel` | `"calendar"` / `"command-center"` | `"calendar"` | Fixed panel opened on click when panel memory is off. If calendar is disabled, Command Center opens instead. |
-| `bloom-notch-last-panel`    | `"calendar"` / `"command-center"` | (unset)  | Last panel the notch was left on, saved by Bloom while panel memory is on. |
-| `bloom-notch-click-to-open` | `"true"` / `"false"` | (legacy) | Old setting read only when `bloom-notch-remember-panel` is absent; `"false"` now selects fixed-panel behavior. |
+| Key                         | Type                  | Default  | Description                                                                                                  |
+| --------------------------- | --------------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `bloom-music-mode-enabled`  | `"true"` / `"false"`  | `"true"` | Enable interactive music media widget.                                                                       |
+| `bloom-music-compact-notch` | `"true"` / `"false"`  | `"true"` | Show compact music display (visualizer + artwork) in collapsed notch.                                        |
+| `bloom-notch-remember-panel` | `"true"` / `"false"` | `"true"` | Click opens the last-used panel when on; when off, click opens `bloom-notch-default-panel`.                  |
+| `bloom-notch-default-panel` | `"timer"` / `"quotas"` | `"timer"` | Fixed panel opened on click when panel memory is off.                                                       |
+| `bloom-notch-last-panel`    | `"timer"` / `"quotas"` | (unset)  | Last panel the notch was left on, saved by Bloom while panel memory is on.                                   |
+| `bloom-notch-click-to-open` | `"true"` / `"false"`  | (legacy) | Old setting read only when `bloom-notch-remember-panel` is absent; `"false"` now selects fixed-panel behavior. |
 
 ### Shelf
 
@@ -108,15 +95,15 @@ Edit `settings.json` with any text editor while Bloom is running. Changes are ap
 
 ### Status Widgets
 
-| Key                    | Type        | Default                                    | Description                                                                                                 |
-| ---------------------- | ----------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `bloom-status-widgets` | JSON string | `{"left":["weather"],"right":["battery"]}` | Widget layout in collapsed notch. Available: `"weather"`, `"battery"`, `"cpu"`, `"ram"`, `"disk"`, `"net"`. |
+| Key                    | Type        | Default                            | Description                                                                           |
+| ---------------------- | ----------- | ---------------------------------- | ------------------------------------------------------------------------------------- |
+| `bloom-status-widgets` | JSON string | `{"left":["cpu"],"right":["net"]}` | Widget layout in collapsed notch. Available: `"cpu"`, `"disk"`, `"net"`. |
 
 Example:
 
 ```json
 {
-	"bloom-status-widgets": "{\"left\":[\"cpu\",\"ram\"],\"right\":[\"battery\",\"net\"]}"
+	"bloom-status-widgets": "{\"left\":[\"cpu\",\"disk\"],\"right\":[\"net\"]}"
 }
 ```
 

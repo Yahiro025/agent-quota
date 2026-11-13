@@ -50,7 +50,7 @@ These are the mistakes a new session makes without help.
 
 - The only quota UI is the Bloom notch. Do not launch the floating `agentquota.exe` window.
 - Notch quota rows stay flat: a usage bar and percent beside the label, reset on the right. The footer says "Just checked". Do not show a global "1 failed" reader count.
-- The resting notch stays a centered black housing only as wide as its contents. Do not paint a full-width menu bar. Cursor owns the top-right of its window, so the clock stays inside the pill.
+- The resting notch stays a centered black housing only as wide as its contents. Do not paint a full-width menu bar. The notch no longer draws a clock because MyDockFinder's bar already shows one.
 - Clicking the agent mark cycles to the next agent in snapshot order, including a failed or waiting agent, and does not open the quota panel. The rest of the pill still opens the panel.
 - The quota hover card keeps the countdown and shows the exact reset time under it: a 12-hour clock the same day, and the date in front of that clock on a later day.
 - When Cursor reports `autoPercentUsed` or `apiPercentUsed`, detail rows are only "Cursor Models" and "Other Models". Cents-only accounts keep the Plan, Overall, Team pooled, and On-demand rows.
