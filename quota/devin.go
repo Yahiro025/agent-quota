@@ -280,7 +280,6 @@ func devinVersion() string {
 	if devinVerOnce.set {
 		return devinVerOnce.v
 	}
-	devinVerOnce.set = true
 	exe := proc.Find("devin")
 	if exe == "" {
 		return ""
@@ -295,6 +294,9 @@ func devinVersion() string {
 	}
 	devinVerOnce.v = version
 	devinVerOnce.ok = true
+	// Latch only a good probe: a cold-start timeout must not freeze the gate
+	// for the process lifetime, and the 30 s poll retries it otherwise.
+	devinVerOnce.set = true
 	return devinVerOnce.v
 }
 
