@@ -29,9 +29,9 @@ describe("reduceAttention", () => {
 	});
 
 	test("an alert while deferred stores nothing and keeps the panel", () => {
-		const prev = idle({ panel: "command-center", deferred: true });
+		const prev = idle({ panel: "timer", deferred: true });
 		const next = reduceAttention(prev, { type: "alert", id: "quota" });
-		expect(next).toEqual({ panel: "command-center", alert: null, deferred: true });
+		expect(next).toEqual({ panel: "timer", alert: null, deferred: true });
 	});
 
 	test("alert-finished clears the alert and leaves the panel", () => {
@@ -51,8 +51,8 @@ describe("reduceAttention", () => {
 		expect(state.alert).toBe("quota");
 	});
 
-	test("typing, dragging, pairing, and connecting each set deferred", () => {
-		for (const type of ["typing", "dragging", "pairing", "connecting"] as const) {
+	test("typing and dragging each set deferred", () => {
+		for (const type of ["typing", "dragging"] as const) {
 			expect(reduceAttention(idle(), { type }).deferred).toBe(true);
 		}
 	});
@@ -76,7 +76,7 @@ describe("reduceAttention", () => {
 		expect(reduceAttention(noAlert, { type: "alert-finished" })).toBe(noAlert);
 
 		const deferred = idle({ deferred: true });
-		for (const type of ["typing", "dragging", "pairing", "connecting"] as const) {
+		for (const type of ["typing", "dragging"] as const) {
 			expect(reduceAttention(deferred, { type })).toBe(deferred);
 		}
 

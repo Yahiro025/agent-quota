@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, emit } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { getVersion } from "@tauri-apps/api/app";
 import type { UpdateCheckResult } from "../updater";
@@ -25,8 +25,6 @@ export function useSettings() {
 	const saveQueue = useRef<Promise<void>>(Promise.resolve());
 	const saveFailed = useRef(false);
 	const [autostart, setAutostart] = useState(false);
-	const [weatherEnabled, setWeatherEnabled] = useState(true);
-	const [calendarEnabled, setCalendarEnabled] = useState(true);
 	const [timerSoundEnabled, setTimerSoundEnabled] = useState(
 		() => localStorage.getItem("bloom-timer-sound-enabled") !== "false"
 	);
@@ -35,9 +33,8 @@ export function useSettings() {
 		() => (localStorage.getItem("bloom-notch-remember-panel") ??
 			localStorage.getItem("bloom-notch-click-to-open")) !== "false"
 	);
-	const [notchDefaultPanel, setNotchDefaultPanel] = useState<"calendar" | "command-center">(
-		() => localStorage.getItem("bloom-notch-default-panel") === "command-center"
-			? "command-center" : "calendar"
+	const [notchDefaultPanel, setNotchDefaultPanel] = useState<"timer" | "quotas">(
+		() => localStorage.getItem("bloom-notch-default-panel") === "quotas" ? "quotas" : "timer"
 	);
 	const [quotaHiddenAgents, setQuotaHiddenAgents] = useState<string[]>(() =>
 		parseHiddenAgents(localStorage.getItem(QUOTA_HIDDEN_AGENTS_KEY))
@@ -70,15 +67,9 @@ export function useSettings() {
 	const [timeFormat24h, setTimeFormat24h] = useState(
 		() => localStorage.getItem("bloom-time-format-24h") === "true"
 	);
-	const [tempUnitFahrenheit, setTempUnitFahrenheit] = useState(false);
-	const [cityName, setCityName] = useState("");
-	const [citySearchResults, setCitySearchResults] = useState<
-		Array<{ name: string; country: string; latitude: number; longitude: number }>
-	>([]);
-	const [showCityDropdown, setShowCityDropdown] = useState(false);
 	const [statusWidgets, setStatusWidgets] = useState<WidgetConfig>({
-		left: ["weather"],
-		right: ["battery"]
+		left: ["cpu"],
+		right: ["net"]
 	});
 	const [notchMode, setNotchMode] = useState("fixed");
 	const [notchEdgeDelay, setNotchEdgeDelay] = useState(() => {
@@ -141,14 +132,12 @@ export function useSettings() {
 				if (val !== null) setter(transform(val));
 			};
 
-			apply(getVal("bloom-weather-enabled"), setWeatherEnabled, readBool);
-			apply(getVal("bloom-calendar-enabled"), setCalendarEnabled, readBool);
 			apply(getVal("bloom-timer-sound-enabled"), setTimerSoundEnabled, readBool);
 			apply(getVal("bloom-music-mode-enabled"), setMusicModeEnabled, readBool);
 			apply(getVal("bloom-notch-remember-panel") ?? getVal("bloom-notch-click-to-open"),
 				setNotchRememberPanel, readBool);
 			apply(getVal("bloom-notch-default-panel"), setNotchDefaultPanel,
-				(v) => v === "command-center" ? "command-center" : "calendar");
+				(v) => v === "quotas" ? "quotas" : "timer");
 			apply(getVal(QUOTA_HIDDEN_AGENTS_KEY), setQuotaHiddenAgents, parseHiddenAgents);
 			apply(getVal("bloom-music-compact-notch"), setMusicCompactNotch, readBool);
 			apply(getVal("bloom-shelf-persist"), setShelfPersist, readBool);
@@ -163,15 +152,11 @@ export function useSettings() {
 			apply(getVal("bloom-volume-edge-enabled"), setVolumeEdgeEnabled, readBool);
 			apply(getVal("bloom-brightness-edge-enabled"), setBrightnessEdgeEnabled, readBool);
 
-			apply(getVal("bloom-temp-unit"), setTempUnitFahrenheit, (v) => v === "fahrenheit");
 			apply(getVal("bloom-scale"), setScale, parseFloat);
 			apply(getVal("bloom-low-battery-threshold"), setLowBatteryThreshold, parseInt);
 
 			apply(getVal("bloom-notch-mode"), setNotchMode, (v) => (v === "auto-hide" ? "smart" : v));
 			apply(getVal("bloom-notch-edge-delay"), setNotchEdgeDelay, parseInt);
-
-			const savedCity = getVal("bloom-weather-city");
-			if (savedCity) setCityName(savedCity);
 
 			apply(getVal("bloom-theme-mode"), setThemeMode, (v) => v);
 			apply(getVal("bloom-theme-color"), setThemeColor, (v) => v);
@@ -225,34 +210,6 @@ export function useSettings() {
 		return operation;
 	};
 
-	// Coordinates only need the backend settings file. Keep them out of the
-	// browser's localStorage mirror while preserving the same queued/error path.
-	const saveLocation = (key: "bloom-weather-lat" | "bloom-weather-lon", value: string | null): Promise<boolean> => {
-		const operation = saveQueue.current.then(async () => {
-			if (saveFailed.current) return false;
-			try {
-				await invoke<void>("save_setting", { key, value });
-			} catch (error) {
-				console.error(`Failed to save ${key}:`, error);
-				saveFailed.current = true;
-				sessionStorage.setItem("bloom-settings-save-error", "true");
-				setSaveError(true);
-				window.setTimeout(() => window.location.reload(), 0);
-				return false;
-			}
-			try {
-				localStorage.removeItem(key);
-				sessionStorage.removeItem("bloom-settings-save-error");
-			} catch (error) {
-				console.warn("Settings mirror cleanup failed:", error);
-			}
-			setSaveError(false);
-			return true;
-		});
-		saveQueue.current = operation.then(() => {});
-		return operation;
-	};
-
 	const dismissSaveError = () => {
 		sessionStorage.removeItem("bloom-settings-save-error");
 		setSaveError(false);
@@ -277,13 +234,11 @@ export function useSettings() {
 	useSettingsSync({
 		"bloom-notch-mode": setNotchMode,
 		"bloom-notch-edge-delay": setNotchEdgeDelay,
-		"bloom-weather-enabled": setWeatherEnabled,
-		"bloom-calendar-enabled": setCalendarEnabled,
 		"bloom-timer-sound-enabled": setTimerSoundEnabled,
 		"bloom-music-mode-enabled": setMusicModeEnabled,
 		"bloom-notch-remember-panel": setNotchRememberPanel,
 		"bloom-notch-default-panel": (v: unknown) =>
-			setNotchDefaultPanel(v === "command-center" ? "command-center" : "calendar"),
+			setNotchDefaultPanel(v === "quotas" ? "quotas" : "timer"),
 		[QUOTA_HIDDEN_AGENTS_KEY]: (v) => setQuotaHiddenAgents(parseHiddenAgents(v)),
 		"bloom-music-compact-notch": setMusicCompactNotch,
 		"bloom-media-ambience-enabled": setMediaAmbienceEnabled,
@@ -294,7 +249,6 @@ export function useSettings() {
 		"bloom-time-format-24h": setTimeFormat24h,
 		"bloom-low-battery-threshold": setLowBatteryThreshold,
 		"bloom-scale": setScale,
-		"bloom-temp-unit": (v) => setTempUnitFahrenheit(v === "fahrenheit"),
 		"bloom-auto-update": setAutoUpdate,
 		"bloom-volume-overlay-enabled": setVolumeOverlayEnabled,
 		"bloom-volume-edge-enabled": setVolumeEdgeEnabled,
@@ -304,8 +258,7 @@ export function useSettings() {
 		"bloom-theme-color": setThemeColor,
 		"bloom-theme-opacity": setThemeOpacity,
 		"bloom-theme-saturation": setThemeSaturation,
-		"bloom-theme-brightness": setThemeBrightness,
-		"bloom-weather-city": (v) => setCityName(v || "")
+		"bloom-theme-brightness": setThemeBrightness
     }, [], (key) => { if (key === QUOTA_HIDDEN_AGENTS_KEY) setQuotaHiddenAgents([]); });
 
 	// ── Listen for system accent changes (adaptive theme) ──
@@ -326,41 +279,6 @@ export function useSettings() {
 			unlisten.then((fn) => fn());
 		};
 	}, []);
-
-	// ── City search debounce ──
-	useEffect(() => {
-		if (cityName.trim().length < 2) {
-			setCitySearchResults([]);
-			setShowCityDropdown(false);
-			return;
-		}
-
-		const timeout = setTimeout(async () => {
-			try {
-				const res = await fetch(
-					`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=5&language=en&format=json`
-				);
-				const data = await res.json();
-				if (data.results && data.results.length > 0) {
-					setCitySearchResults(
-						data.results.map((r: any) => ({
-							name: r.name,
-							country: r.country || "",
-							latitude: r.latitude,
-							longitude: r.longitude
-						}))
-					);
-					setShowCityDropdown(true);
-				} else {
-					setCitySearchResults([]);
-				}
-			} catch {
-				setCitySearchResults([]);
-			}
-		}, 300);
-
-		return () => clearTimeout(timeout);
-	}, [cityName]);
 
 	// ── Update checker ──
 	const checkForUpdates = async (manual = true) => {
@@ -431,18 +349,6 @@ export function useSettings() {
 	};
 
 	// ── Simple boolean toggles ──
-	const toggleWeather = () => {
-		const next = !weatherEnabled;
-		setWeatherEnabled(next);
-		saveSetting("bloom-weather-enabled", String(next));
-	};
-
-	const toggleCalendar = () => {
-		const next = !calendarEnabled;
-		setCalendarEnabled(next);
-		saveSetting("bloom-calendar-enabled", String(next));
-	};
-
 	const toggleTimerSound = () => {
 		const next = !timerSoundEnabled;
 		setTimerSoundEnabled(next);
@@ -461,7 +367,7 @@ export function useSettings() {
 		saveSetting("bloom-notch-remember-panel", String(next));
 	};
 
-	const changeNotchDefaultPanel = (panel: "calendar" | "command-center") => {
+	const changeNotchDefaultPanel = (panel: "timer" | "quotas") => {
 		setNotchDefaultPanel(panel);
 		saveSetting("bloom-notch-default-panel", panel);
 	};
@@ -543,12 +449,6 @@ export function useSettings() {
 		saveSetting("bloom-time-format-24h", String(next));
 	};
 
-	const toggleTempUnit = () => {
-		const next = !tempUnitFahrenheit;
-		setTempUnitFahrenheit(next);
-		saveSetting("bloom-temp-unit", next ? "fahrenheit" : "celsius");
-	};
-
 	const toggleAutoUpdate = () => {
 		const next = !autoUpdate;
 		setAutoUpdate(next);
@@ -628,34 +528,6 @@ export function useSettings() {
 	const handleBrightnessChange = (value: number) => {
 		setThemeBrightness(value);
 		saveSetting("bloom-theme-brightness", String(value));
-	};
-
-	// ── City search ──
-	const selectCity = async (city: {
-		name: string;
-		country: string;
-		latitude: number;
-		longitude: number;
-	}) => {
-		setCityName(city.name);
-		setShowCityDropdown(false);
-		setCitySearchResults([]);
-		const saved =
-			(await saveLocation("bloom-weather-lat", city.latitude.toString())) &&
-			(await saveLocation("bloom-weather-lon", city.longitude.toString())) &&
-			(await saveSetting("bloom-weather-city", city.name));
-		if (saved) emit("weather-refresh", { lat: city.latitude, lon: city.longitude });
-	};
-
-	const handleCityClear = async () => {
-		setCityName("");
-		setShowCityDropdown(false);
-		setCitySearchResults([]);
-		const saved =
-			(await saveLocation("bloom-weather-lat", null)) &&
-			(await saveLocation("bloom-weather-lon", null)) &&
-			(await saveSetting("bloom-weather-city", null));
-		if (saved) emit("weather-refresh", true);
 	};
 
 	// ── Reset to defaults ──
@@ -765,8 +637,6 @@ export function useSettings() {
 		setNotchModeValue,
 		notchEdgeDelay,
 		handleNotchEdgeDelayChange,
-		calendarEnabled,
-		toggleCalendar,
 		timerSoundEnabled,
 		toggleTimerSound,
 		musicModeEnabled,
@@ -788,18 +658,6 @@ export function useSettings() {
 		mediaCompactGlowEnabled,
 		toggleCompactGlow,
 
-		// Weather
-		weatherEnabled,
-		toggleWeather,
-		tempUnitFahrenheit,
-		toggleTempUnit,
-		cityName,
-		setCityName,
-		citySearchResults,
-		showCityDropdown,
-		setShowCityDropdown,
-		selectCity,
-		handleCityClear,
 
 		// Widgets
 		statusWidgets,

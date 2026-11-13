@@ -34,7 +34,7 @@ export interface QuotaPanelProps {
 	 *  to the content height when asking the host for a window height. */
 	menuReserve?: number;
 	/** Panel navigation for integrated mode. */
-	onModeChange?: (mode: "quotas" | "music" | "command-center") => void;
+	onModeChange?: (mode: "quotas" | "music" | "timer") => void;
 	/** Whether active media is available for the Music tab. */
 	musicAvailable?: boolean;
 }
@@ -727,10 +727,10 @@ export function QuotaPanel({
 						tabIndex={-1}
 						onMouseDown={(e) => e.preventDefault()}
 						aria-pressed="false"
-						onClick={() => onModeChange("command-center")}
-						data-testid="quota-nav-controls"
+						onClick={() => onModeChange("timer")}
+						data-testid="quota-nav-timer"
 					>
-						Controls
+						Timer
 					</button>
 				</div>
 			)}

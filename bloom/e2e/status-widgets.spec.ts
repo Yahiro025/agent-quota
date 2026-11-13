@@ -11,7 +11,7 @@ test("renders the saved left and right widgets in the resting notch", async ({ p
 	await page.addInitScript(() => {
 		localStorage.setItem(
 			"bloom-status-widgets",
-			JSON.stringify({ left: ["cpu", "weather"], right: ["ram", "net"] })
+			JSON.stringify({ left: ["cpu", "weather"], right: ["battery", "ram", "net"] })
 		);
 	});
 
@@ -22,28 +22,28 @@ test("renders the saved left and right widgets in the resting notch", async ({ p
 	await page.locator("div.bloom").hover();
 	await expect(page.locator(".pill-cluster")).toBeVisible();
 
-	// Weather stays enabled in this layout but has no reading in the mock, so
-	// it renders nothing: CPU left, RAM and Net right, and no battery.
+	// Removed widgets (weather, battery, ram) in saved layouts render nothing:
+	// only CPU on the left and Net on the right appear.
 	const widgets = page.locator(".pill-cluster .passive-feature");
-	await expect(widgets).toHaveCount(3);
+	await expect(widgets).toHaveCount(2);
 	await expect(widgets.nth(0).locator(".label")).toHaveText("42%");
-	await expect(widgets.nth(1).locator(".label")).toHaveText("55%");
-	await expect(widgets.nth(2).locator(".label")).toHaveText("↑1.0K ↓2.0K");
+	await expect(widgets.nth(1).locator(".label")).toHaveText("↑1.0K ↓2.0K");
+	await expect(page.locator(".pill-cluster")).not.toContainText(/°|55%/);
 
-	const time = page.locator(".pill-cluster .time-center");
 	const cpuBox = (await widgets.nth(0).boundingBox())!;
-	const timeBox = (await time.boundingBox())!;
-	const ramBox = (await widgets.nth(1).boundingBox())!;
-	expect(cpuBox.x + cpuBox.width).toBeLessThanOrEqual(timeBox.x + 0.5);
-	expect(timeBox.x + timeBox.width).toBeLessThanOrEqual(ramBox.x + 0.5);
+	const netBox = (await widgets.nth(1).boundingBox())!;
+	expect(cpuBox.x + cpuBox.width).toBeLessThanOrEqual(netBox.x + 0.5);
 });
 
 // The pill must cover the row it draws. Zeroing the measured width or freezing
-// it left the resting notch narrower than the clock, which clipped it.
-test("the resting pill covers the clock", async ({ page }) => {
+// it left the resting notch narrower than its row content, clipping widgets.
+test("the resting pill covers its status widgets", async ({ page }) => {
 	await page.addInitScript({ path: MOCK });
 	await page.addInitScript(() => {
-		localStorage.setItem("bloom-status-widgets", JSON.stringify({ left: ["cpu"], right: ["net"] }));
+		localStorage.setItem(
+			"bloom-status-widgets",
+			JSON.stringify({ left: ["cpu", "disk"], right: ["net"] })
+		);
 	});
 
 	await page.goto("/");
@@ -51,8 +51,12 @@ test("the resting pill covers the clock", async ({ page }) => {
 	await page.waitForTimeout(1200);
 
 	const pill = (await page.locator("div.bloom").boundingBox())!;
-	const time = (await page.locator(".pill-cluster .time-center").boundingBox())!;
-	expect(time.x + time.width).toBeLessThanOrEqual(pill.x + pill.width + 0.5);
+	const widgets = page.locator(".pill-cluster .passive-feature");
+	await expect(widgets).toHaveCount(3);
+	const first = (await widgets.nth(0).boundingBox())!;
+	const last = (await widgets.nth(2).boundingBox())!;
+	expect(first.x).toBeGreaterThanOrEqual(pill.x - 0.5);
+	expect(last.x + last.width).toBeLessThanOrEqual(pill.x + pill.width + 0.5);
 });
 
 // The notch background is painted by --notch-bg. Hard-coding black there made

@@ -1,7 +1,7 @@
 // One visibility controller for the notch. Panels open by user choice, so
 // alerts (an urgent quota reading, a finished timer) only record themselves
 // — they never move the open panel. Gestures that mean "the user is busy"
-// (typing, dragging, pairing, connecting) set `deferred`, and an alert
+// (typing, dragging) set `deferred`, and an alert
 // arriving then is dropped outright: nothing is stored to replay later.
 
 export type Attention = { panel: string; alert: string | null; deferred: boolean };
@@ -12,8 +12,6 @@ export type AttentionEvent =
 	| { type: "alert-finished" }
 	| { type: "typing" }
 	| { type: "dragging" }
-	| { type: "pairing" }
-	| { type: "connecting" }
 	| { type: "clear-defer" };
 
 export function reduceAttention(prev: Attention, event: AttentionEvent): Attention {
@@ -26,8 +24,6 @@ export function reduceAttention(prev: Attention, event: AttentionEvent): Attenti
 			return prev.alert === null ? prev : { ...prev, alert: null };
 		case "typing":
 		case "dragging":
-		case "pairing":
-		case "connecting":
 			return prev.deferred ? prev : { ...prev, deferred: true };
 		case "clear-defer":
 			return prev.deferred ? { ...prev, deferred: false } : prev;
